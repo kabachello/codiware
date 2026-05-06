@@ -1,4 +1,5 @@
-Codiware Editor - a PHP cloud IDE integratable with a single PSR-7 middleware
+Codiware Editor - a PHP cloud IDE integratable with a single PSR-7 middleware. 
+
 ## Background
 
 I'm the DEV lead for the exface no-code platform for business web apps (https://github.com/ExFace/core). The platform currently includes an optional IDE module, that provides integration with multiple DEV tools: e.g. the well known PHP Adminer to manage SQL databases and the Atheos IDE as universal file editor with git integration. 
