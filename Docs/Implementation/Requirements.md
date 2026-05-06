@@ -1,4 +1,4 @@
-
+Codiware Editor - a PHP cloud IDE integratable with a single PSR-7 middleware
 ## Background
 
 I'm the DEV lead for the exface no-code platform for business web apps (https://github.com/ExFace/core). The platform currently includes an optional IDE module, that provides integration with multiple DEV tools: e.g. the well known PHP Adminer to manage SQL databases and the Atheos IDE as universal file editor with git integration. 
@@ -16,7 +16,7 @@ I decided to build a new IDE powered by a PHP backend with the help of AI agents
 
 The new IDE is supposed to be a separate PHP Composer package, but it's primary use-case is being integrated into the ExFace platform. 
 
-The idea is to have a PSR-7 middleware, that is easy to hook into any PHP app and that will take care of requests to the URL `api/ide/code/*`.  The IDE will be started by calling `api/ide/code/<app/alias>`, which should open the file tree of the specified app (basically a folder in `vendor/`). So in a stand-alone version the Url would include a path from some white list. 
+The idea is to have a PSR-7 middleware, that is easy to hook into any PHP app and that will take care of requests to the URL `codiware/*`.  The IDE will be started by calling `codiware/repo/path/in/vendor>`, which should open the file tree of the specified app (basically a folder in `vendor/`). So in a stand-alone version the Url would include a path from some white list. 
 
 - Things like user management, sessions, etc. are to be handled externally (e.g. by other middleware). 
 - The IDE should use the same base URL to serve all the HTML/JS and APIs. Dependencies in the vendor folder can be accessed directly
@@ -29,6 +29,18 @@ The idea is to have a PSR-7 middleware, that is easy to hook into any PHP app an
 - may use symfony compinents v6
 - should accept an external logger (probably as middleware constructor argument). We currently use Monolog v1 in ExFace
 - all features must work on windows and on linux
+
+#### Web API
+
+- `codiware/` - base URL. The URL middleware only handles requests to this path. The path can be changed by passing an argument to the middleware. In particular, inside exface that path would be `api/ide/codiware/`. 
+- `codiware/assets` - js and other static assets
+- `codiware/files` - file tree and operations
+- `codiware/git` - git commands
+- `codiware/repo/xxx/yyy` - initial URL for opening a folder, where `xxx/yyy` is the path relative to a base folder (`vendor` by default)
+
+Other APIs can be added by adding more paths. 
+
+The initial call to open the IDE must be a `repo/` URL. 
 #### Front-end
 
 - SPA in plain JS
@@ -39,6 +51,18 @@ The idea is to have a PSR-7 middleware, that is easy to hook into any PHP app an
 - the front-end is going to be shown in an iframe when integrated in ExFace
 - the front-end should support CSS skin files to change its color scheme. We are going to use it with the jEasyUI bases template/facade in ExFace, but it should be possible to restyle it to look more like Openui5 Horizon Theme, which is also available as Look&Feel in ExFace
 - There should be a dark mode
+
+UI structure:
+
+- tabbed editor in the middle
+- side-panels - resizable and collapsible. 
+	- file browser - left
+	- git panel - right
+	- Ai chat - right (future)
+- bottom panel - resizable and collapsible
+	- console
+	- search
+- colored toast messages for errors, success notifications, etc. 
 ## Features
 
 The ide should feel like modern IDEs - e.g. VS code or PHPStorm
@@ -96,7 +120,27 @@ The ide should feel like modern IDEs - e.g. VS code or PHPStorm
 		- zipped folders including subfolders
 - global search in all files or within a specified path mattern
 	- replace in all/selected files
-	- preview for findings per file (quick open in main editor on the corresponding line should be OK)
+	- preview for findings per file - quick open in main editor on the corresponding line without (!) closing the search panel
+	- ideally also displayed as a side or bottom panel
+	- searching for regular expressions would be nice as an option. Poor performance is OK here. 
+- a web console in the bottom panel
+	- allows to run custom git commands
+	- allows to run other commands matching a regex pattern in the config. Even commands with `../` are allowed in the config - but ONLY those matching the configured patterns. 
+	- has a menu or toolbar with command presets, defined in the config. Presets are pasted into the console, but not sent automatically - this way, the user can modify them.
+		- propose a default set of presets for git: e.g. `git clean`, etc. 
+		- presets are automatically concidered to be allowed commands - even if they do not match any patterns. 
+
+### Future features
+
+The architecture should in principle allow the following additions, that already can be anticipated:
+
+- more different editor types, e.g.
+	- Image resizer/cropper
+	- WYSIWYG HTML editor
+	- ER diagram editor like https://github.com/dineug/erd-editor
+- an Ai chat side-panel with deep-chat (integration with ExFace already available) for collaborative editing of text/code. Diff highlighting with accept/reject options would be very helpful! 
+- multiple secondary root folders should be supported by showing a menu with the white list to pick from. The IDE is always started for ONE base folder, but the the user can pick others to be included in the file tree. Similar to adding folders to workspace in VS code, the initial base folder is the workspace and more roots can be added. Added root should be remembered for every initial root (=workspace) - just like opened tabs. 
+	- how will the git panel behave?
 
 ## Configuration
 
@@ -107,6 +151,26 @@ The global configuration is to be stored in JSON files. The middleware should ha
 The ide should be translatable. Initially only English is required, but other languages will follow. 
 
 Translations must be stored as Json objects to be compatible with ExFace. We use the symfony translation component there. 
+
+## Error handling and logging
+
+All PHP errors and exceptional should be displayed as tost messages if possible. They must be passed as throwables to Monolog in the data-array with key `exception` in this case.
+
+If toast messages are not possible for specific throwables, they can be thrown to outside of the middleware. 
+
+## Integrations 
+
+### Git
+
+Some information for git must be passed to the middleware from outside:
+
+- committer name and email
+
+This can be done via middleware constructor arguments. 
+
+### ExFace
+
+When integrated into exface, the IDE will be always called for a specific user and a specific app (package). 
 
 ## Testing
 
