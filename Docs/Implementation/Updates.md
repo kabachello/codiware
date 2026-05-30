@@ -1,0 +1,19 @@
+- use font awesome 4 icons. Take v4 because that is currently the version used by ExFace. 
+- Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons. Allow font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. I am planning to use mdi icons (pictogrammers)
+- add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished. 
+- add a right-click menu to files and folders in the explorer for the following operations:
+	- create file
+	- duplicate file
+	- rename file
+	- delete file
+	- download (a single file or a folder as zip)
+	- upload. Make sure multiple files and entire folders can be uploaded. Allow selecting files/folders via button and dragging them on to a drop area
+- add Drag&Drop to move files between folders in the explorer panel
+- make the git panel look more like visual studio code
+	- use a single row of buttons with icons (use svg icons from pictogrammers)
+	- allow multiselect for files to stage/commit
+- add Monaco editor 
+	- register it as the default editor. I think, we do not need a simplified text editor. We can always use Monaco and add extra editors just for specific mime types. 
+- add tui editor
+	- register it for `*.md` files
+- when a file is clicked in the git panel, a diff-tab should open. Use the Monaco diff for all file. 
