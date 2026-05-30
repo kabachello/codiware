@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Codiware</title>
+  <script>window.CODIWARE_BOOT = /*__CODIWARE_BOOT__*/ null /*__/CODIWARE_BOOT__*/;</script>
+  <script>
+    (function () {
+      var b = window.CODIWARE_BOOT || {};
+      var base = (b.base_path || '/codiware').replace(/\/$/, '');
+      var assets = base + '/assets';
+      function css(href, id, disabled) {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = href; if (id) l.id = id;
+        if (disabled) l.disabled = true;
+        document.head.appendChild(l);
+      }
+      css(assets + '/css/base.css', 'codiware-css-base');
+      css(assets + '/css/theme-light.css', 'codiware-css-light');
+      css(assets + '/css/theme-dark.css', 'codiware-css-dark', true);
+      window.CODIWARE_ASSET_BASE = assets;
+    })();
+  </script>
+</head>
+<body>
+  <div id="codiware-root" class="ide-root" aria-busy="true">
+    <div class="ide-loading">Loading Codiware…</div>
+  </div>
+  <script>
+    (function () {
+      var s = document.createElement('script');
+      s.type = 'module';
+      s.src = window.CODIWARE_ASSET_BASE + '/js/app.js';
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>
+

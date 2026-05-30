@@ -1,0 +1,22 @@
+:root, html[data-theme="light"] {
+  --ide-bg: #ffffff;
+  --ide-fg: #1d1f23;
+  --ide-fg-muted: #6b7280;
+  --ide-border: #e1e4e8;
+  --ide-accent: #2563eb;
+  --ide-accent-fg: #ffffff;
+  --ide-highlight: #fff3a3;
+  --ide-titlebar-bg: #f5f6f8;
+  --ide-sidebar-bg: #fafbfc;
+  --ide-tabbar-bg: #f1f2f4;
+  --ide-statusbar-bg: #2563eb;
+  --ide-statusbar-fg: #ffffff;
+  --ide-panel-bg: #f7f8f9;
+  --ide-btn-bg: #ffffff;
+  --ide-btn-hover: #eef0f3;
+  --ide-input-bg: #ffffff;
+  --ide-row-hover: #eef2f7;
+  --ide-row-selected: #d6e4f9;
+  --ide-toast-bg: #ffffff;
+  --ide-toast-fg: #1d1f23;
+}

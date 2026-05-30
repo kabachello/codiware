@@ -1,0 +1,22 @@
+html[data-theme="dark"] {
+  --ide-bg: #1e1f23;
+  --ide-fg: #e6e6e6;
+  --ide-fg-muted: #9aa1ab;
+  --ide-border: #2f3035;
+  --ide-accent: #60a5fa;
+  --ide-accent-fg: #0b1220;
+  --ide-highlight: #594b14;
+  --ide-titlebar-bg: #181a1e;
+  --ide-sidebar-bg: #1a1c20;
+  --ide-tabbar-bg: #16181c;
+  --ide-statusbar-bg: #2563eb;
+  --ide-statusbar-fg: #ffffff;
+  --ide-panel-bg: #1a1c20;
+  --ide-btn-bg: #25282d;
+  --ide-btn-hover: #2e3239;
+  --ide-input-bg: #15171a;
+  --ide-row-hover: #25282d;
+  --ide-row-selected: #2d4060;
+  --ide-toast-bg: #25282d;
+  --ide-toast-fg: #e6e6e6;
+}

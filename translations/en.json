@@ -1,0 +1,53 @@
+{
+  "actions.save": "Save",
+  "actions.cancel": "Cancel",
+  "actions.delete": "Delete",
+  "actions.create": "Create",
+  "actions.rename": "Rename",
+  "actions.copy": "Copy",
+  "actions.move": "Move",
+  "actions.upload": "Upload",
+  "actions.download": "Download",
+  "actions.refresh": "Refresh",
+  "actions.open": "Open",
+  "actions.close": "Close",
+
+  "files.title": "Files",
+  "files.new_file": "New file",
+  "files.new_folder": "New folder",
+  "files.empty": "(empty)",
+  "files.confirm_delete": "Delete {path}?",
+
+  "git.title": "Source control",
+  "git.staged": "Staged",
+  "git.changes": "Changes",
+  "git.untracked": "Untracked",
+  "git.commit_message": "Commit message",
+  "git.commit": "Commit",
+  "git.amend": "Amend",
+  "git.push": "Push",
+  "git.history": "History",
+  "git.branch": "Branch",
+  "git.no_changes": "No changes",
+
+  "search.title": "Search",
+  "search.placeholder": "Search workspace…",
+  "search.regex": "Regex",
+  "search.case": "Match case",
+  "search.replace_with": "Replace with",
+  "search.preview": "Preview",
+  "search.apply": "Apply replace",
+  "search.no_results": "No matches",
+
+  "console.title": "Console",
+  "console.placeholder": "Run a preset or allowed command…",
+  "console.run": "Run",
+  "console.presets": "Presets",
+
+  "editor.unsaved": "Unsaved changes",
+  "editor.binary": "Cannot edit binary file",
+  "editor.not_found": "File not found",
+
+  "errors.generic": "Something went wrong.",
+  "errors.unauthorized": "Not authorised."
+}
