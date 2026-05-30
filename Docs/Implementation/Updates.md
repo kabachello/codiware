@@ -12,6 +12,8 @@
 - make the git panel look more like visual studio code
 	- use a single row of buttons with icons next to the commit message window (use svg icons from pictogrammers)
 	- for every file show a revert changes button in addition to the existing add button. 
+- print all git commands and their output in the console automatically
+- show toast messages, when got commands complete successfully 
 - add Monaco editor 
 	- register it as the default editor. I think, we do not need a simplified text editor. We can always use Monaco and add extra editors just for specific mime types. 
 - add tui editor

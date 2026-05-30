@@ -281,6 +281,10 @@ Recommended default Git presets:
 
 The front-end is a plain JavaScript SPA using native modules where practical and vendor loaders only where required by a component such as Monaco. It is optimized for iframe embedding but also works as a full browser page.
 
+The UI follows the [styleguide](Styleguide.md). 
+
+### Folder structure
+
 ```text
 public/js/
   app.js
