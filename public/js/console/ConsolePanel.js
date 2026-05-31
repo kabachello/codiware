@@ -1,4 +1,6 @@
 /** Bottom console panel for running whitelisted commands. */
+import { Icon } from '../core/Icon.js';
+
 export class ConsolePanel {
   constructor({ api, i18n, toasts }) {
     this.api = api; this.i18n = i18n; this.toasts = toasts;
@@ -27,7 +29,8 @@ export class ConsolePanel {
     this.input.placeholder = this.i18n.t('console.placeholder');
     this.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.runCommand(this.input.value); });
     const runBtn = document.createElement('button');
-    runBtn.textContent = this.i18n.t('console.run');
+    runBtn.title = this.i18n.t('console.run');
+    runBtn.append(Icon.render('fa fa-play'));
     runBtn.addEventListener('click', () => this.runCommand(this.input.value));
     inputRow.append(this.input, runBtn);
 

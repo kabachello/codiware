@@ -1,3 +1,5 @@
+import { Icon } from '../core/Icon.js';
+
 /**
  * Manages open editor tabs in the main area.
  *
@@ -34,15 +36,26 @@ export class TabManager {
     // Build tab UI
     const tabEl = document.createElement('div');
     tabEl.className = 'ide-tab';
+    tabEl.title = entry.path;
     const name = document.createElement('span');
     name.className = 'ide-tab-name';
     name.textContent = entry.name || entry.path.split('/').pop();
+
+    // Per styleguide: small floppy icon appears when dirty; clicking it saves.
+    const dirtyBtn = document.createElement('span');
+    dirtyBtn.className = 'ide-tab-dirty';
+    dirtyBtn.title = this.i18n.t('actions.save');
+    dirtyBtn.append(Icon.render('fa fa-floppy-o'));
+    dirtyBtn.style.display = 'none';
+    dirtyBtn.addEventListener('click', (e) => { e.stopPropagation(); this.save(key); });
+
     const close = document.createElement('span');
     close.className = 'ide-tab-close';
-    close.textContent = '×';
+    close.append(Icon.render('fa fa-times'));
     close.title = this.i18n.t('actions.close');
     close.addEventListener('click', (e) => { e.stopPropagation(); this.close(key); });
-    tabEl.append(name, close);
+
+    tabEl.append(name, dirtyBtn, close);
     tabEl.addEventListener('click', () => this.activate(key));
     this.tabBar.appendChild(tabEl);
 
@@ -53,12 +66,13 @@ export class TabManager {
     this.host.appendChild(editorHost);
 
     const editor = descriptor.create(editorHost, this.ctx);
-    const record = { key, entry, tabEl, editorHost, editor, descriptor, dirty: false };
+    const record = { key, entry, tabEl, editorHost, editor, descriptor, dirty: false, dirtyBtn };
 
     if (typeof editor.on === 'function') {
       editor.on('change', () => {
         record.dirty = editor.isDirty();
         tabEl.classList.toggle('dirty', record.dirty);
+        dirtyBtn.style.display = record.dirty ? '' : 'none';
       });
       editor.on('save-request', () => this.save(key));
     }
@@ -109,7 +123,8 @@ export class TabManager {
       record.editor.markClean?.();
       record.dirty = false;
       record.tabEl.classList.remove('dirty');
-      this.toasts.success(this.i18n.t('actions.save') + ' ✓');
+      if (record.dirtyBtn) record.dirtyBtn.style.display = 'none';
+      this.toasts.success(this.i18n.t('actions.save') + ' \u2713');
       this.bus.emit('file:saved', record);
     } catch (e) {
       this.toasts.error(e.message);

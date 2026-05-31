@@ -1,4 +1,5 @@
 import { attachSplitter } from './Splitter.js';
+import { Icon } from '../core/Icon.js';
 
 /**
  * Builds the three-row IDE chrome: titlebar / body (sidebar + main) / statusbar.
@@ -96,7 +97,13 @@ export class LayoutManager {
     this.slots.workspaceLabel.textContent = text;
   }
 
-  setStatusLeft(text) { this.slots.statusLeft.textContent = text; }
+  setStatusLeft(text, icon) {
+    this.slots.statusLeft.innerHTML = '';
+    if (icon) this.slots.statusLeft.append(Icon.render(icon));
+    const t = document.createElement('span');
+    t.textContent = ' ' + (text || '');
+    this.slots.statusLeft.append(t);
+  }
   setStatusRight(text) { this.slots.statusRight.textContent = text; }
 
   setBottomHeight(px) {

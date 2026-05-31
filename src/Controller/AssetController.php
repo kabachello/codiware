@@ -25,8 +25,10 @@ final class AssetController
         $packageRoot = dirname(__DIR__, 2);
         $candidates = [
             $packageRoot . DIRECTORY_SEPARATOR . 'public',
-            // npm-asset packages installed via composer asset-packagist.
-            $packageRoot . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'npm-asset',
+            // Dev mode: package is the repo root, its own vendor/npm-asset.
+            $packageRoot . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'npm-asset',
+            // Installed as a dependency: vendor/axenox/codiware → vendor/npm-asset.
+            $packageRoot . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'npm-asset',
         ];
         $this->roots = [];
         foreach ($candidates as $c) {

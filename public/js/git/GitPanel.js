@@ -1,4 +1,6 @@
 /** Source-control sidebar panel. */
+import { Icon } from '../core/Icon.js';
+
 export class GitPanel {
   constructor({ api, i18n, toasts, bus }) {
     this.api = api;
@@ -15,8 +17,8 @@ export class GitPanel {
 
     const toolbar = el('div');
     toolbar.style.display = 'flex'; toolbar.style.gap = '4px';
-    const refresh = btn(this.i18n.t('actions.refresh'), () => this.refresh());
-    const push = btn(this.i18n.t('git.push'), () => this.push());
+    const refresh = iconBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh());
+    const push = iconBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push());
     toolbar.append(refresh, push);
 
     this.msg = document.createElement('textarea');
@@ -97,11 +99,11 @@ export class GitPanel {
     row.appendChild(label);
 
     if (group === 'staged') {
-      row.appendChild(btn('-', () => this._unstage([f.path]), 'unstage'));
+      row.appendChild(iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
     } else {
-      row.appendChild(btn('+', () => this._stage([f.path]), 'stage'));
+      row.appendChild(iconBtn('fa fa-plus', this.i18n.t('git.stage') || 'Stage', () => this._stage([f.path])));
       if (group !== 'untracked') {
-        row.appendChild(btn('↺', () => this._discard([f.path]), 'discard'));
+        row.appendChild(iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
       }
     }
     return row;
@@ -142,6 +144,14 @@ function btn(text, onClick, title) {
   const b = document.createElement('button');
   b.type = 'button'; b.textContent = text;
   if (title) b.title = title;
+  b.addEventListener('click', onClick);
+  return b;
+}
+function iconBtn(icon, title, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.title = title;
+  b.setAttribute('aria-label', title);
+  b.append(Icon.render(icon));
   b.addEventListener('click', onClick);
   return b;
 }

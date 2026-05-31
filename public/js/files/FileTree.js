@@ -1,3 +1,5 @@
+import { Icon } from '../core/Icon.js';
+
 /**
  * Recursive file tree using nested <ul> elements.
  * Each directory is loaded lazily through `api.get('/files/tree', {path})`.
@@ -50,12 +52,19 @@ export class FileTree {
 
     const row = document.createElement('span');
     row.className = 'row';
-    row.textContent = ' ' + entry.name;
-    li.appendChild(row);
 
     if (entry.type === 'dir') {
+      const toggle = Icon.render('fa fa-caret-right', { extraClass: 'ide-icon-toggle' });
+      const folder = Icon.render('fa fa-folder');
+      const name = document.createElement('span');
+      name.textContent = entry.name;
+      row.append(toggle, folder, name);
       row.addEventListener('click', async () => {
         const open = li.classList.toggle('open');
+        toggle.firstElementChild?.classList.toggle('fa-caret-right', !open);
+        toggle.firstElementChild?.classList.toggle('fa-caret-down', open);
+        folder.firstElementChild?.classList.toggle('fa-folder', !open);
+        folder.firstElementChild?.classList.toggle('fa-folder-open', open);
         let childUl = li.querySelector(':scope > ul');
         if (open) {
           if (!childUl) {
@@ -68,11 +77,17 @@ export class FileTree {
         }
       });
     } else {
+      const file = Icon.render('fa fa-file-o');
+      const name = document.createElement('span');
+      name.textContent = entry.name;
+      row.append(document.createElement('span'), file, name); // empty span to align with toggle column
+      row.firstElementChild.className = 'ide-icon ide-icon-toggle';
       row.addEventListener('click', () => {
         this._selectRow(row);
         this.onOpen?.(entry);
       });
     }
+    li.appendChild(row);
     return li;
   }
 

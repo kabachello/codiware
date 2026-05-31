@@ -14,6 +14,7 @@ import { FileTree } from './files/FileTree.js';
 import { GitPanel } from './git/GitPanel.js';
 import { SearchPanel } from './search/SearchPanel.js';
 import { ConsolePanel } from './console/ConsolePanel.js';
+import { Icon } from './core/Icon.js';
 
 /**
  * Application bootstrap. The HTML shell sets `window.CODIWARE_BOOT` with
@@ -54,7 +55,7 @@ async function main() {
   const layout = new LayoutManager(root, { i18n, state, bus });
   layout.build();
   layout.setWorkspaceLabel(workspace.label || workspace.alias || workspace.path || '');
-  layout.setStatusLeft(workspace.is_git ? `⎇ ${workspace.alias}` : workspace.alias || '');
+  layout.setStatusLeft(workspace.alias || '', workspace.is_git ? 'fa fa-code-fork' : 'fa fa-folder');
   layout.setStatusRight(`Codiware • ${boot.user?.name || ''}`);
 
   // Tabs + panels
@@ -73,7 +74,7 @@ async function main() {
   // Files panel
   let fileTree;
   panels.register('files', {
-    label: i18n.t('files.title'), icon: '📁',
+    label: i18n.t('files.title'), icon: 'fa fa-folder',
     mount: (host) => {
       fileTree = new FileTree({
         host, api, i18n,
@@ -86,13 +87,13 @@ async function main() {
 
   if (boot.features?.git !== false && workspace.is_git) {
     panels.register('git', {
-      label: i18n.t('git.title'), icon: '⎇',
+      label: i18n.t('git.title'), icon: 'fa fa-code-fork',
       mount: (host) => new GitPanel({ api, i18n, toasts, bus }).mount(host),
     });
   }
 
   panels.register('search', {
-    label: i18n.t('search.title'), icon: '🔎',
+    label: i18n.t('search.title'), icon: 'fa fa-search',
     mount: (host) => new SearchPanel({
       api, i18n, toasts, bus,
       onOpenLine: (path, line) => tabs.open({ path, name: path.split('/').pop() }).then(() => bus.emit('editor:goto', { path, line })),
@@ -107,7 +108,7 @@ async function main() {
 
   // Toolbar: theme toggle + console toggle + save
   const themeBtn = document.createElement('button');
-  themeBtn.textContent = '🌓';
+  themeBtn.append(Icon.render('fa fa-adjust'));
   themeBtn.title = 'Toggle theme';
   themeBtn.addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -115,11 +116,12 @@ async function main() {
     applyTheme(next);
   });
   const consoleBtn = document.createElement('button');
-  consoleBtn.textContent = '▤';
+  consoleBtn.append(Icon.render('fa fa-terminal'));
   consoleBtn.title = i18n.t('console.title');
   consoleBtn.addEventListener('click', () => layout.toggleBottom(220));
   const saveBtn = document.createElement('button');
-  saveBtn.textContent = '💾 ' + i18n.t('actions.save');
+  saveBtn.append(Icon.render('fa fa-floppy-o'), withLabel(i18n.t('actions.save')));
+  saveBtn.title = i18n.t('actions.save');
   saveBtn.addEventListener('click', () => tabs.saveActive());
   layout.slots.titleRight.append(saveBtn, consoleBtn, themeBtn);
 
@@ -145,6 +147,12 @@ function applyTheme(theme) {
   const dark = document.getElementById('codiware-css-dark');
   if (light) light.disabled = theme !== 'light';
   if (dark) dark.disabled = theme !== 'dark';
+}
+
+function withLabel(text) {
+  const s = document.createElement('span');
+  s.textContent = text;
+  return s;
 }
 
 main().catch((e) => {

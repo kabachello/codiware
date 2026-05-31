@@ -1,3 +1,5 @@
+import { Icon } from '../core/Icon.js';
+
 /**
  * Sidebar panel manager: registers named panels (files/git/search) and switches between them.
  */
@@ -15,7 +17,8 @@ export class PanelManager {
     btn.type = 'button';
     btn.dataset.panel = id;
     btn.title = label;
-    btn.textContent = icon || label;
+    btn.setAttribute('aria-label', label);
+    btn.append(Icon.render(icon));
     btn.addEventListener('click', () => this.activate(id));
     this.tabsEl.appendChild(btn);
 
