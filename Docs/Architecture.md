@@ -2,7 +2,7 @@
 
 ## Overview
 
-Codiware Editor is a browser-based PHP IDE delivered as a Composer package and exposed through one configurable middleware mounted below a single URL prefix, `codiware/` by default. It is designed to replace the current Atheos-based ExFace IDE integration while remaining usable in any PSR-7/PSR-15 PHP application.
+Codiware Editor is a browser-based PHP/JS IDE delivered as a Composer package and exposed through one configurable middleware mounted below a single URL prefix, `codiware/` by default. It is designed to replace the current Atheos-based ExFace IDE integration while remaining usable in any PSR-7/PSR-15 PHP application.
 
 The package itself owns only IDE concerns: static assets, file operations, Git operations, search, configurable command execution, translations, and client state bootstrapping. Authentication, user sessions, ExFace app selection, and host application routing remain outside this package.
 
