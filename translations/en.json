@@ -29,6 +29,11 @@
   "git.history": "History",
   "git.branch": "Branch",
   "git.no_changes": "No changes",
+  "git.stage": "Stage",
+  "git.unstage": "Unstage",
+  "git.discard": "Discard",
+  "git.stage_all": "Stage all",
+  "git.unstage_all": "Unstage all",
 
   "search.title": "Search",
   "search.placeholder": "Search workspace…",
