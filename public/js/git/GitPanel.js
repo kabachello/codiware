@@ -77,9 +77,31 @@ export class GitPanel {
     for (const key of ['staged', 'changed', 'untracked']) {
       const g = groups[key];
       if (g.items.length === 0) continue;
+      const header = el('div', 'git-group-header');
+      header.style.display = 'flex';
+      header.style.alignItems = 'center';
+      header.style.gap = '4px';
+      header.style.marginTop = '8px';
       const h = document.createElement('h4');
       h.textContent = `${g.label} (${g.items.length})`;
-      this.body.appendChild(h);
+      h.style.flex = '1';
+      h.style.margin = '0';
+      header.appendChild(h);
+      const paths = g.items.map(f => f.path);
+      if (key === 'staged') {
+        header.appendChild(iconBtn(
+          'fa fa-minus',
+          this.i18n.t('git.unstage_all') || 'Unstage all',
+          () => this._unstage(paths)
+        ));
+      } else {
+        header.appendChild(iconBtn(
+          'fa fa-plus',
+          this.i18n.t('git.stage_all') || 'Stage all',
+          () => this._stage(paths)
+        ));
+      }
+      this.body.appendChild(header);
       for (const f of g.items) this.body.appendChild(this._renderFile(f, key));
     }
   }

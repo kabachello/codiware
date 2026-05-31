@@ -2,7 +2,7 @@
 - [x] wherever icons are needed, make sure font awesome and SVG icons are supported:
 	- [x] font awesome: `fa fa-xxxx`
 	- [x] SVG: `<svg></svg>`. We will be using [Pictogrammers MDI icons](https://pictogrammers.com/library/mdi/)
-- [ ] Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons. 
+- [x] Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons. 
 - [ ] add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished. 
 - [ ] add a right-click menu to files and folders in the explorer for the following operations:
 	- [ ] create file
