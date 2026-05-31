@@ -553,6 +553,21 @@ Global configuration is stored in JSON. The middleware accepts an optional confi
     "tab_size": 4,
     "word_wrap": false
   },
+  "file_icons": {
+    "default": "fa fa-file-o",
+    "folder": "fa fa-folder",
+    "folder_open": "fa fa-folder-open",
+    "by_name": {
+      "composer.json": "fa fa-cube",
+      ".gitignore": "fa fa-code-fork"
+    },
+    "by_ext": {
+      "php": "fa fa-code",
+      "json": "fa fa-database",
+      "md": "fa fa-file-text-o",
+      "png": "fa fa-file-image-o"
+    }
+  },
   "extensions": {
     "enabled": [
       "codiware.markdown-mermaid",

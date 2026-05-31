@@ -1,15 +1,34 @@
 import { Icon } from '../core/Icon.js';
 
 /**
+ * Default icon mapping used when no `fileIcons` config is passed in. The
+ * config from PHP (`boot.file_icons`) is merged on top of this so missing
+ * keys fall back to sensible defaults.
+ */
+const DEFAULT_FILE_ICONS = {
+  default: 'fa fa-file-o',
+  folder: 'fa fa-folder',
+  folder_open: 'fa fa-folder-open',
+  by_name: {},
+  by_ext: {},
+};
+
+/**
  * Recursive file tree using nested <ul> elements.
  * Each directory is loaded lazily through `api.get('/files/tree', {path})`.
  */
 export class FileTree {
-  constructor({ host, api, i18n, onOpen }) {
+  constructor({ host, api, i18n, onOpen, fileIcons }) {
     this.host = host;
     this.api = api;
     this.i18n = i18n;
     this.onOpen = onOpen;
+    this.fileIcons = {
+      ...DEFAULT_FILE_ICONS,
+      ...(fileIcons || {}),
+      by_name: { ...DEFAULT_FILE_ICONS.by_name, ...((fileIcons && fileIcons.by_name) || {}) },
+      by_ext: { ...DEFAULT_FILE_ICONS.by_ext, ...((fileIcons && fileIcons.by_ext) || {}) },
+    };
     this.rootUl = document.createElement('ul');
     this.rootUl.className = 'tree';
     this.host.innerHTML = '';
@@ -55,7 +74,9 @@ export class FileTree {
 
     if (entry.type === 'dir') {
       const toggle = Icon.render('fa fa-caret-right', { extraClass: 'ide-icon-toggle' });
-      const folder = Icon.render('fa fa-folder');
+      const folderIconSpec = this.fileIcons.folder || 'fa fa-folder';
+      const folderOpenSpec = this.fileIcons.folder_open || folderIconSpec;
+      let folder = Icon.render(folderIconSpec);
       const name = document.createElement('span');
       name.textContent = entry.name;
       row.append(toggle, folder, name);
@@ -63,8 +84,9 @@ export class FileTree {
         const open = li.classList.toggle('open');
         toggle.firstElementChild?.classList.toggle('fa-caret-right', !open);
         toggle.firstElementChild?.classList.toggle('fa-caret-down', open);
-        folder.firstElementChild?.classList.toggle('fa-folder', !open);
-        folder.firstElementChild?.classList.toggle('fa-folder-open', open);
+        const replacement = Icon.render(open ? folderOpenSpec : folderIconSpec);
+        folder.replaceWith(replacement);
+        folder = replacement;
         let childUl = li.querySelector(':scope > ul');
         if (open) {
           if (!childUl) {
@@ -77,7 +99,7 @@ export class FileTree {
         }
       });
     } else {
-      const file = Icon.render('fa fa-file-o');
+      const file = Icon.render(this._iconForFile(entry.name));
       const name = document.createElement('span');
       name.textContent = entry.name;
       row.append(document.createElement('span'), file, name); // empty span to align with toggle column
@@ -89,6 +111,30 @@ export class FileTree {
     }
     li.appendChild(row);
     return li;
+  }
+
+  /**
+   * Resolve a file icon spec from the configured `file_icons` map.
+   * Lookup order: full filename (lower-case) → extension (lower-case) → default.
+   *
+   * @param {string} name
+   * @returns {string}
+   */
+  _iconForFile(name) {
+    const lower = String(name || '').toLowerCase();
+    const byName = this.fileIcons.by_name || {};
+    if (Object.prototype.hasOwnProperty.call(byName, lower)) {
+      return byName[lower];
+    }
+    const dot = lower.lastIndexOf('.');
+    if (dot > 0 && dot < lower.length - 1) {
+      const ext = lower.slice(dot + 1);
+      const byExt = this.fileIcons.by_ext || {};
+      if (Object.prototype.hasOwnProperty.call(byExt, ext)) {
+        return byExt[ext];
+      }
+    }
+    return this.fileIcons.default || 'fa fa-file-o';
   }
 
   _selectRow(row) {

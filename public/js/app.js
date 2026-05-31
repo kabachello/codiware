@@ -78,6 +78,7 @@ async function main() {
     mount: (host) => {
       fileTree = new FileTree({
         host, api, i18n,
+        fileIcons: boot.file_icons || {},
         onOpen: (entry) => tabs.open(entry),
       });
       fileTree.refresh();

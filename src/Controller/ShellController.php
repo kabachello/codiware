@@ -58,6 +58,7 @@ final class ShellController
             'locale' => $this->config->get('translations.default_locale', 'en'),
             'extensions' => $this->config->get('extensions.enabled', []),
             'editor' => $this->config->get('editor', new \stdClass()),
+            'file_icons' => $this->config->get('file_icons', new \stdClass()),
             'features' => [
                 'git' => (bool)$this->config->get('git.enabled', true),
                 'console' => (bool)$this->config->get('console.enabled', true),

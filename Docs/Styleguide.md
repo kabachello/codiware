@@ -7,7 +7,7 @@ The IDE supports switchable CSS themes. Themes mainly affect colors. Each theme 
 Themes are set in the config. The user can switch between light and dark modes using a toggle button in the UI. 
 ### Icons
 
-Buttons and other UI elements, that use icons, support font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. We are using SVG icons from pictogrammers. 
+Buttons and other UI elements, that use icons, support font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. We are using SVG icons from the [Pictogrammers MDI library](https://pictogrammers.com/library/mdi/). 
 
 The same icon is to be used for the same functionality in all places in the app. 
 
