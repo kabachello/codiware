@@ -6,7 +6,7 @@ import { Toasts } from './core/Toasts.js';
 import { LayoutManager } from './layout/LayoutManager.js';
 import { PanelManager } from './layout/PanelManager.js';
 import { EditorRegistry } from './editors/EditorRegistry.js';
-import { codeEditorDescriptor } from './editors/CodeEditor.js';
+import { monacoEditorDescriptor } from './editors/MonacoEditor.js';
 import { markdownEditorDescriptor } from './editors/MarkdownEditor.js';
 import { imageEditorDescriptor } from './editors/ImageEditor.js';
 import { TabManager } from './editors/TabManager.js';
@@ -43,9 +43,11 @@ async function main() {
   } catch (e) { console.warn('[codiware] translations failed:', e); }
 
   // Default editor descriptors. Extensions can add more before or after.
+  // Monaco is the catch-all default for any non-binary file (priority 0).
+  // Specialized editors register with a higher priority for matching mime types.
   registry.register(imageEditorDescriptor);
   registry.register(markdownEditorDescriptor);
-  registry.register(codeEditorDescriptor);
+  registry.register(monacoEditorDescriptor);
 
   // Editor context (shared by all editors).
   const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {} };

@@ -66,6 +66,10 @@
   "editor.unsaved": "Unsaved changes",
   "editor.binary": "Cannot edit binary file",
   "editor.not_found": "File not found",
+  "editor.loading": "Loading editor\u2026",
+
+  "outline.title": "Outline",
+  "outline.no_symbols": "No symbols found",
 
   "errors.generic": "Something went wrong.",
   "errors.unauthorized": "Not authorised."

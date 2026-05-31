@@ -1,9 +1,10 @@
-import { CodeEditor } from './CodeEditor.js';
+import { MonacoEditor } from './MonacoEditor.js';
 
 /**
- * Markdown editor: split textarea + preview. Initial implementation reuses
- * `CodeEditor` for the source side; a richer editor (Toast UI / MDE) can
- * replace it later via the registry.
+ * Markdown editor: split source + preview. The source side uses Monaco so
+ * authors get the same editing experience as for any other text file. A
+ * richer WYSIWYG editor (Toast UI / MDE) can replace this later via the
+ * registry.
  */
 export class MarkdownEditor {
   constructor(host, ctx) {
@@ -18,7 +19,8 @@ export class MarkdownEditor {
     const left = document.createElement('div');
     left.style.background = 'var(--ide-bg)';
     left.style.minHeight = '0';
-    left.style.overflow = 'auto';
+    left.style.overflow = 'hidden';
+    left.style.position = 'relative';
 
     this.preview = document.createElement('div');
     this.preview.style.background = 'var(--ide-bg)';
@@ -26,7 +28,7 @@ export class MarkdownEditor {
     this.preview.style.overflow = 'auto';
 
     host.append(left, this.preview);
-    this.code = new CodeEditor(left, ctx);
+    this.code = new MonacoEditor(left, ctx);
     this.code.on('change', () => this._render());
   }
 

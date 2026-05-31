@@ -4,20 +4,20 @@
 	- [x] SVG: `<svg></svg>`. We will be using [Pictogrammers MDI icons](https://pictogrammers.com/library/mdi/)
 - [x] Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons. 
 - [ ] add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished. 
-- [ ] add buttons to the explorer panel
-	- [ ] Global toolbar at the top
-		- [ ] Create file
-		- [ ] Create folder
-	- [ ] Item-level buttons
-		- [ ] three-dot menu button to show a menu of file actions
-			- [ ] Rename file
-			- [ ] Delete file
-			- [ ] Download the file as-is
-		- [ ] three-dot menu button to show a menu of folder actions
-			- [ ] Rename folder
-			- [ ] Delete folder with all contents
-			- [ ] Upload one or more files or a zip with files and folders
-			- [ ] Download as a zip
+- [x] add buttons to the explorer panel
+	- [x] Global toolbar at the top
+		- [x] Create file
+		- [x] Create folder
+	- [x] Item-level buttons
+		- [x] three-dot menu button to show a menu of file actions
+			- [x] Rename file
+			- [x] Delete file
+			- [x] Download the file as-is
+		- [x] three-dot menu button to show a menu of folder actions
+			- [x] Rename folder
+			- [x] Delete folder with all contents
+			- [x] Upload one or more files or a zip with files and folders
+			- [x] Download as a zip
 - [ ] add a right-click menu to files and folders in the explorer for the following operations:
 	- [ ] create file
 	- [ ] duplicate file
@@ -31,8 +31,8 @@
 	- [x] for every file show a revert changes button in addition to the existing add button. 
 - [ ] print all git commands and their output in the console automatically
 - [x] show toast messages, when got commands complete successfully 
-- [ ] add Monaco editor 
-	- [ ] register it as the default editor. I think, we do not need a simplified text editor. We can always use Monaco and add extra editors just for specific mime types. 
+- [x] add Monaco editor 
+	- [x] register it as the default editor. I think, we do not need a simplified text editor. We can always use Monaco and add extra editors just for specific mime types. 
 - [ ] add tui editor
 	- [ ] register it for `*.md` files
 - [ ] when a file is clicked in the git panel, a diff-tab should open. Use the Monaco diff for all file. 

@@ -283,3 +283,87 @@ textarea { font-family: var(--ide-font-mono); }
 }
 .console-input-row { display: flex; gap: 4px; padding: 4px; border-top: 1px solid var(--ide-border); }
 .console-input-row input { flex: 1; font-family: var(--ide-font-mono); }
+
+/* Outline Panel (document symbols) */
+.monaco-outline-container {
+  width: 180px;
+  min-width: 120px;
+  max-width: 280px;
+  border-left: 1px solid var(--ide-border);
+  background: var(--ide-sidebar-bg, var(--ide-bg));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.outline-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.outline-header {
+  padding: 6px 10px;
+  font-size: var(--ide-fs-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ide-fg-muted);
+  border-bottom: 1px solid var(--ide-border);
+  flex-shrink: 0;
+}
+
+.outline-tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: var(--ide-fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.outline-item:hover {
+  background: var(--ide-row-hover);
+}
+
+.outline-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-family: var(--ide-font-mono);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.outline-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-line {
+  flex-shrink: 0;
+  color: var(--ide-fg-muted);
+  font-size: 10px;
+  font-family: var(--ide-font-mono);
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.outline-empty {
+  padding: 12px;
+  color: var(--ide-fg-muted);
+  font-size: var(--ide-fs-sm);
+  text-align: center;
+}
