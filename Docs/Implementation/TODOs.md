@@ -4,6 +4,20 @@
 	- [x] SVG: `<svg></svg>`. We will be using [Pictogrammers MDI icons](https://pictogrammers.com/library/mdi/)
 - [x] Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons. 
 - [ ] add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished. 
+- [ ] add buttons to the explorer panel
+	- [ ] Global toolbar at the top
+		- [ ] Create file
+		- [ ] Create folder
+	- [ ] Item-level buttons
+		- [ ] three-dot menu button to show a menu of file actions
+			- [ ] Rename file
+			- [ ] Delete file
+			- [ ] Download the file as-is
+		- [ ] three-dot menu button to show a menu of folder actions
+			- [ ] Rename folder
+			- [ ] Delete folder with all contents
+			- [ ] Upload one or more files or a zip with files and folders
+			- [ ] Download as a zip
 - [ ] add a right-click menu to files and folders in the explorer for the following operations:
 	- [ ] create file
 	- [ ] duplicate file
@@ -13,10 +27,10 @@
 	- [ ] upload. Make sure multiple files and entire folders can be uploaded. Allow selecting files/folders via button and dragging them on to a drop area
 - [ ] add Drag&Drop to move files between folders in the explorer panel
 - [ ] make the git panel look more like visual studio code
-	- [ ] use a single row of buttons with icons next to the commit message window (use svg icons from pictogrammers)
-	- [ ] for every file show a revert changes button in addition to the existing add button. 
+	- [x] use a single row of buttons with icons next to the commit message window (use svg icons from pictogrammers)
+	- [x] for every file show a revert changes button in addition to the existing add button. 
 - [ ] print all git commands and their output in the console automatically
-- [ ] show toast messages, when got commands complete successfully 
+- [x] show toast messages, when got commands complete successfully 
 - [ ] add Monaco editor 
 	- [ ] register it as the default editor. I think, we do not need a simplified text editor. We can always use Monaco and add extra editors just for specific mime types. 
 - [ ] add tui editor

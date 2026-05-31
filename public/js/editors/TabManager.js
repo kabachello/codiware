@@ -150,4 +150,30 @@ export class TabManager {
       if (!next.done) this.activate(next.value);
     }
   }
+
+  /**
+   * Force-close any open tab whose file path equals `path` or lies below it
+   * (when `path` denotes a deleted directory). Skips the dirty-changes prompt
+   * because the underlying file no longer exists on disk.
+   */
+  closePath(path) {
+    if (!path && path !== '') return;
+    const prefix = path === '' ? '' : path + '/';
+    const toClose = [];
+    for (const key of this.tabs.keys()) {
+      if (key === path || key.startsWith(prefix)) toClose.push(key);
+    }
+    for (const key of toClose) {
+      const record = this.tabs.get(key);
+      if (!record) continue;
+      try { record.editor.destroy?.(); } catch {}
+      record.tabEl.remove();
+      record.editorHost.remove();
+      this.tabs.delete(key);
+      if (this.active === key) this.active = null;
+    }
+    if (this.active === null && this.tabs.size > 0) {
+      this.activate(this.tabs.keys().next().value);
+    }
+  }
 }

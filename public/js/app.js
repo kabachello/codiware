@@ -77,7 +77,7 @@ async function main() {
     label: i18n.t('files.title'), icon: 'fa fa-folder',
     mount: (host) => {
       fileTree = new FileTree({
-        host, api, i18n,
+        host, api, i18n, toasts, bus,
         fileIcons: boot.file_icons || {},
         onOpen: (entry) => tabs.open(entry),
       });
@@ -85,6 +85,13 @@ async function main() {
     },
   });
   bus.on('files:changed', () => fileTree?.refresh());
+
+  // Auto-close editor tabs whose underlying file (or parent folder) was deleted.
+  bus.on('files:changed', (payload) => {
+    if (payload?.action === 'delete' && payload.path !== undefined) {
+      tabs.closePath(payload.path);
+    }
+  });
 
   if (boot.features?.git !== false && workspace.is_git) {
     panels.register('git', {
