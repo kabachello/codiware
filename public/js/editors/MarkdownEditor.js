@@ -44,6 +44,7 @@ export class MarkdownEditor {
       previewStyle: 'vertical',
       usageStatistics: false,
       theme: isDark ? 'dark' : 'light',
+      extendedAutolinks: true,
       toolbarItems: [
         ['heading', 'bold', 'italic', 'strike'],
         ['hr', 'quote'],
