@@ -1,5 +1,6 @@
-- use font awesome 4 icons. Take v4 because that is currently the version used by ExFace. 
-- Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons. Allow font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. I am planning to use mdi icons (pictogrammers)
+- use font awesome 4 icons where possible. Take v4 because that is currently the version used by ExFace.  
+- wherever icons are needed, allow font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. I am planning to use mdi icons (pictogrammers)
+- Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons. 
 - add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished. 
 - add a right-click menu to files and folders in the explorer for the following operations:
 	- create file

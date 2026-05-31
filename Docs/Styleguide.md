@@ -29,6 +29,10 @@ Each list item inside a sidebar has its own small toolbar, displayed on the righ
 
 The Inline toolbar can show up to 2 most important buttons and the three-dot menu. The menu will hold all buttons, that did not fit. 
 
+### Icons
+
+Buttons and other UI elements, that use icons, support font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. We are using SVG icons from pictogrammers. 
+
 ## Editor tabs
 
 The main editor area has tabs for opened files. 
