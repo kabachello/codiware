@@ -155,8 +155,10 @@ async function main() {
 function applyTheme(theme) {
   const light = document.getElementById('codiware-css-light');
   const dark = document.getElementById('codiware-css-dark');
+  const toastuiDark = document.getElementById('codiware-css-toastui-dark');
   if (light) light.disabled = theme !== 'light';
   if (dark) dark.disabled = theme !== 'dark';
+  if (toastuiDark) toastuiDark.disabled = theme !== 'dark';
 }
 
 function withLabel(text) {

@@ -11,6 +11,24 @@
       var b = window.CODIWARE_BOOT || {};
       var base = (b.base_path || '/codiware').replace(/\/$/, '');
       var assets = base + '/assets';
+
+      // Import map for Toast UI Editor's prosemirror dependencies (must be inline, before any module scripts)
+      var im = document.createElement('script');
+      im.type = 'importmap';
+      im.textContent = '{"imports":{' +
+        '"prosemirror-model":"' + assets + '/prosemirror-model/dist/index.js",' +
+        '"prosemirror-view":"' + assets + '/prosemirror-view/dist/index.js",' +
+        '"prosemirror-state":"' + assets + '/prosemirror-state/dist/index.js",' +
+        '"prosemirror-transform":"' + assets + '/prosemirror-transform/dist/index.js",' +
+        '"prosemirror-commands":"' + assets + '/prosemirror-commands/dist/index.js",' +
+        '"prosemirror-history":"' + assets + '/prosemirror-history/dist/index.js",' +
+        '"prosemirror-inputrules":"' + assets + '/prosemirror-inputrules/dist/index.js",' +
+        '"prosemirror-keymap":"' + assets + '/prosemirror-keymap/dist/index.js",' +
+        '"orderedmap":"' + assets + '/orderedmap/dist/index.js",' +
+        '"rope-sequence":"' + assets + '/rope-sequence/dist/index.js",' +
+        '"w3c-keyname":"' + assets + '/w3c-keyname/index.js"}}';
+      document.currentScript.after(im);
+
       function css(href, id, disabled) {
         var l = document.createElement('link');
         l.rel = 'stylesheet'; l.href = href; if (id) l.id = id;
@@ -21,6 +39,8 @@
       css(assets + '/css/base.css', 'codiware-css-base');
       css(assets + '/css/theme-light.css', 'codiware-css-light');
       css(assets + '/css/theme-dark.css', 'codiware-css-dark', true);
+      css(assets + '/toast-ui--editor/dist/toastui-editor.css', 'codiware-css-toastui');
+      css(assets + '/toast-ui--editor/dist/theme/toastui-editor-dark.css', 'codiware-css-toastui-dark', true);
       window.CODIWARE_ASSET_BASE = assets;
     })();
   </script>
