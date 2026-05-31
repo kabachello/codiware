@@ -48,6 +48,9 @@
   "git.discard": "Discard",
   "git.stage_all": "Stage all",
   "git.unstage_all": "Unstage all",
+  "git.view_diff": "View diff",
+
+  "diff.revert_block": "Revert this block",
 
   "search.title": "Search",
   "search.placeholder": "Search workspace…",

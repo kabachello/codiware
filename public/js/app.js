@@ -9,6 +9,7 @@ import { EditorRegistry } from './editors/EditorRegistry.js';
 import { monacoEditorDescriptor } from './editors/MonacoEditor.js';
 import { markdownEditorDescriptor } from './editors/MarkdownEditor.js';
 import { imageEditorDescriptor } from './editors/ImageEditor.js';
+import { diffEditorDescriptor } from './editors/DiffEditor.js';
 import { TabManager } from './editors/TabManager.js';
 import { FileTree } from './files/FileTree.js';
 import { GitPanel } from './git/GitPanel.js';
@@ -48,6 +49,7 @@ async function main() {
   registry.register(imageEditorDescriptor);
   registry.register(markdownEditorDescriptor);
   registry.register(monacoEditorDescriptor);
+  registry.register(diffEditorDescriptor);
 
   // Editor context (shared by all editors).
   const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {} };
@@ -98,7 +100,10 @@ async function main() {
   if (boot.features?.git !== false && workspace.is_git) {
     panels.register('git', {
       label: i18n.t('git.title'), icon: 'fa fa-code-fork',
-      mount: (host) => new GitPanel({ api, i18n, toasts, bus }).mount(host),
+      mount: (host) => new GitPanel({
+        api, i18n, toasts, bus,
+        onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
+      }).mount(host),
     });
   }
 

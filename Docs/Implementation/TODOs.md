@@ -35,5 +35,5 @@
 	- [x] register it as the default editor. I think, we do not need a simplified text editor. We can always use Monaco and add extra editors just for specific mime types. 
 - [ ] add tui editor
 	- [ ] register it for `*.md` files
-- [ ] when a file is clicked in the git panel, a diff-tab should open. Use the Monaco diff for all file. 
+- [x] when a file is clicked in the git panel, a diff-tab should open. Use the Monaco diff for all file. 
 - [ ] add a help icon at the top right button bar. It should open a cheat sheet with all keyboard shortcuts

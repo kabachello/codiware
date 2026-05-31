@@ -176,4 +176,83 @@ export class TabManager {
       this.activate(this.tabs.keys().next().value);
     }
   }
+
+  /**
+   * Open a diff view for a file. Used by the git panel to show changes.
+   * @param {Object} options - { path: string, staged: boolean, diffData: { old: string, new: string } }
+   */
+  openDiff({ path, staged, diffData }) {
+    // Use a unique key that distinguishes staged vs working-copy diffs
+    const key = `diff:${staged ? 'staged' : 'working'}:${path}`;
+    if (this.tabs.has(key)) {
+      this.activate(key);
+      return;
+    }
+
+    // Look up the diff editor descriptor by ID
+    const descriptor = this.registry.entries.find(d => d.id === 'codiware.diff');
+    if (!descriptor) {
+      this.toasts.error('Diff editor not available');
+      return;
+    }
+
+    // Build tab UI
+    const tabEl = document.createElement('div');
+    tabEl.className = 'ide-tab';
+    const fileName = path.split('/').pop();
+    const label = staged ? `${fileName} (Staged)` : `${fileName} (Working)`;
+    tabEl.title = `Diff: ${path}`;
+    const name = document.createElement('span');
+    name.className = 'ide-tab-name';
+    name.textContent = label;
+
+    // Dirty indicator (floppy icon) for diff tabs
+    const dirtyBtn = document.createElement('span');
+    dirtyBtn.className = 'ide-tab-dirty';
+    dirtyBtn.title = this.i18n.t('actions.save');
+    dirtyBtn.append(Icon.render('fa fa-floppy-o'));
+    dirtyBtn.style.display = 'none';
+    dirtyBtn.addEventListener('click', (e) => { e.stopPropagation(); this.save(key); });
+
+    const close = document.createElement('span');
+    close.className = 'ide-tab-close';
+    close.append(Icon.render('fa fa-times'));
+    close.title = this.i18n.t('actions.close');
+    close.addEventListener('click', (e) => { e.stopPropagation(); this.close(key); });
+
+    tabEl.append(name, dirtyBtn, close);
+    tabEl.addEventListener('click', () => this.activate(key));
+    this.tabBar.appendChild(tabEl);
+
+    // Build editor host
+    const editorHost = document.createElement('div');
+    editorHost.style.height = '100%';
+    editorHost.style.display = 'none';
+    this.host.appendChild(editorHost);
+
+    const editor = descriptor.create(editorHost, this.ctx);
+    const record = { key, entry: { path }, tabEl, editorHost, editor, descriptor, dirty: false, isDiff: true, dirtyBtn };
+
+    // Listen for changes and save requests
+    if (typeof editor.on === 'function') {
+      editor.on('change', () => {
+        record.dirty = editor.isDirty();
+        tabEl.classList.toggle('dirty', record.dirty);
+        dirtyBtn.style.display = record.dirty ? '' : 'none';
+      });
+      editor.on('save-request', () => this.save(key));
+    }
+
+    this.tabs.set(key, record);
+
+    // Load the diff data
+    editor.load({
+      original: diffData.old || '',
+      modified: diffData.new || '',
+      path: path,
+      staged: staged,
+    });
+
+    this.activate(key);
+  }
 }

@@ -2,11 +2,12 @@
 import { Icon } from '../core/Icon.js';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
     this.bus = bus;
+    this.onOpenDiff = onOpenDiff; // Callback: (path, staged, diffData) => void
     bus.on('file:saved', () => this.refresh());
   }
 
@@ -111,14 +112,20 @@ export class GitPanel {
     row.style.display = 'flex'; row.style.gap = '4px'; row.style.alignItems = 'center';
     row.style.padding = '2px 0';
     const label = el('span');
+    label.className = 'git-file-label';
     label.textContent = `${f.index}${f.worktree}  ${f.path}`;
     label.style.fontFamily = 'var(--ide-font-mono)';
     label.style.fontSize = 'var(--ide-fs-sm)';
     label.style.flex = '1';
     label.style.overflow = 'hidden';
     label.style.textOverflow = 'ellipsis';
-    label.title = f.path;
+    label.style.cursor = 'pointer';
+    label.title = this.i18n.t('git.view_diff') || 'View diff';
     row.appendChild(label);
+
+    // Click on the filename to open the diff view
+    const staged = group === 'staged';
+    label.addEventListener('click', () => this._openDiff(f.path, staged));
 
     if (group === 'staged') {
       row.appendChild(iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
@@ -129,6 +136,17 @@ export class GitPanel {
       }
     }
     return row;
+  }
+
+  async _openDiff(path, staged) {
+    try {
+      const diffData = await this.api.get('/git/diff', { path, staged: staged ? '1' : '0' });
+      if (this.onOpenDiff) {
+        this.onOpenDiff(path, staged, diffData);
+      }
+    } catch (e) {
+      this.toasts.error(e.message);
+    }
   }
 
   async _stage(paths) { try { await this.api.post('/git/stage', { paths }); this.refresh(); } catch (e) { this.toasts.error(e.message); } }

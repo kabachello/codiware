@@ -253,6 +253,11 @@ textarea { font-family: var(--ide-font-mono); }
 .panel-section { padding: 6px 4px; }
 .panel-section h4 { margin: 8px 4px 4px; font-size: var(--ide-fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ide-fg-muted); }
 
+/* Git panel file list */
+.git-group-header button { opacity: 0.7; }
+.git-group-header button:hover { opacity: 1; }
+.git-file-label:hover { color: var(--ide-accent); text-decoration: underline; }
+
 .toast-host {
   position: fixed; right: 12px; bottom: 32px; z-index: 9999;
   display: flex; flex-direction: column; gap: 6px; max-width: 360px;
@@ -270,7 +275,7 @@ textarea { font-family: var(--ide-font-mono); }
 .search-result-file { font-weight: 600; margin-top: 8px; }
 .search-result-line {
   font-family: var(--ide-font-mono); font-size: var(--ide-fs-sm);
-  padding-left: 8px; white-space: pre; overflow-x: auto;
+  padding-left: 8px; overflow-x: auto;
   cursor: pointer;
 }
 .search-result-line:hover { background: var(--ide-row-hover); }
@@ -301,6 +306,24 @@ textarea { font-family: var(--ide-font-mono); }
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+}
+
+/* Diff Editor - Revert buttons in glyph margin */
+.diff-revert-glyph {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.diff-revert-glyph::before {
+  content: '↩';
+  font-size: 14px;
+  color: var(--ide-accent, #3794ff);
+  opacity: 0.7;
+}
+.diff-revert-glyph:hover::before {
+  opacity: 1;
+  transform: scale(1.1);
 }
 
 .outline-header {
