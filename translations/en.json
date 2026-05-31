@@ -40,6 +40,7 @@
   "git.commit": "Commit",
   "git.amend": "Amend",
   "git.push": "Push",
+  "git.pull": "Pull",
   "git.history": "History",
   "git.branch": "Branch",
   "git.no_changes": "No changes",

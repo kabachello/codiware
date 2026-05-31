@@ -254,8 +254,27 @@ textarea { font-family: var(--ide-font-mono); }
 .panel-section h4 { margin: 8px 4px 4px; font-size: var(--ide-fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ide-fg-muted); }
 
 /* Git panel file list */
-.git-group-header button { opacity: 0.7; }
-.git-group-header button:hover { opacity: 1; }
+.git-group-header button,
+.git-file-label + button,
+.git-group-header .icon-btn,
+.git-file-label ~ button {
+  opacity: 0.7;
+  background: transparent;
+  border: 0;
+  padding: 3px 0px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: inherit;
+  line-height: 1;
+  margin-left: 2px;
+}
+.git-group-header button:hover,
+.git-file-label + button:hover,
+.git-group-header .icon-btn:hover,
+.git-file-label ~ button:hover {
+  opacity: 1;
+  background: var(--ide-btn-hover);
+}
 .git-file-label:hover { color: var(--ide-accent); text-decoration: underline; }
 
 .toast-host {

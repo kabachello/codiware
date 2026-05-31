@@ -14,13 +14,15 @@ export class GitPanel {
   mount(host) {
     this.host = host;
     host.innerHTML = '';
-    host.classList.add('panel-section');
 
+    // Use the same toolbar structure and classes as the explorer panel
     const toolbar = el('div');
-    toolbar.style.display = 'flex'; toolbar.style.gap = '4px';
-    const refresh = iconBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh());
-    const push = iconBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push());
-    toolbar.append(refresh, push);
+    toolbar.className = 'panel-toolbar';
+    toolbar.append(
+      tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
+      tbBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push()),
+      tbBtn('fa fa-cloud-download', this.i18n.t('git.pull'), () => this.pull())
+    );
 
     this.msg = document.createElement('textarea');
     this.msg.placeholder = this.i18n.t('git.commit_message');
@@ -29,6 +31,7 @@ export class GitPanel {
 
     const commitRow = el('div');
     commitRow.style.display = 'flex'; commitRow.style.gap = '4px'; commitRow.style.marginTop = '4px';
+    commitRow.classList.add('panel-toolbar');
     const commitBtn = btn(this.i18n.t('git.commit'), () => this.commit(false));
     commitBtn.classList.add('primary');
     const amendBtn = btn(this.i18n.t('git.amend'), () => this.commit(true));
@@ -37,6 +40,18 @@ export class GitPanel {
     this.body = el('div');
 
     host.append(toolbar, this.msg, commitRow, this.body);
+    // Helper for toolbar buttons (matches FileTree)
+    function tbBtn(icon, title, onClick) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tb-btn';
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.append(Icon.render(icon));
+      b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+      return b;
+    }
+    this._collapsed = { staged: false, changed: false, untracked: false };
     this.refresh();
   }
 
@@ -83,10 +98,26 @@ export class GitPanel {
       header.style.alignItems = 'center';
       header.style.gap = '4px';
       header.style.marginTop = '8px';
+      // Collapsible arrow icon
+      const arrow = document.createElement('span');
+      arrow.className = 'fa';
+      arrow.style.cursor = 'pointer';
+      arrow.style.marginRight = '4px';
+      arrow.classList.add(this._collapsed[key] ? 'fa-caret-right' : 'fa-caret-down');
+      arrow.addEventListener('click', () => {
+        this._collapsed[key] = !this._collapsed[key];
+        this.render(s);
+      });
+      header.appendChild(arrow);
       const h = document.createElement('h4');
       h.textContent = `${g.label} (${g.items.length})`;
       h.style.flex = '1';
       h.style.margin = '0';
+      h.style.cursor = 'pointer';
+      h.addEventListener('click', () => {
+        this._collapsed[key] = !this._collapsed[key];
+        this.render(s);
+      });
       header.appendChild(h);
       const paths = g.items.map(f => f.path);
       if (key === 'staged') {
@@ -103,7 +134,9 @@ export class GitPanel {
         ));
       }
       this.body.appendChild(header);
-      for (const f of g.items) this.body.appendChild(this._renderFile(f, key));
+      if (!this._collapsed[key]) {
+        for (const f of g.items) this.body.appendChild(this._renderFile(f, key));
+      }
     }
   }
 
@@ -170,6 +203,11 @@ export class GitPanel {
 
   async push() {
     try { await this.api.post('/git/push', {}); this.toasts.success('Pushed ✓'); this.refresh(); }
+    catch (e) { this.toasts.error(e.message); }
+  }
+
+  async pull() {
+    try { await this.api.post('/git/pull', {}); this.toasts.success('Pulled ✓'); this.refresh(); }
     catch (e) { this.toasts.error(e.message); }
   }
 }

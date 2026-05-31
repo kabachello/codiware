@@ -165,6 +165,13 @@ final class GitService
         return ['message' => trim($out)];
     }
 
+    public function pull(WorkspaceRoot $root): array
+    {
+        $this->requireRepo($root);
+        $out = $this->run($root, ['pull'], expectExit: [0]);
+        return ['message' => trim($out)];
+    }
+
     /**
      * @return array{current:?string,locals:string[],remotes:string[]}
      */
