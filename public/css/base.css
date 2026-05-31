@@ -270,7 +270,7 @@ textarea { font-family: var(--ide-font-mono); }
 .search-result-file { font-weight: 600; margin-top: 8px; }
 .search-result-line {
   font-family: var(--ide-font-mono); font-size: var(--ide-fs-sm);
-  padding-left: 8px; white-space: pre; overflow-x: auto;
+  padding-left: 8px; overflow-x: auto;
   cursor: pointer;
 }
 .search-result-line:hover { background: var(--ide-row-hover); }
