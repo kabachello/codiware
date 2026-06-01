@@ -1,5 +1,5 @@
 {
-    "name": "axenox/codiware",
+    "name": "kabachello/codiware",
     "description": "Codiware Editor - PHP cloud IDE delivered as a single PSR-15 middleware.",
     "type": "library",
     "license": "MIT",
@@ -12,7 +12,7 @@
         "psr/log": "^1.1 || ^2.0 || ^3.0",
         "symfony/process": "^6.4 || ^7.0",
         "npm-asset/font-awesome": "4.7",
-        "npm-asset/toast-ui--editor": "^3.2"
+        "npm-asset/toast-ui--editor": "^3.1"
     },
     "require-dev": {
         "nyholm/psr7": "^1.8",
