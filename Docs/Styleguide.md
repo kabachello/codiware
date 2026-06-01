@@ -32,6 +32,10 @@ The layout is similar to Visual Studio Code:
 
 ## Panels
 
+All sidebar panels should look and feel similar. 
+
+### Lists and hierarchies 
+
 Sidebar panels contain hierarchical lists. On top of each list there is a toolbar with global buttons, applicable without selecting a list item.
 
 Each list item has

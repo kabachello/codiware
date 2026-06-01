@@ -1,39 +1,44 @@
-* [x] Replace all icons with font awesome 4 icons. Take v4 because that is currently the version used by ExFace.
-* [x] wherever icons are needed, make sure font awesome and SVG icons are supported:
-    * [x] font awesome: `fa fa-xxxx`
-    * [x] SVG: `<svg></svg>`. We will be using [Pictogrammers MDI icons](https://pictogrammers.com/library/mdi/)
-* [x] Use filetype icons for the files in the explorer panel. Add a config to map file extensions to icons.
-* [ ] add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished.
-* [x] add buttons to the explorer panel
-    * [x] Global toolbar at the top
-        * [x] Create file
-        * [x] Create folder
-    * [x] Item-level buttons
-        * [x] three-dot menu button to show a menu of file actions
-            * [x] Rename file
-            * [x] Delete file
-            * [x] Download the file as-is
-        * [x] three-dot menu button to show a menu of folder actions
-            * [x] Rename folder
-            * [x] Delete folder with all contents
-            * [x] Upload one or more files or a zip with files and folders
-            * [x] Download as a zip
-* [ ] add a right-click menu to files and folders in the explorer for the following operations:
-    * [ ] create file
-    * [ ] duplicate file
-    * [ ] rename file
-    * [ ] delete file
-    * [ ] download (a single file or a folder as zip)
-    * [ ] upload. Make sure multiple files and entire folders can be uploaded. Allow selecting files/folders via button and dragging them on to a drop area
-* [ ] add Drag&Drop to move files between folders in the explorer panel
-* [ ] make the git panel look more like visual studio code
-    * [x] use a single row of buttons with icons next to the commit message window (use svg icons from pictogrammers)
-    * [x] for every file show a revert changes button in addition to the existing add button.
-* [ ] print all git commands and their output in the console automatically
-* [x] show toast messages, when got commands complete successfully
-* [x] add Monaco editor
-    * [x] register it as the default editor. I think, we do not need a simplified text editor. We can always use Monaco and add extra editors just for specific mime types.
-* [x] add tui editor
-    * [x] register it for `*.md` files
-* [x] when a file is clicked in the git panel, a diff-tab should open. Use the Monaco diff for all file.
+
+## Global
+
 * [ ] add a help icon at the top right button bar. It should open a cheat sheet with all keyboard shortcuts
+
+## Side panels
+
+- [ ] add a right-click menu to files and folders in the explorer for all button operations
+- [ ] add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished.
+- [ ] make Panels collapsible
+### Explorer
+
+- [ ] add duplicate file button
+- [ ] add Drag&Drop to move files between folders in the explorer panel
+
+### Git panel
+
+- [ ] print all git commands and their output in the console automatically, so the user can see the details
+- [ ] if a git command does not work, there is no feedback at all. Perhaps, printing commands to console panel will solve this anyhow. But we will need to open the console panel automatically if something goes wrong. 
+
+## Bottom panel
+
+- [ ] Give the panel a title
+- [ ] make bottom panel collapsible. Let a small strip remain visible when collapsed, so a user can expand it manually
+
+## Footer
+
+- [ ] On the right there is already a repo name
+	- [ ] add ahead/behind counters
+	- [ ] add number of changed, deleted untracked and staged files
+	- [ ] open git panel on click
+
+## Editors
+
+### Markdown
+
+- [ ] bug: Icons in toolbar disappear on hover
+- [ ] clicking a search result will open the editor, but not navigate to the correct line. In fact, no line numbers are visible at all. Maybe the search should always open Monaco instead of the file type editor? 
+- [ ] make the top toolbar smaller. It is to high and its icons are much bigger than ours
+- [ ] bug: in dark mode the scrollbara are white and look ugly
+
+### Monaco editor
+
+- [ ] bug: long lines overlap the scroll bar and are visible inside of it
