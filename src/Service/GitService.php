@@ -122,7 +122,7 @@ final class GitService
         if ($paths === []) {
             return;
         }
-        $this->run($root, array_merge(['checkout', '--', '--'], $paths));
+        $this->run($root, array_merge(['checkout', '--'], $paths));
     }
 
     public function commit(WorkspaceRoot $root, string $message, ?string $authorName, ?string $authorEmail, bool $amend = false): array
