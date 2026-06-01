@@ -17,6 +17,20 @@ export class ApiClient {
   constructor(basePath, workspaceAlias) {
     this.base = basePath.replace(/\/$/, '');
     this.workspace = workspaceAlias;
+    this._requestObserver = null;
+    this._inflight = 0;
+  }
+
+  setRequestObserver(observer) {
+    this._requestObserver = typeof observer === 'function' ? observer : null;
+  }
+
+  _notifyRequest(event) {
+    try {
+      this._requestObserver?.(event);
+    } catch (error) {
+      console.warn('[ApiClient] request observer failed:', error);
+    }
   }
 
   url(path, query = {}) {
@@ -38,19 +52,26 @@ export class ApiClient {
     } else if (body !== undefined) {
       opts.body = body;
     }
-    const res = await fetch(this.url(path, query || {}), opts);
-    if (raw) return res;
-    const text = await res.text();
-    let payload = null;
-    if (text.length) {
-      try { payload = JSON.parse(text); }
-      catch { throw new ApiError(res.status, 'bad_json', 'Server returned malformed JSON.', { text }); }
+    this._inflight += 1;
+    this._notifyRequest({ phase: 'start', method, path, inflight: this._inflight });
+    try {
+      const res = await fetch(this.url(path, query || {}), opts);
+      if (raw) return res;
+      const text = await res.text();
+      let payload = null;
+      if (text.length) {
+        try { payload = JSON.parse(text); }
+        catch { throw new ApiError(res.status, 'bad_json', 'Server returned malformed JSON.', { text }); }
+      }
+      if (!res.ok) {
+        const err = (payload && payload.error) || {};
+        throw new ApiError(res.status, err.code || 'http_' + res.status, err.message || res.statusText, err.details);
+      }
+      return payload ? payload.data : null;
+    } finally {
+      this._inflight = Math.max(0, this._inflight - 1);
+      this._notifyRequest({ phase: 'end', method, path, inflight: this._inflight });
     }
-    if (!res.ok) {
-      const err = (payload && payload.error) || {};
-      throw new ApiError(res.status, err.code || 'http_' + res.status, err.message || res.statusText, err.details);
-    }
-    return payload ? payload.data : null;
   }
 
   get(p, q) { return this.request('GET', p, { query: q }); }

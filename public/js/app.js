@@ -75,6 +75,20 @@ async function main() {
     i18n,
   });
 
+  const panelByRequestPath = (path) => {
+    if (typeof path !== 'string') return null;
+    if (path.startsWith('/git/')) return 'git';
+    if (path.startsWith('/files/')) return 'files';
+    if (path.startsWith('/search')) return 'search';
+    return null;
+  };
+
+  api.setRequestObserver(({ phase, path }) => {
+    const panelId = panelByRequestPath(path);
+    if (!panelId) return;
+    panels.setBusy(panelId, phase === 'start');
+  });
+
   // Files panel
   let fileTree;
   panels.register('files', {
