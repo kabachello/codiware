@@ -1,21 +1,21 @@
 {
-  "base_path": "/codiware",
-  "base_folder": "..",
-  "deny_patterns": [".env", ".env.*", "*.key", "*.pem", "*.p12", "*.pfx"],
-  "max_upload_bytes": 52428800,
-  "theme": { "default": "light", "allow_user_override": true },
-  "translations": { "default_locale": "en" },
-  "git": { "enabled": true, "binary": "git" },
-  "console": {
-    "enabled": true,
-    "timeout_seconds": 120,
-    "allow_patterns": [
-      "^git\\s+(status|log|diff|show|fetch|remote|branch|checkout|merge|rebase|pull|tag|clean)\\b"
-    ],
-    "presets": [
-      { "label": "git status", "command": "git status --short --branch" },
-      { "label": "git fetch", "command": "git fetch --all --prune" },
-      { "label": "git log",   "command": "git log --oneline --graph --decorate --max-count=30" }
-    ]
-  }
+  "BASE_PATH": "/codiware",
+  "BASE_FOLDER": "..",
+  "DENY_PATTERNS": [".env", ".env.*", "*.key", "*.pem", "*.p12", "*.pfx"],
+  "MAX_UPLOAD_BYTES": 52428800,
+  "THEME.DEFAULT": "light",
+  "THEME.ALLOW_USER_OVERRIDE": true,
+  "TRANSLATIONS.DEFAULT_LOCALE": "en",
+  "GIT.ENABLED": true,
+  "GIT.BINARY": "git",
+  "CONSOLE.ENABLED": true,
+  "CONSOLE.TIMEOUT_SECONDS": 120,
+  "CONSOLE.ALLOW_PATTERNS": [
+    "^git\\s+(status|log|diff|show|fetch|remote|branch|checkout|merge|rebase|pull|tag|clean)\\b"
+  ],
+  "CONSOLE.PRESETS": [
+    { "label": "git status", "command": "git status --short --branch" },
+    { "label": "git fetch", "command": "git fetch --all --prune" },
+    { "label": "git log", "command": "git log --oneline --graph --decorate --max-count=30" }
+  ]
 }

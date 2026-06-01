@@ -501,86 +501,74 @@ The host can select a skin in configuration or by boot metadata. Dark mode can b
 
 ## Configuration
 
-Global configuration is stored in JSON. The middleware accepts an optional config path or prebuilt config object. Host packages may merge their own configuration before constructing the middleware.
+Global configuration is stored in JSON. Package defaults are shipped in `config/defaults.config.json`. The middleware accepts an optional config path or prebuilt config object. Host packages may merge their own configuration before constructing the middleware.
+
+Config keys are normalized to uppercase. Nested JSON objects are flattened to dot notation (for example, `CONSOLE.ENABLED`) while arrays and arrays of objects remain as-is.
 
 ```json
 {
-  "base_path": "/codiware",
-  "base_folder": "vendor",
-  "allowed_roots": [
+  "BASE_PATH": "/codiware",
+  "BASE_FOLDER": "vendor",
+  "ALLOWED_ROOTS": [
     {
       "alias": "exface/core",
       "path": "exface/core",
       "label": "ExFace Core"
     }
   ],
-  "deny_patterns": [
+  "DENY_PATTERNS": [
     ".env",
     "*.key",
     "*.pem",
     "vendor/*/*/.git/config"
   ],
-  "max_upload_bytes": 52428800,
-  "theme": {
-    "default": "light",
-    "allow_user_override": true,
-    "skin": null
-  },
-  "git": {
-    "enabled": true,
-    "author_name": null,
-    "author_email": null,
-    "default_history_limit": 100
-  },
-  "console": {
-    "enabled": true,
-    "timeout_seconds": 300,
-    "allow_patterns": [
-      "^git\\s+(status|log|diff|show|clean|fetch|remote|branch|checkout|merge|rebase)\\b"
-    ],
-    "presets": [
-      {
-        "label": "Git status",
-        "command": "git status --short --branch"
-      },
-      {
-        "label": "Dry-run clean",
-        "command": "git clean -nd"
-      }
-    ]
-  },
-  "editor": {
-    "tab_size": 4,
-    "word_wrap": false
-  },
-  "file_icons": {
-    "default": "fa fa-file-o",
-    "folder": "fa fa-folder",
-    "folder_open": "fa fa-folder-open",
-    "by_name": {
-      "composer.json": "fa fa-cube",
-      ".gitignore": "fa fa-code-fork"
+  "MAX_UPLOAD_BYTES": 52428800,
+  "THEME.DEFAULT": "light",
+  "THEME.ALLOW_USER_OVERRIDE": true,
+  "THEME.SKIN": null,
+  "GIT.ENABLED": true,
+  "GIT.AUTHOR_NAME": null,
+  "GIT.AUTHOR_EMAIL": null,
+  "GIT.DEFAULT_HISTORY_LIMIT": 100,
+  "CONSOLE.ENABLED": true,
+  "CONSOLE.TIMEOUT_SECONDS": 300,
+  "CONSOLE.ALLOW_PATTERNS": [
+    "^git\\s+(status|log|diff|show|clean|fetch|remote|branch|checkout|merge|rebase)\\b"
+  ],
+  "CONSOLE.PRESETS": [
+    {
+      "label": "Git status",
+      "command": "git status --short --branch"
     },
-    "by_ext": {
-      "php": "fa fa-code",
-      "json": "fa fa-database",
-      "md": "fa fa-file-text-o",
-      "png": "fa fa-file-image-o"
+    {
+      "label": "Dry-run clean",
+      "command": "git clean -nd"
     }
+  ],
+  "EDITOR.TAB_SIZE": 4,
+  "EDITOR.WORD_WRAP": false,
+  "FILE_ICONS.DEFAULT": "fa fa-file-o",
+  "FILE_ICONS.FOLDER": "fa fa-folder",
+  "FILE_ICONS.FOLDER_OPEN": "fa fa-folder-open",
+  "FILE_ICONS.BY_NAME": {
+    "composer.json": "fa fa-cube",
+    ".gitignore": "fa fa-code-fork"
   },
-  "extensions": {
-    "enabled": [
-      "codiware.markdown-mermaid",
-      "codiware.image-basic"
-    ],
-    "manifests": [
-      "extensions/*.json",
-      "../axenox/ide/codiware-extensions/*.json"
-    ]
+  "FILE_ICONS.BY_EXT": {
+    "php": "fa fa-code",
+    "json": "fa fa-database",
+    "md": "fa fa-file-text-o",
+    "png": "fa fa-file-image-o"
   },
-  "translations": {
-    "default_locale": "en"
-  }
+  "EXTENSIONS.ENABLED": [
+    "codiware.markdown-mermaid",
+    "codiware.image-basic"
+  ],
+  "EXTENSIONS.MANIFESTS": [
+    "extensions/*.json",
+    "../axenox/ide/codiware-extensions/*.json"
+  ],
+  "TRANSLATIONS.DEFAULT_LOCALE": "en"
 }
 ```
 

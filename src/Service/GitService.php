@@ -23,7 +23,7 @@ final class GitService
         private readonly CodiwareConfig $config,
         private readonly LoggerInterface $logger
     ) {
-        $this->binary = (string)($config->get('git.binary', 'git') ?? 'git');
+        $this->binary = (string)($config->get('GIT.BINARY', 'git') ?? 'git');
     }
 
     public function isRepository(WorkspaceRoot $root): bool

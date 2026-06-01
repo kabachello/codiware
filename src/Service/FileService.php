@@ -108,7 +108,7 @@ final class FileService
      */
     public function writeText(WorkspaceRoot $root, string $relative, string $content): array
     {
-        $max = (int)($this->config->get('max_upload_bytes', 52428800) ?? 52428800);
+        $max = (int)($this->config->get('MAX_UPLOAD_BYTES', 52428800) ?? 52428800);
         if (strlen($content) > $max) {
             throw new CodiwareException(
                 'File content exceeds maximum allowed size.',
@@ -244,7 +244,7 @@ final class FileService
         if (($uploaded['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             throw new CodiwareException('Upload failed.', 'upload_failed', 400, ['error' => $uploaded['error'] ?? null]);
         }
-        $max = (int)($this->config->get('max_upload_bytes', 52428800) ?? 52428800);
+        $max = (int)($this->config->get('MAX_UPLOAD_BYTES', 52428800) ?? 52428800);
         if (($uploaded['size'] ?? 0) > $max) {
             throw new CodiwareException('Upload exceeds maximum size.', 'too_large', 413, ['max_bytes' => $max]);
         }

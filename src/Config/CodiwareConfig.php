@@ -4,9 +4,10 @@ declare(strict_types=1);
 namespace Codiware\Config;
 
 /**
- * Immutable Codiware configuration.
+ * Codiware configuration with ExFace-like flat key semantics.
  *
- * Loaded from defaults + optional JSON file + optional host overrides.
+ * Keys are normalized to uppercase and use dot notation, e.g. `GIT.BINARY`.
+ * Loaded from package defaults + optional JSON file + optional host overrides.
  * See `Docs/Implementation/Architecture.md` for the documented config schema.
  */
 final class CodiwareConfig
@@ -19,8 +20,10 @@ final class CodiwareConfig
      */
     public function __construct(array $data)
     {
-        $this->data = $data;
+        $this->data = self::flattenConfig($data);
     }
+
+    private const DEFAULTS_FILE = __DIR__ . '/../../config/defaults.config.json';
 
     /**
      * Build a config from defaults merged with optional overrides.
@@ -29,7 +32,7 @@ final class CodiwareConfig
      */
     public static function fromArray(array $overrides = []): self
     {
-        return new self(self::deepMerge(self::defaults(), $overrides));
+        return (new self(self::defaults()))->merge($overrides);
     }
 
     /**
@@ -52,189 +55,59 @@ final class CodiwareConfig
     }
 
     /**
-     * @return array<string,mixed> Default configuration tree.
+     * @return array<string,mixed> Default configuration map.
      */
     public static function defaults(): array
     {
-        return [
-            'base_path' => '/codiware',
-            'base_folder' => 'vendor',
-            'allowed_roots' => [],
-            'deny_patterns' => [
-                '.env',
-                '.env.*',
-                '*.key',
-                '*.pem',
-                '*.p12',
-                '*.pfx',
-            ],
-            'max_upload_bytes' => 52428800,
-            'theme' => [
-                'default' => 'light',
-                'allow_user_override' => true,
-                'skin' => null,
-            ],
-            'git' => [
-                'enabled' => true,
-                'author_name' => null,
-                'author_email' => null,
-                'default_history_limit' => 100,
-                'binary' => 'git',
-            ],
-            'console' => [
-                'enabled' => true,
-                'timeout_seconds' => 300,
-                'allow_patterns' => [
-                    '^git\s+(status|log|diff|show|clean|fetch|remote|branch|checkout|merge|rebase|pull|tag)\b',
-                ],
-                'presets' => [
-                    ['label' => 'Git status', 'command' => 'git status --short --branch'],
-                    ['label' => 'Git fetch', 'command' => 'git fetch --all --prune'],
-                    ['label' => 'Git graph', 'command' => 'git log --oneline --graph --decorate --max-count=30'],
-                    ['label' => 'Dry-run clean', 'command' => 'git clean -nd'],
-                    ['label' => 'Clean untracked', 'command' => 'git clean -fd'],
-                    ['label' => 'Remotes', 'command' => 'git remote -v'],
-                ],
-            ],
-            'editor' => [
-                'tab_size' => 4,
-                'word_wrap' => false,
-            ],
-            'file_icons' => [
-                // Icon shown when no extension/name rule matches.
-                'default' => 'fa fa-file-o',
-                // Icon for directories (open variant is derived automatically when possible).
-                'folder' => 'fa fa-folder',
-                'folder_open' => 'fa fa-folder-open',
-                // Match by full (lower-cased) filename. Wins over `by_ext`.
-                'by_name' => [
-                    'composer.json' => 'fa fa-cube',
-                    'composer.lock' => 'fa fa-lock',
-                    'package.json' => 'fa fa-cube',
-                    'package-lock.json' => 'fa fa-lock',
-                    'yarn.lock' => 'fa fa-lock',
-                    '.gitignore' => 'fa fa-code-fork',
-                    '.gitattributes' => 'fa fa-code-fork',
-                    '.editorconfig' => 'fa fa-sliders',
-                    '.env' => 'fa fa-key',
-                    'dockerfile' => 'fa fa-ship',
-                    'readme.md' => 'fa fa-info-circle',
-                    'license' => 'fa fa-balance-scale',
-                    'license.md' => 'fa fa-balance-scale',
-                ],
-                // Match by (lower-cased) file extension without the leading dot.
-                'by_ext' => [
-                    'php' => 'fa fa-code',
-                    'phtml' => 'fa fa-code',
-                    'js' => 'fa fa-code',
-                    'mjs' => 'fa fa-code',
-                    'ts' => 'fa fa-code',
-                    'jsx' => 'fa fa-code',
-                    'tsx' => 'fa fa-code',
-                    'json' => 'fa fa-database',
-                    'xml' => 'fa fa-code',
-                    'html' => 'fa fa-html5',
-                    'htm' => 'fa fa-html5',
-                    'css' => 'fa fa-css3',
-                    'scss' => 'fa fa-css3',
-                    'less' => 'fa fa-css3',
-                    'md' => 'fa fa-file-text-o',
-                    'markdown' => 'fa fa-file-text-o',
-                    'txt' => 'fa fa-file-text-o',
-                    'log' => 'fa fa-file-text-o',
-                    'csv' => 'fa fa-table',
-                    'yml' => 'fa fa-cogs',
-                    'yaml' => 'fa fa-cogs',
-                    'ini' => 'fa fa-cogs',
-                    'conf' => 'fa fa-cogs',
-                    'sql' => 'fa fa-database',
-                    'sh' => 'fa fa-terminal',
-                    'bat' => 'fa fa-terminal',
-                    'ps1' => 'fa fa-terminal',
-                    'png' => 'fa fa-file-image-o',
-                    'jpg' => 'fa fa-file-image-o',
-                    'jpeg' => 'fa fa-file-image-o',
-                    'gif' => 'fa fa-file-image-o',
-                    'bmp' => 'fa fa-file-image-o',
-                    'svg' => 'fa fa-file-image-o',
-                    'ico' => 'fa fa-file-image-o',
-                    'webp' => 'fa fa-file-image-o',
-                    'pdf' => 'fa fa-file-pdf-o',
-                    'doc' => 'fa fa-file-word-o',
-                    'docx' => 'fa fa-file-word-o',
-                    'xls' => 'fa fa-file-excel-o',
-                    'xlsx' => 'fa fa-file-excel-o',
-                    'ppt' => 'fa fa-file-powerpoint-o',
-                    'pptx' => 'fa fa-file-powerpoint-o',
-                    'zip' => 'fa fa-file-archive-o',
-                    'gz' => 'fa fa-file-archive-o',
-                    'tar' => 'fa fa-file-archive-o',
-                    'rar' => 'fa fa-file-archive-o',
-                    '7z' => 'fa fa-file-archive-o',
-                    'mp3' => 'fa fa-file-audio-o',
-                    'wav' => 'fa fa-file-audio-o',
-                    'ogg' => 'fa fa-file-audio-o',
-                    'mp4' => 'fa fa-file-video-o',
-                    'mov' => 'fa fa-file-video-o',
-                    'webm' => 'fa fa-file-video-o',
-                    'lock' => 'fa fa-lock',
-                    'key' => 'fa fa-key',
-                    'pem' => 'fa fa-key',
-                    'env' => 'fa fa-key',
-                ],
-            ],
-            'translations' => [
-                'default_locale' => 'en',
-            ],
-            'extensions' => [
-                'enabled' => [],
-                'manifests' => [],
-            ],
-        ];
-    }
-
-    /**
-     * @param array<string,mixed> $base
-     * @param array<string,mixed> $over
-     * @return array<string,mixed>
-     */
-    private static function deepMerge(array $base, array $over): array
-    {
-        foreach ($over as $key => $value) {
-            if (is_array($value) && isset($base[$key]) && is_array($base[$key]) && self::isAssoc($base[$key])) {
-                $base[$key] = self::deepMerge($base[$key], $value);
-            } else {
-                $base[$key] = $value;
-            }
+        if (!is_file(self::DEFAULTS_FILE)) {
+            throw new \RuntimeException('Codiware defaults file not found: ' . self::DEFAULTS_FILE);
         }
-        return $base;
-    }
-
-    /**
-     * @param array<mixed> $arr
-     */
-    private static function isAssoc(array $arr): bool
-    {
-        if ($arr === []) {
-            return true;
+        $raw = file_get_contents(self::DEFAULTS_FILE);
+        if ($raw === false) {
+            throw new \RuntimeException('Unable to read Codiware defaults file: ' . self::DEFAULTS_FILE);
         }
-        return array_keys($arr) !== range(0, count($arr) - 1);
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            throw new \RuntimeException('Codiware defaults file is not valid JSON: ' . self::DEFAULTS_FILE);
+        }
+        return self::flattenConfig($decoded);
     }
 
     /**
-     * Get a value via dot-notation key, e.g. `git.author_name`.
+     * Override a single config key.
+     */
+    public function set(string $key, mixed $value): self
+    {
+        $this->data[self::normalizeKey($key)] = $value;
+        return $this;
+    }
+
+    /**
+     * Merge nested or flat config arrays into the current config.
+     *
+     * Nested objects are flattened into `SECTION.KEY` form while list-like arrays
+     * and arrays of objects are preserved as values.
+     *
+     * @param array<string,mixed> $overrides
+     */
+    public function merge(array $overrides): self
+    {
+        foreach (self::flattenConfig($overrides) as $key => $value) {
+            $this->data[$key] = $value;
+        }
+        return $this;
+    }
+
+    /**
+     * Get a value via dot-notation key, e.g. `GIT.AUTHOR_NAME`.
      */
     public function get(string $key, mixed $default = null): mixed
     {
-        $parts = explode('.', $key);
-        $node = $this->data;
-        foreach ($parts as $part) {
-            if (!is_array($node) || !array_key_exists($part, $node)) {
-                return $default;
-            }
-            $node = $node[$part];
+        $normalized = self::normalizeKey($key);
+        if (array_key_exists($normalized, $this->data)) {
+            return $this->data[$normalized];
         }
-        return $node;
+        return $default;
     }
 
     /**
@@ -250,7 +123,7 @@ final class CodiwareConfig
      */
     public function basePath(): string
     {
-        $bp = (string)($this->data['base_path'] ?? '/codiware');
+        $bp = (string)($this->data['BASE_PATH'] ?? '/codiware');
         $bp = '/' . ltrim($bp, '/');
         return rtrim($bp, '/') ?: '/';
     }
@@ -261,11 +134,60 @@ final class CodiwareConfig
      */
     public function baseFolder(): ?string
     {
-        $bf = $this->data['base_folder'] ?? null;
+        $bf = $this->data['BASE_FOLDER'] ?? null;
         if (!is_string($bf) || $bf === '') {
             return null;
         }
         $real = realpath($bf);
         return $real !== false ? $real : $bf;
+    }
+
+    private static function normalizeKey(string $key): string
+    {
+        return strtoupper(trim($key));
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @return array<string,mixed>
+     */
+    private static function flattenConfig(array $source): array
+    {
+        $out = [];
+        self::flattenInto($source, $out);
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $source
+     * @param array<string,mixed> $target
+     */
+    private static function flattenInto(array $source, array &$target, string $prefix = ''): void
+    {
+        foreach ($source as $key => $value) {
+            if (!is_string($key) && !is_int($key)) {
+                continue;
+            }
+
+            $segment = self::normalizeKey((string)$key);
+            $fullKey = $prefix === '' ? $segment : $prefix . '.' . $segment;
+
+            if (is_array($value) && self::isAssociative($value) && !str_contains($fullKey, '.')) {
+                self::flattenInto($value, $target, $fullKey);
+                continue;
+            }
+            $target[$fullKey] = $value;
+        }
+    }
+
+    /**
+     * @param array<mixed> $arr
+     */
+    private static function isAssociative(array $arr): bool
+    {
+        if ($arr === []) {
+            return false;
+        }
+        return array_keys($arr) !== range(0, count($arr) - 1);
     }
 }

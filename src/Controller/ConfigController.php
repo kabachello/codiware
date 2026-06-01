@@ -30,9 +30,9 @@ final class ConfigController
     {
         $all = $this->config->all();
         // Drop internal/operator-only fields before exposing to the browser.
-        unset($all['allowed_roots']);
-        unset($all['deny_patterns']);
-        unset($all['base_folder']);
+        unset($all['ALLOWED_ROOTS']);
+        unset($all['DENY_PATTERNS']);
+        unset($all['BASE_FOLDER']);
 
         return $this->responses->ok([
             'base_path' => $this->basePath,

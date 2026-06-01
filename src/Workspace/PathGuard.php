@@ -20,7 +20,7 @@ final class PathGuard
 
     public function __construct(CodiwareConfig $config)
     {
-        $patterns = $config->get('deny_patterns', []);
+        $patterns = $config->get('DENY_PATTERNS', []);
         $this->denyPatterns = is_array($patterns) ? array_values(array_filter($patterns, 'is_string')) : [];
     }
 

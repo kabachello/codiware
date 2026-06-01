@@ -51,17 +51,26 @@ final class ShellController
                 'id' => $this->user->id,
             ],
             'theme' => [
-                'default' => $this->config->get('theme.default', 'light'),
-                'allow_user_override' => (bool)$this->config->get('theme.allow_user_override', true),
-                'skin' => $this->config->get('theme.skin'),
+                'default' => $this->config->get('THEME.DEFAULT', 'light'),
+                'allow_user_override' => (bool)$this->config->get('THEME.ALLOW_USER_OVERRIDE', true),
+                'skin' => $this->config->get('THEME.SKIN'),
             ],
-            'locale' => $this->config->get('translations.default_locale', 'en'),
-            'extensions' => $this->config->get('extensions.enabled', []),
-            'editor' => $this->config->get('editor', new \stdClass()),
-            'file_icons' => $this->config->get('file_icons', new \stdClass()),
+            'locale' => $this->config->get('TRANSLATIONS.DEFAULT_LOCALE', 'en'),
+            'extensions' => $this->config->get('EXTENSIONS.ENABLED', []),
+            'editor' => [
+                'tab_size' => (int)$this->config->get('EDITOR.TAB_SIZE', 4),
+                'word_wrap' => (bool)$this->config->get('EDITOR.WORD_WRAP', false),
+            ],
+            'file_icons' => [
+                'default' => $this->config->get('FILE_ICONS.DEFAULT', 'fa fa-file-o'),
+                'folder' => $this->config->get('FILE_ICONS.FOLDER', 'fa fa-folder'),
+                'folder_open' => $this->config->get('FILE_ICONS.FOLDER_OPEN', 'fa fa-folder-open'),
+                'by_name' => $this->config->get('FILE_ICONS.BY_NAME', new \stdClass()),
+                'by_ext' => $this->config->get('FILE_ICONS.BY_EXT', new \stdClass()),
+            ],
             'features' => [
-                'git' => (bool)$this->config->get('git.enabled', true),
-                'console' => (bool)$this->config->get('console.enabled', true),
+                'git' => (bool)$this->config->get('GIT.ENABLED', true),
+                'console' => (bool)$this->config->get('CONSOLE.ENABLED', true),
             ],
         ]);
 

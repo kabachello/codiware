@@ -30,16 +30,16 @@ final class ConsoleService
         private readonly CodiwareConfig $config,
         private readonly LoggerInterface $logger
     ) {
-        $rawPresets = $config->get('console.presets', []);
+        $rawPresets = $config->get('CONSOLE.PRESETS', []);
         $this->presets = is_array($rawPresets) ? array_values(array_filter(
             $rawPresets,
             fn($p) => is_array($p) && isset($p['label'], $p['command'])
         )) : [];
-        $patterns = $config->get('console.allow_patterns', []);
+        $patterns = $config->get('CONSOLE.ALLOW_PATTERNS', []);
         $this->allowPatterns = is_array($patterns)
             ? array_values(array_filter($patterns, 'is_string'))
             : [];
-        $this->timeout = max(1, (int)($config->get('console.timeout_seconds', 300) ?? 300));
+        $this->timeout = max(1, (int)($config->get('CONSOLE.TIMEOUT_SECONDS', 300) ?? 300));
     }
 
     /**
@@ -58,7 +58,7 @@ final class ConsoleService
      */
     public function run(WorkspaceRoot $root, string $command, ?string $presetLabel = null): array
     {
-        if ($this->config->get('console.enabled', true) !== true) {
+        if ($this->config->get('CONSOLE.ENABLED', true) !== true) {
             throw new CodiwareException('Console is disabled by configuration.', 'console_disabled', 403);
         }
 

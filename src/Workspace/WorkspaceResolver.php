@@ -17,9 +17,9 @@ use Codiware\Exception\CodiwareException;
  *   - label       human-readable label
  *
  * Roots can be configured in two ways:
- *   1. Via the `base_folder` config (typically `vendor/`). Any first-level
+ *   1. Via the `BASE_FOLDER` config (typically `vendor/`). Any first-level
  *      `vendor/subdir/...` path that exists on disk is allowed.
- *   2. Via explicit `allowed_roots` entries with `alias`, `path`, `label`.
+ *   2. Via explicit `ALLOWED_ROOTS` entries with `alias`, `path`, `label`.
  */
 final class WorkspaceResolver
 {
@@ -50,7 +50,7 @@ final class WorkspaceResolver
             }
         }
 
-        // Try resolving under base_folder, e.g. vendor/exface/core.
+        // Try resolving under BASE_FOLDER, e.g. vendor/exface/core.
         $baseFolder = $this->config->baseFolder();
         if ($baseFolder !== null) {
             $candidate = $baseFolder . DIRECTORY_SEPARATOR
@@ -74,12 +74,12 @@ final class WorkspaceResolver
     }
 
     /**
-     * @return WorkspaceRoot[] Explicitly configured roots only (does not auto-list base_folder children).
+    * @return WorkspaceRoot[] Explicitly configured roots only (does not auto-list BASE_FOLDER children).
      */
     public function allowedRoots(): array
     {
         $out = [];
-        $configured = (array)($this->config->get('allowed_roots', []) ?? []);
+        $configured = (array)($this->config->get('ALLOWED_ROOTS', []) ?? []);
         $baseFolder = $this->config->baseFolder();
         foreach ($configured as $entry) {
             if (!is_array($entry)) {
