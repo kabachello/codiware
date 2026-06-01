@@ -181,6 +181,15 @@ textarea { font-family: var(--ide-font-mono); }
 }
 .tree .row:hover { background: var(--ide-row-hover); }
 .tree .row.selected { background: var(--ide-row-selected); }
+.tree .row.dragging { opacity: 0.45; }
+.tree .row.drop-target {
+  background: color-mix(in srgb, var(--ide-accent) 18%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--ide-accent) 55%, transparent);
+}
+.file-tree-host.tree-root-drop .panel-toolbar,
+.file-tree-host.tree-root-drop .tree {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ide-accent) 45%, transparent);
+}
 
 .row-actions {
   display: inline-flex; align-items: center; gap: 2px;

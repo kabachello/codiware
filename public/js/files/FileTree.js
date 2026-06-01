@@ -50,6 +50,8 @@ export class FileTree {
     // Paths of folders the user has expanded. Preserved across refreshes so
     // file operations (create/rename/delete/upload) do not collapse the tree.
     this.expanded = new Set();
+    this.dragContext = null;
+    this.activeDropRow = null;
 
     this.host.innerHTML = '';
     this.host.classList.add('file-tree-host');
@@ -62,6 +64,8 @@ export class FileTree {
     this.rootUl = document.createElement('ul');
     this.rootUl.className = 'tree';
     this.host.appendChild(this.rootUl);
+
+    this._setupRootDropTarget();
   }
 
   _buildToolbar() {
@@ -184,6 +188,8 @@ export class FileTree {
         if (e.target.closest('.row-actions')) return;
         await setOpen(!li.classList.contains('open'));
       });
+
+      this._setupDropTarget(li, row, entry);
     } else {
       const file = Icon.render(this._iconForFile(entry.name));
       const name = document.createElement('span');
@@ -198,9 +204,139 @@ export class FileTree {
       });
     }
 
+    this._setupDragSource(row, entry);
+
     row.appendChild(this._renderRowActions(entry));
     li.appendChild(row);
     return li;
+  }
+
+  _setupDragSource(row, entry) {
+    row.draggable = true;
+    row.addEventListener('dragstart', (e) => {
+      if (e.target.closest('.row-actions')) {
+        e.preventDefault();
+        return;
+      }
+      this.dragContext = {
+        entry,
+        copy: !!(e.ctrlKey || e.metaKey),
+      };
+      e.dataTransfer.effectAllowed = 'copyMove';
+      e.dataTransfer.setData('text/plain', entry.path);
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      this.dragContext = null;
+      this._clearDropHighlight();
+      this.host.classList.remove('tree-root-drop');
+    });
+  }
+
+  _setupDropTarget(li, row, entry) {
+    row.addEventListener('dragover', (e) => {
+      const mode = this._dropModeFor(entry.path);
+      if (mode === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = mode;
+      this._setDropHighlight(row);
+    });
+    row.addEventListener('dragleave', (e) => {
+      if (!row.contains(e.relatedTarget)) {
+        this._clearDropHighlight(row);
+      }
+    });
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      this._clearDropHighlight(row);
+      await this._performDrop(entry.path, e);
+      // Keep folders open while moving items around inside them.
+      if (li.classList.contains('dir')) this.expanded.add(entry.path);
+    });
+  }
+
+  _setupRootDropTarget() {
+    this.host.addEventListener('dragover', (e) => {
+      if (!this.dragContext) return;
+      const mode = this._dropModeFor('');
+      if (mode === null) return;
+      // Avoid showing root-target hint while directly over folder rows.
+      if (e.target.closest('.tree .row')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = mode;
+      this.host.classList.add('tree-root-drop');
+    });
+    this.host.addEventListener('dragleave', (e) => {
+      if (!this.host.contains(e.relatedTarget)) {
+        this.host.classList.remove('tree-root-drop');
+      }
+    });
+    this.host.addEventListener('drop', async (e) => {
+      if (!this.dragContext) return;
+      if (e.target.closest('.tree .row')) return;
+      e.preventDefault();
+      this.host.classList.remove('tree-root-drop');
+      await this._performDrop('', e);
+    });
+  }
+
+  _setDropHighlight(row) {
+    if (this.activeDropRow === row) return;
+    this._clearDropHighlight();
+    this.activeDropRow = row;
+    row.classList.add('drop-target');
+  }
+
+  _clearDropHighlight(row) {
+    if (row) {
+      row.classList.remove('drop-target');
+      if (this.activeDropRow === row) this.activeDropRow = null;
+      return;
+    }
+    if (this.activeDropRow) {
+      this.activeDropRow.classList.remove('drop-target');
+      this.activeDropRow = null;
+    }
+  }
+
+  _dropModeFor(targetDir) {
+    const drag = this.dragContext;
+    if (!drag) return null;
+    const source = drag.entry;
+    if (!this._canDropInto(source, targetDir)) return null;
+    return drag.copy ? 'copy' : 'move';
+  }
+
+  _canDropInto(source, targetDir) {
+    const from = source.path;
+    const fromParent = from.includes('/') ? from.slice(0, from.lastIndexOf('/')) : '';
+    if (targetDir === fromParent) return false;
+    if (targetDir === from) return false;
+    if (source.type === 'dir' && targetDir.startsWith(from + '/')) return false;
+    return true;
+  }
+
+  async _performDrop(targetDir, evt) {
+    const drag = this.dragContext;
+    if (!drag) return;
+    const source = drag.entry;
+    const name = source.path.split('/').pop();
+    const to = targetDir === '' ? name : `${targetDir}/${name}`;
+    if (to === source.path) return;
+
+    const copy = !!(evt.ctrlKey || evt.metaKey || drag.copy);
+    const endpoint = copy ? '/files/copy' : '/files/move';
+    const action = copy ? 'copy' : 'move';
+
+    try {
+      await this.api.post(endpoint, { from: source.path, to });
+      // Let the central files:changed listener refresh once to avoid
+      // duplicate redraws and visible flicker after a drag-drop move.
+      this.bus?.emit?.('files:changed', { action, from: source.path, to });
+    } catch (e) {
+      this.toasts.error(e.message);
+    }
   }
 
   /**

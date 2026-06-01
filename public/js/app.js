@@ -95,6 +95,9 @@ async function main() {
     if (payload?.action === 'delete' && payload.path !== undefined) {
       tabs.closePath(payload.path);
     }
+    if ((payload?.action === 'rename' || payload?.action === 'move') && payload.from !== undefined) {
+      tabs.closePath(payload.from);
+    }
   });
 
   if (boot.features?.git !== false && workspace.is_git) {
