@@ -101,12 +101,19 @@ async function main() {
   });
 
   if (boot.features?.git !== false && workspace.is_git) {
+    let gitPanel;
     panels.register('git', {
       label: i18n.t('git.title'), icon: 'fa fa-code-fork',
-      mount: (host) => new GitPanel({
-        api, i18n, toasts, bus,
-        onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
-      }).mount(host),
+      mount: (host) => {
+        gitPanel = new GitPanel({
+          api, i18n, toasts, bus,
+          onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
+        });
+        gitPanel.mount(host);
+      },
+      onActivate: ({ firstActivation }) => {
+        if (!firstActivation) gitPanel?.refresh();
+      },
     });
   }
 

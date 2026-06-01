@@ -12,7 +12,7 @@ export class PanelManager {
     this.active = null;
   }
 
-  register(id, { label, icon, mount }) {
+  register(id, { label, icon, mount, onActivate }) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.dataset.panel = id;
@@ -27,7 +27,7 @@ export class PanelManager {
     host.style.height = '100%';
     this.contentEl.appendChild(host);
 
-    this.panels.set(id, { id, label, btn, host, mount, mounted: false });
+    this.panels.set(id, { id, label, btn, host, mount, onActivate, mounted: false });
     if (this.active === null) this.activate(id);
   }
 
@@ -38,10 +38,15 @@ export class PanelManager {
       p.btn.classList.toggle('active', p.id === id);
       p.host.style.display = p.id === id ? '' : 'none';
     }
-    if (!panel.mounted) {
+    const firstActivation = !panel.mounted;
+    if (firstActivation) {
       try { panel.mount(panel.host); panel.mounted = true; }
       catch (e) { console.error('[PanelManager] mount', id, e); }
     }
     this.active = id;
+    if (typeof panel.onActivate === 'function') {
+      try { panel.onActivate({ firstActivation }); }
+      catch (e) { console.error('[PanelManager] onActivate', id, e); }
+    }
   }
 }
