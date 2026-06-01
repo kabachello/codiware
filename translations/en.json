@@ -35,6 +35,7 @@
   "git.title": "Source control",
   "git.staged": "Staged",
   "git.changes": "Changes",
+  "git.deleted": "Deleted",
   "git.untracked": "Untracked",
   "git.commit_message": "Commit message",
   "git.commit": "Commit",

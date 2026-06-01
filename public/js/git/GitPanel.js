@@ -60,6 +60,7 @@ export class GitPanel {
     this.body.textContent = '…';
     try {
       const data = await this.api.get('/git/status');
+      this.bus?.emit?.('git:status-updated', data);
       this.render(data);
     } catch (e) {
       this.body.textContent = e.message;

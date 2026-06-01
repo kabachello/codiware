@@ -78,6 +78,60 @@ textarea { font-family: var(--ide-font-mono); }
   height: 22px;
 }
 
+.ide-status-git {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ide-status-sep {
+  opacity: 0.7;
+  margin: 0 6px;
+}
+
+.ide-status-git button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 4px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ide-status-git button:hover {
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.ide-status-git-main {
+  font-size: var(--ide-fs-sm);
+  min-width: 0;
+}
+
+.ide-status-git-repo {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ide-status-git-ab,
+.ide-status-git-counts {
+  opacity: 0.95;
+  font-family: var(--ide-font-mono);
+}
+
+.ide-status-git-refresh.is-spinning .ide-icon {
+  animation: ide-spin 0.8s linear;
+}
+
+@keyframes ide-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .ide-body {
   display: grid;
   grid-template-columns: 260px var(--ide-splitter) 1fr;

@@ -115,6 +115,24 @@ async function main() {
         if (!firstActivation) gitPanel?.refresh();
       },
     });
+
+    const footerGit = createGitFooterStatus({
+      api,
+      i18n,
+      repoName: workspace.alias || workspace.label || workspace.path || 'repo',
+      onOpenPanel: () => panels.activate('git'),
+    });
+    const statusSep = document.createElement('span');
+    statusSep.className = 'ide-status-sep';
+    statusSep.textContent = '|';
+    layout.slots.statusLeft.append(statusSep, footerGit.el);
+
+    bus.on('file:saved', () => footerGit.refresh());
+    bus.on('files:changed', () => footerGit.refresh());
+    bus.on('git:status-updated', (status) => footerGit.updateFromStatus(status));
+    window.addEventListener('focus', () => footerGit.refresh());
+    window.setInterval(() => footerGit.refresh(), 30000);
+    footerGit.refresh();
   }
 
   panels.register('search', {
@@ -174,6 +192,97 @@ function applyTheme(theme) {
   if (light) light.disabled = theme !== 'light';
   if (dark) dark.disabled = theme !== 'dark';
   if (toastuiDark) toastuiDark.disabled = theme !== 'dark';
+}
+
+function createGitFooterStatus({ api, i18n, repoName, onOpenPanel }) {
+  const el = document.createElement('div');
+  el.className = 'ide-status-git';
+
+  const refreshBtn = document.createElement('button');
+  refreshBtn.type = 'button';
+  refreshBtn.className = 'ide-status-git-refresh';
+  refreshBtn.title = i18n.t('actions.refresh');
+  refreshBtn.setAttribute('aria-label', i18n.t('actions.refresh'));
+  refreshBtn.append(Icon.render('fa fa-refresh'));
+
+  const mainBtn = document.createElement('button');
+  mainBtn.type = 'button';
+  mainBtn.className = 'ide-status-git-main';
+  mainBtn.title = i18n.t('git.title');
+  mainBtn.setAttribute('aria-label', i18n.t('git.title'));
+  mainBtn.append(Icon.render('fa fa-code-fork'));
+
+  const repoEl = document.createElement('span');
+  repoEl.className = 'ide-status-git-repo';
+  repoEl.textContent = repoName;
+  const aheadBehindEl = document.createElement('span');
+  aheadBehindEl.className = 'ide-status-git-ab';
+  const countsEl = document.createElement('span');
+  countsEl.className = 'ide-status-git-counts';
+
+  mainBtn.append(repoEl, aheadBehindEl, countsEl);
+  el.append(refreshBtn, mainBtn);
+
+  refreshBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    refresh();
+  });
+  mainBtn.addEventListener('click', () => onOpenPanel?.());
+
+  function updateFromStatus(status) {
+    if (!status) return;
+    const counts = summarizeGitStatus(status);
+    aheadBehindEl.textContent = `+${status.ahead || 0} -${status.behind || 0}`;
+    countsEl.textContent = `M${counts.changed} D${counts.deleted} ?${counts.untracked} S${counts.staged}`;
+    const title = [
+      `${repoName}`,
+      `Ahead: ${status.ahead || 0}  Behind: ${status.behind || 0}`,
+      `${i18n.t('git.changes')}: ${counts.changed}`,
+      `${i18n.t('git.deleted')}: ${counts.deleted}`,
+      `${i18n.t('git.untracked')}: ${counts.untracked}`,
+      `${i18n.t('git.staged')}: ${counts.staged}`,
+      i18n.t('git.title'),
+    ].join('\n');
+    mainBtn.title = title;
+  }
+
+  async function refresh() {
+    refreshBtn.classList.add('is-spinning');
+    try {
+      const status = await api.get('/git/status');
+      updateFromStatus(status);
+    } catch (e) {
+      mainBtn.title = e?.message || 'Failed to refresh git status';
+    } finally {
+      refreshBtn.classList.remove('is-spinning');
+    }
+  }
+
+  return { el, refresh, updateFromStatus };
+}
+
+function summarizeGitStatus(status) {
+  const files = Array.isArray(status?.files) ? status.files : [];
+  let staged = 0;
+  let changed = 0;
+  let deleted = 0;
+  let untracked = 0;
+  for (const file of files) {
+    if (file?.staged) staged += 1;
+    if (file?.untracked) {
+      untracked += 1;
+      continue;
+    }
+    const isDeleted = file?.index === 'D' || file?.worktree === 'D';
+    if (isDeleted) {
+      deleted += 1;
+      continue;
+    }
+    if (file?.changed || (file?.worktree && file.worktree !== '.')) {
+      changed += 1;
+    }
+  }
+  return { staged, changed, deleted, untracked };
 }
 
 function withLabel(text) {
