@@ -63,23 +63,42 @@ extensions. All subsequent API calls go to other `{basePath}/...` routes.
 
 ## Configuration
 
+Defaults are shipped in `config/defaults.config.json`.
+
+At runtime, `CodiwareConfig` behaves like ExFace config maps:
+
+- keys are normalized to uppercase
+- nested objects are flattened to dot keys (`CONSOLE.ENABLED`)
+- arrays and arrays of objects stay as values (`CONSOLE.PRESETS`)
+
 See `dev-server.config.json.example` for a documented sample.
+
+Typical host override patterns:
+
+```php
+$config = CodiwareConfig::fromFile(__DIR__ . '/codiware.json')
+  ->set('BASE_PATH', '/api/ide/codiware')
+  ->merge([
+    'THEME.DEFAULT' => 'dark',
+    'CONSOLE.TIMEOUT_SECONDS' => 120,
+  ]);
+```
 
 Key options:
 
 | Key | Purpose |
 | --- | --- |
-| `base_path` | URL prefix the middleware listens on (default `/codiware`). |
-| `base_folder` | Folder whose direct children are valid workspace aliases. |
-| `allowed_roots` | Explicit `[{alias, path, label}]` list overriding `base_folder`. |
-| `deny_patterns` | `fnmatch` patterns rejected by `PathGuard`. |
-| `max_upload_bytes` | Per-file upload limit. |
-| `git.binary` | Path to the `git` executable. |
-| `console.allow_patterns` | Regex allowlist for raw console commands. |
-| `console.presets` | `[{label, command}]` shortcuts always allowed. |
-| `theme.default` | `light` or `dark`. |
-| `translations.default_locale` | Initial UI locale. |
-| `extensions.enabled` | Identifiers of front-end extensions to load. |
+| `BASE_PATH` | URL prefix the middleware listens on (default `/codiware`). |
+| `BASE_FOLDER` | Folder whose direct children are valid workspace aliases. |
+| `ALLOWED_ROOTS` | Explicit `[{alias, path, label}]` list overriding `BASE_FOLDER`. |
+| `DENY_PATTERNS` | `fnmatch` patterns rejected by `PathGuard`. |
+| `MAX_UPLOAD_BYTES` | Per-file upload limit. |
+| `GIT.BINARY` | Path to the `git` executable. |
+| `CONSOLE.ALLOW_PATTERNS` | Regex allowlist for raw console commands. |
+| `CONSOLE.PRESETS` | `[{label, command}]` shortcuts always allowed. |
+| `THEME.DEFAULT` | `light` or `dark`. |
+| `TRANSLATIONS.DEFAULT_LOCALE` | Initial UI locale. |
+| `EXTENSIONS.ENABLED` | Identifiers of front-end extensions to load. |
 
 ## Development server
 
@@ -114,7 +133,7 @@ Adding a richer editor library (Monaco, CodeMirror 6, Toast UI):
 2. Drop a small JS module under `public/js/extensions/` that imports the
    library from `/{basePath}/assets/monaco-editor/...` and calls
    `window.Codiware.registerEditor(...)`.
-3. Add the extension id to `extensions.enabled` in the config — the SPA boot
+3. Add the extension id to `EXTENSIONS.ENABLED` in the config — the SPA boot
    payload exposes the list so your extension knows it is enabled.
 
 ## Security model
@@ -127,10 +146,10 @@ Adding a richer editor library (Monaco, CodeMirror 6, Toast UI):
   paths, `../`, and runs every resolved destination through `PathGuard`) to
   prevent zip-slip.
 - Console commands are deny-by-default. A command runs only if it matches a
-  preset label or a configured regex in `console.allow_patterns`.
+  preset label or a configured regex in `CONSOLE.ALLOW_PATTERNS`.
 - The middleware never trusts the host with raw paths: workspace selection
   always goes through `WorkspaceResolver` which validates against
-  `allowed_roots` / `base_folder` first.
+  `ALLOWED_ROOTS` / `BASE_FOLDER` first.
 
 ## License
 
