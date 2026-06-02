@@ -568,6 +568,11 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
     "extensions/*.json",
     "../axenox/ide/codiware-extensions/*.json"
   ],
+  "EXTENSIONS.CONFIG": {
+    "codiware.markdown": {
+      "INCLUDES.EDITOR_JS": "..."
+    }
+  },
   "TRANSLATIONS.DEFAULT_LOCALE": "en"
 }
 ```
