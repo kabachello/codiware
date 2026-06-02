@@ -23,6 +23,27 @@ export class MarkdownEditor {
     host.style.minHeight = '0';
     host.style.overflow = 'hidden';
 
+    // Import map for Toast UI Editor's prosemirror dependencies (must be inline, before any module scripts)
+    /* TODO this was moved from index, but does not work here. This was neccessary to use the asset-packagist
+     * version of TUI Editor, which does not bundle the prosemirror dependencies.
+    var im = document.createElement('script');
+    var assetsNpm = window.CODIWARE_BOOT.url_to_npm
+    im.type = 'importmap';
+    im.textContent = '{"imports":{' +
+        '"prosemirror-model":"' + assetsNpm + '/prosemirror-model/dist/index.js",' +
+        '"prosemirror-view":"' + assetsNpm + '/prosemirror-view/dist/index.js",' +
+        '"prosemirror-state":"' + assetsNpm + '/prosemirror-state/dist/index.js",' +
+        '"prosemirror-transform":"' + assetsNpm + '/prosemirror-transform/dist/index.js",' +
+        '"prosemirror-commands":"' + assetsNpm + '/prosemirror-commands/dist/index.js",' +
+        '"prosemirror-history":"' + assetsNpm + '/prosemirror-history/dist/index.js",' +
+        '"prosemirror-inputrules":"' + assetsNpm + '/prosemirror-inputrules/dist/index.js",' +
+        '"prosemirror-keymap":"' + assetsNpm + '/prosemirror-keymap/dist/index.js",' +
+        '"orderedmap":"' + assetsNpm + '/orderedmap/dist/index.js",' +
+        '"rope-sequence":"' + assetsNpm + '/rope-sequence/dist/index.js",' +
+        '"w3c-keyname":"' + assetsNpm + '/w3c-keyname/index.js"}}';
+    document.currentScript.after(im);
+    */
+
     this.editorEl = document.createElement('div');
     this.editorEl.className = 'toastui-editor-wrapper';
     this.editorEl.style.flex = '1';
@@ -31,13 +52,13 @@ export class MarkdownEditor {
     host.appendChild(this.editorEl);
 
     // Dynamically import Toast UI Editor (ESM bundle has all deps included)
-    const assetBase = window.CODIWARE_ASSET_BASE || '/codiware/assets';
-    const { default: Editor } = await import(assetBase + '/toast-ui--editor/dist/esm/index.js');
+    const assetBase = window.CODIWARE_ASSET_BASE_NPM || '/codiware/assets';
+    const { default: Editor } = await import(window.CODIWARE_BOOT?.extensions['codiware.markdown']['INCLUDES.EDITOR_JS'] || assetBase + '/toast-ui--editor/dist/esm/index.js');
 
     // Detect dark mode
     const isDark = document.documentElement.dataset.theme === 'dark';
 
-    this.editor = new Editor({
+    this.editor = toastui.Editor.factory({
       el: this.editorEl,
       height: '100%',
       initialEditType: 'markdown',

@@ -1,5 +1,5 @@
 {
-  "BASE_PATH": "/codiware",
+  "URL_TO_API": "/codiware",
   "BASE_FOLDER": "..",
   "DENY_PATTERNS": [".env", ".env.*", "*.key", "*.pem", "*.p12", "*.pfx"],
   "MAX_UPLOAD_BYTES": 52428800,

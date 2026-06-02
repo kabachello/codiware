@@ -23,7 +23,7 @@ import { Icon } from './core/Icon.js';
  */
 async function main() {
   const boot = window.CODIWARE_BOOT || {};
-  const basePath = (boot.base_path || '/codiware').replace(/\/$/, '');
+  const basePath = (boot.url_to_api || '/codiware').replace(/\/$/, '');
   const workspace = boot.workspace || {};
 
   // Theme

@@ -507,7 +507,7 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
 
 ```json
 {
-  "BASE_PATH": "/codiware",
+  "URL_TO_API": "/codiware",
   "BASE_FOLDER": "vendor",
   "ALLOWED_ROOTS": [
     {

@@ -1,6 +1,8 @@
 {
-  "BASE_PATH": "/codiware",
-  "BASE_FOLDER": "vendor",
+  "URL_BASE": "",
+  "URL_TO_API": "/codiware",
+  "URL_TO_APP": "/public",
+  "URL_TO_NPM": "/vendor/npm-asset",
   "ALLOWED_ROOTS": [],
   "DENY_PATTERNS": [
     ".env",
@@ -112,6 +114,23 @@
     "env": "fa fa-key"
   },
   "TRANSLATIONS.DEFAULT_LOCALE": "en",
-  "EXTENSIONS.ENABLED": [],
-  "EXTENSIONS.MANIFESTS": []
+  "EXTENSIONS.ENABLED": [
+    "codiware.markdown",
+    "codiware.monaco",
+    "codiware.diff"
+  ],
+  "EXTENSIONS.MANIFESTS": [],
+  "EXTENSIONS.CONFIG": {
+    "codiware.markdown": {
+      "INCLUDES.EDITOR_JS": "vendor/npm-asset/toast-ui--editor/dist/esm/index.js",
+      "INCLUDES.EDITOR_CSS_LIGHT": "vendor/npm-asset/toast-ui--editor/dist/toastui-editor.css",
+      "INCLUDES.EDITOR_CSS_DARK": "vendor/npm-asset/toast-ui--editor/dist/theme/toastui-editor-dark.css"
+    },
+    "codiware.monaco": {
+      "INCLUDES.MONACO_JS_BASE": "vendor/npm-asset/monaco-editor/min/vs/base"
+    },
+    "codiware.diff": {
+      "INCLUDES.MONACO_JS_BASE": "vendor/npm-asset/monaco-editor/min/vs/base"
+    }
+  }
 }

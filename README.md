@@ -38,9 +38,9 @@ packages.
 ## Mount in a host
 
 ```php
-use Codiware\CodiwareMiddleware;
-use Codiware\Config\CodiwareConfig;
-use Codiware\Config\UserContext;
+use kabachello\Codiware\Middleware\CodiwareMiddleware;
+use kabachello\Codiware\Middleware\CodiwareConfig;
+use kabachello\Codiware\Middleware\UserContext;
 
 $middleware = new CodiwareMiddleware(
     config: CodiwareConfig::fromFile(__DIR__ . '/codiware.json'),
@@ -77,7 +77,7 @@ Typical host override patterns:
 
 ```php
 $config = CodiwareConfig::fromFile(__DIR__ . '/codiware.json')
-  ->set('BASE_PATH', '/api/ide/codiware')
+  ->set('URL_TO_API', '/api/ide/codiware')
   ->merge([
     'THEME.DEFAULT' => 'dark',
     'CONSOLE.TIMEOUT_SECONDS' => 120,
@@ -88,7 +88,7 @@ Key options:
 
 | Key | Purpose |
 | --- | --- |
-| `BASE_PATH` | URL prefix the middleware listens on (default `/codiware`). |
+| `URL_TO_API` | URL prefix the middleware listens on (default `/codiware`). |
 | `BASE_FOLDER` | Folder whose direct children are valid workspace aliases. |
 | `ALLOWED_ROOTS` | Explicit `[{alias, path, label}]` list overriding `BASE_FOLDER`. |
 | `DENY_PATTERNS` | `fnmatch` patterns rejected by `PathGuard`. |
@@ -138,7 +138,7 @@ Adding a richer editor library (Monaco, CodeMirror 6, Toast UI):
 
 ## Security model
 
-- All filesystem paths flow through `Codiware\Workspace\PathGuard`, which
+- All filesystem paths flow through `kabachello\Codiware\Workspace\PathGuard`, which
   resolves them via `realpath`, rejects `..` traversal and any path that ends
   up outside the workspace root, and matches the configured deny patterns
   against both the relative path and the basename.

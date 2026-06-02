@@ -49,7 +49,7 @@ let monacoPromise = null;
 function loadMonaco() {
   if (monacoPromise) return monacoPromise;
   monacoPromise = new Promise((resolve, reject) => {
-    const base = (window.CODIWARE_ASSET_BASE || '') + '/monaco/node_modules/monaco-editor/min/vs';
+    const base = window.CODIWARE_BOOT.extensions['codiware.markdown']["INCLUDES.MONACO_JS_BASE"] || (window.CODIWARE_ASSET_BASE_APP || '') + '/monaco/node_modules/monaco-editor/min/vs';
 
     // Monaco's AMD loader pollutes the global scope with `require`. Restore
     // any existing one after Monaco initializes.

@@ -18,9 +18,9 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-use Codiware\CodiwareMiddleware;
-use Codiware\Config\CodiwareConfig;
-use Codiware\Config\UserContext;
+use kabachello\Codiware\Middleware\CodiwareMiddleware;
+use kabachello\Codiware\Middleware\CodiwareConfig;
+use kabachello\Codiware\Middleware\UserContext;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7Server\ServerRequestCreator;
 
@@ -32,7 +32,7 @@ $config = CodiwareConfig::fromFile(is_file($configFile) ? $configFile : null);
 if ($config->baseFolder() === null && $config->get('allowed_roots', []) === []) {
     $config = CodiwareConfig::fromArray(array_merge(
         $config->all(),
-        ['base_folder' => realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2)]
+        ['base_folder' => realpath(dirname(__DIR__, 1)) ?: dirname(__DIR__, 2)]
     ));
 }
 
