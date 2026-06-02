@@ -21,12 +21,7 @@
     },
     "autoload": {
         "psr-4": {
-            "kabachello\Codiware\\": "src/"
-        }
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "kabachello\Codiware\\Tests\\": "tests/"
+            "kabachello\\Codiware\\": ""
         }
     },
     "repositories": [
