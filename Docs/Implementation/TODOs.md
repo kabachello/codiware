@@ -1,6 +1,7 @@
 ## Global
 
 * [ ] add a help icon at the top right button bar. It should open a cheat sheet with all keyboard shortcuts
+* [ ] Add an outline for JSON
 
 ## Side panels
 
@@ -12,6 +13,8 @@
 
 * [ ] add duplicate file button
 * [x] add Drag&Drop to move files between folders in the explorer panel
+* [ ] Bug: ToastUI editor does not load if opening a file after an other 
+  editor was opened previously
 
 ### Git panel
 
@@ -29,6 +32,7 @@
     * [x] add ahead/behind counters
     * [x] add number of changed, deleted untracked and staged files
     * [x] open git panel on click
+    * [ ] Make the number for ahead/behind, modifications, untracked files, etc. in the footer stand out if they are not 0. E.g. make the bold red.
 
 ## Editors
 
