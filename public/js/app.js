@@ -116,11 +116,16 @@ async function main() {
 
   if (boot.features?.git !== false && workspace.is_git) {
     let gitPanel;
+    const hasGitIdentity = typeof boot.user?.has_git_identity === 'boolean'
+      ? boot.user.has_git_identity
+      : Boolean((boot.user?.name || '').trim() && (boot.user?.email || '').trim());
     panels.register('git', {
       label: i18n.t('git.title'), icon: 'fa fa-code-fork',
       mount: (host) => {
         gitPanel = new GitPanel({
           api, i18n, toasts, bus,
+          user: boot.user || {},
+          hasGitIdentity,
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
         });
         gitPanel.mount(host);

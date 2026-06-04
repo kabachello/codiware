@@ -16,8 +16,8 @@ use Psr\Http\Message\ServerRequestInterface;
 /**
  * REST endpoints wrapping `GitService`.
  *
- * Author identity for commits is taken from the host-provided `UserContext`,
- * with optional per-request override `{author_name, author_email}`.
+ * Author/committer identity for commits is always taken from the
+ * host-provided `UserContext`.
  */
 final class GitController
 {
@@ -73,8 +73,7 @@ final class GitController
         $root = $this->root($request);
         $body = $this->decodeJson($request);
         $message = (string)($body['message'] ?? '');
-        [$name, $email] = $this->author($body);
-        return $this->responses->ok($this->git->commit($root, $message, $name, $email));
+        return $this->responses->ok($this->git->commit($root, $message, $this->user->name, $this->user->email));
     }
 
     public function amend(ServerRequestInterface $request): ResponseInterface
@@ -82,8 +81,7 @@ final class GitController
         $root = $this->root($request);
         $body = $this->decodeJson($request);
         $message = (string)($body['message'] ?? '');
-        [$name, $email] = $this->author($body);
-        return $this->responses->ok($this->git->commit($root, $message, $name, $email, amend: true));
+        return $this->responses->ok($this->git->commit($root, $message, $this->user->name, $this->user->email, amend: true));
     }
 
     public function push(ServerRequestInterface $request): ResponseInterface
@@ -138,16 +136,6 @@ final class GitController
             'path' => $path,
             'content' => $this->git->show($root, $commit, $path),
         ]);
-    }
-
-    /**
-     * @return array{0:?string,1:?string}
-     */
-    private function author(array $body): array
-    {
-        $name = isset($body['author_name']) ? (string)$body['author_name'] : $this->user->name;
-        $email = isset($body['author_email']) ? (string)$body['author_email'] : $this->user->email;
-        return [$name, $email];
     }
 
     /**

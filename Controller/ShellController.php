@@ -56,6 +56,7 @@ final class ShellController
                 'name' => $this->user->name,
                 'email' => $this->user->email,
                 'id' => $this->user->id,
+                'has_git_identity' => $this->user->hasGitIdentity(),
             ],
             'theme' => [
                 'default' => $this->config->get('THEME.DEFAULT', 'light'),

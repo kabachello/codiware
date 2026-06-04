@@ -387,6 +387,24 @@ textarea { font-family: var(--ide-font-mono); }
 .panel-section h4 { margin: 8px 4px 4px; font-size: var(--ide-fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ide-fg-muted); }
 
 /* Git panel file list */
+.git-identity-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, #b45309 35%, var(--ide-border));
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ide-highlight) 55%, transparent);
+  color: inherit;
+  font-size: var(--ide-fs-sm);
+}
+
+.git-identity-warning[hidden] {
+  display: none;
+}
+
 .git-group-header button,
 .git-file-label + button,
 .git-group-header .icon-btn,

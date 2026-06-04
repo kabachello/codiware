@@ -2,12 +2,14 @@
 import { Icon } from '../core/Icon.js';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus, onOpenDiff }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff, user = {}, hasGitIdentity = true }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
     this.bus = bus;
     this.onOpenDiff = onOpenDiff; // Callback: (path, staged, diffData) => void
+    this.user = user || {};
+    this.hasGitIdentity = Boolean(hasGitIdentity);
     bus.on('file:saved', () => this.refresh());
   }
 
@@ -26,6 +28,14 @@ export class GitPanel {
       this.pullBtn
     );
 
+    this.identityWarning = null;
+    if (this._isIdentityMissing()) {
+      this.identityWarning = el('div', 'git-identity-warning');
+      const warningIcon = Icon.render('fa fa-exclamation-triangle');
+      warningIcon.setAttribute('aria-hidden', 'true');
+      this.identityWarning.append(warningIcon, document.createTextNode(this.i18n.t('git.identity_missing_warning') || 'Git user name or email is missing. Commits may fail.'));
+    }
+
     this.msg = document.createElement('textarea');
     this.msg.placeholder = this.i18n.t('git.commit_message');
     this.msg.rows = 2;
@@ -40,7 +50,9 @@ export class GitPanel {
 
     this.body = el('div');
 
-    host.append(toolbar, this.msg, commitRow, this.body);
+    host.append(toolbar);
+    if (this.identityWarning) host.append(this.identityWarning);
+    host.append(this.msg, commitRow, this.body);
     // Helper for toolbar buttons (matches FileTree)
     function tbBtn(icon, title, onClick) {
       const b = document.createElement('button');
@@ -108,6 +120,12 @@ export class GitPanel {
     const files = Array.isArray(status?.files) ? status.files : [];
     const hasSomethingToCommit = files.some((f) => f && (f.untracked || f.changed || f.staged));
     this.commitBtn.classList.toggle('primary', hasSomethingToCommit);
+  }
+
+  _isIdentityMissing() {
+    const missingName = (this.user?.name || '').trim() === '';
+    const missingEmail = (this.user?.email || '').trim() === '';
+    return !this.hasGitIdentity || missingName || missingEmail;
   }
 
   render(s) {

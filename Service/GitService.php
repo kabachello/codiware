@@ -144,16 +144,15 @@ final class GitService
             $args[] = '-m';
             $args[] = $message;
         }
-        if ($authorName !== null && $authorName !== '' && $authorEmail !== null && $authorEmail !== '') {
-            $args[] = '--author=' . $authorName . ' <' . $authorEmail . '>';
-        }
-        $env = [];
-        if ($authorName !== null && $authorEmail !== null) {
-            $env['GIT_AUTHOR_NAME'] = $authorName;
-            $env['GIT_AUTHOR_EMAIL'] = $authorEmail;
-            $env['GIT_COMMITTER_NAME'] = $authorName;
-            $env['GIT_COMMITTER_EMAIL'] = $authorEmail;
-        }
+        $authorName = $authorName ?? '';
+        $authorEmail = $authorEmail ?? '';
+        // Always pass identity via env so git never falls back to local/global config.
+        $env = [
+            'GIT_AUTHOR_NAME' => $authorName,
+            'GIT_AUTHOR_EMAIL' => $authorEmail,
+            'GIT_COMMITTER_NAME' => $authorName,
+            'GIT_COMMITTER_EMAIL' => $authorEmail,
+        ];
         $out = $this->run($root, $args, env: $env);
         return ['message' => trim($out)];
     }
