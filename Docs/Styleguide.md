@@ -28,11 +28,18 @@ The layout is similar to Visual Studio Code:
 * left sidebar with tabs for multiple panels: explorer, git, search
 * right sidebar - optional, only for additional features in the future
 * main content with tabbed editora
+* bottom panel with tabs for tools like console, previews and future integrations
 * footer with global state information like username
 
 ## Panels
 
-All sidebar panels should look and feel similar. 
+All sidebar and bottom panels should look and feel similar. 
+
+Bottom panel behavior:
+
+* supports multiple tabs, similar to the left sidebar
+* can be collapsed to a narrow stripe that still shows tab names
+* clicking a tab in collapsed mode expands the panel and opens that tab
 
 ### Lists and hierarchies 
 

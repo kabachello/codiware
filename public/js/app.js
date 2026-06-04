@@ -5,6 +5,7 @@ import { I18n } from './core/I18n.js';
 import { Toasts } from './core/Toasts.js';
 import { LayoutManager } from './layout/LayoutManager.js';
 import { PanelManager } from './layout/PanelManager.js';
+import { BottomPanelManager } from './layout/BottomPanelManager.js';
 import { EditorRegistry } from './editors/EditorRegistry.js';
 import { monacoEditorDescriptor } from './editors/MonacoEditor.js';
 import { markdownEditorDescriptor } from './editors/MarkdownEditor.js';
@@ -58,6 +59,7 @@ async function main() {
   const root = document.getElementById('codiware-root');
   const layout = new LayoutManager(root, { i18n, state, bus });
   layout.build();
+  ensureBottomLayoutCompatibility(layout);
   layout.setWorkspaceLabel(workspace.label || workspace.alias || workspace.path || '');
   layout.setStatusLeft(workspace.alias || '', 'fa fa-folder-open');
   layout.setStatusRight(`Codiware IDE • ${boot.user?.name || ''}`);
@@ -74,6 +76,38 @@ async function main() {
     contentEl: layout.slots.sidebarContent,
     i18n,
   });
+  const bottomSlots = ensureBottomPanelSlots(layout);
+  const bottomPanels = new BottomPanelManager({
+    tabsEl: bottomSlots.tabsEl,
+    contentEl: bottomSlots.contentEl,
+    layout,
+  });
+
+  const bottomCollapseBtn = document.createElement('button');
+  bottomCollapseBtn.type = 'button';
+  bottomCollapseBtn.className = 'ide-bottom-collapse';
+  const collapseLabel = i18n.t('actions.collapse');
+  const collapseTitle = collapseLabel && collapseLabel !== 'actions.collapse' ? collapseLabel : 'Collapse panel';
+  const expandTitle = 'Expand panel';
+
+  const updateBottomToggleIcon = () => {
+    const isCollapsed = layout.isBottomCollapsed();
+    const title = isCollapsed ? expandTitle : collapseTitle;
+    bottomCollapseBtn.title = title;
+    bottomCollapseBtn.setAttribute('aria-label', title);
+    bottomCollapseBtn.replaceChildren(Icon.render(isCollapsed ? 'fa fa-angle-up' : 'fa fa-angle-down'));
+  };
+
+  bottomCollapseBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (layout.isBottomCollapsed()) layout.expandBottom(220);
+    else layout.collapseBottom();
+    updateBottomToggleIcon();
+  });
+  bottomSlots.tabsEl.append(bottomCollapseBtn);
+  new MutationObserver(() => updateBottomToggleIcon())
+    .observe(layout.slots.bottomPanel, { attributes: true, attributeFilter: ['class'] });
+  updateBottomToggleIcon();
 
   const panelByRequestPath = (path) => {
     if (typeof path !== 'string') return null;
@@ -162,13 +196,23 @@ async function main() {
     }).mount(host),
   });
 
-  // Bottom console
+  // Bottom tabs
   if (boot.features?.console !== false) {
-    const consolePanel = new ConsolePanel({ api, i18n, toasts });
-    consolePanel.mount(layout.slots.bottomPanel);
+    const consoleLabel = i18n.t('console.title');
+    bottomPanels.register('console', {
+      label: consoleLabel && consoleLabel !== 'console.title' ? consoleLabel : 'Console',
+      icon: 'fa fa-terminal',
+      mount: (host) => {
+        const consolePanel = new ConsolePanel({ api, i18n, toasts });
+        consolePanel.mount(host);
+      },
+    });
+
+    // Ensure initial state is always a populated collapsed stripe.
+    
   }
 
-  // Toolbar: theme toggle + console toggle + save
+  // Toolbar: theme toggle + bottom panel toggle + save
   const themeBtn = document.createElement('button');
   themeBtn.append(Icon.render('fa fa-adjust'));
   themeBtn.title = 'Toggle theme';
@@ -177,15 +221,12 @@ async function main() {
     document.documentElement.dataset.theme = next;
     applyTheme(next);
   });
-  const consoleBtn = document.createElement('button');
-  consoleBtn.append(Icon.render('fa fa-terminal'));
-  consoleBtn.title = i18n.t('console.title');
-  consoleBtn.addEventListener('click', () => layout.toggleBottom(220));
   const saveBtn = document.createElement('button');
   saveBtn.append(Icon.render('fa fa-floppy-o'), withLabel(i18n.t('actions.save')));
   saveBtn.title = i18n.t('actions.save');
   saveBtn.addEventListener('click', () => tabs.saveActive());
-  layout.slots.titleRight.append(saveBtn, consoleBtn, themeBtn);
+  layout.slots.titleRight.append(saveBtn);
+  layout.slots.titleRight.append(themeBtn);
 
   // Global save shortcut
   window.addEventListener('keydown', (e) => {
@@ -211,6 +252,80 @@ function applyTheme(theme) {
   if (light) light.disabled = theme !== 'light';
   if (dark) dark.disabled = theme !== 'dark';
   if (toastuiDark) toastuiDark.disabled = theme !== 'dark';
+}
+
+function ensureBottomLayoutCompatibility(layout) {
+  const STRIPE_HEIGHT = 32;
+
+  const getMain = () => layout.root.querySelector('.ide-main');
+  const getBottom = () => layout.slots.bottomPanel;
+  const getSplitter = () => layout.slots.bottomSplitter || layout.root.querySelector('.ide-main > .ide-splitter');
+
+  if (typeof layout.expandBottom !== 'function') {
+    layout.expandBottom = (px = 220) => {
+      const main = getMain();
+      const bottom = getBottom();
+      const splitter = getSplitter();
+      const height = Math.max(STRIPE_HEIGHT + 40, px || 220);
+
+      if (main) {
+        main.classList.add('has-bottom');
+        main.style.gridTemplateRows = `1fr 5px ${height}px`;
+      }
+      if (splitter) splitter.style.display = '';
+      if (bottom) bottom.classList.remove('is-collapsed');
+
+      layout.bottomHeight = height;
+    };
+  }
+  if (typeof layout.collapseBottom !== 'function') {
+    layout.collapseBottom = () => {
+      const main = getMain();
+      const bottom = getBottom();
+      const splitter = getSplitter();
+
+      if (main) {
+        main.classList.remove('has-bottom');
+        main.style.gridTemplateRows = `1fr ${STRIPE_HEIGHT}px`;
+      }
+      if (splitter) splitter.style.display = 'none';
+      if (bottom) bottom.classList.add('is-collapsed');
+    };
+  }
+  if (typeof layout.isBottomCollapsed !== 'function') {
+    layout.isBottomCollapsed = () => getBottom()?.classList.contains('is-collapsed') === true;
+  }
+  if (typeof layout.toggleBottom !== 'function') {
+    layout.toggleBottom = (defaultHeight = 220) => {
+      if (layout.isBottomCollapsed()) layout.expandBottom(defaultHeight);
+      else layout.collapseBottom();
+    };
+  }
+}
+
+function ensureBottomPanelSlots(layout) {
+  if (layout.slots.bottomTabs && layout.slots.bottomContent) {
+    return { tabsEl: layout.slots.bottomTabs, contentEl: layout.slots.bottomContent };
+  }
+
+  const bottom = layout.slots.bottomPanel;
+  let tabsEl = bottom.querySelector(':scope > .ide-bottom-tabs');
+  let contentEl = bottom.querySelector(':scope > .ide-bottom-content');
+
+  if (!tabsEl) {
+    tabsEl = document.createElement('div');
+    tabsEl.className = 'ide-bottom-tabs';
+    bottom.prepend(tabsEl);
+  }
+  if (!contentEl) {
+    contentEl = document.createElement('div');
+    contentEl.className = 'ide-bottom-content';
+    bottom.append(contentEl);
+  }
+
+  layout.slots.bottomTabs = tabsEl;
+  layout.slots.bottomContent = contentEl;
+  return { tabsEl, contentEl };
 }
 
 function createGitFooterStatus({ api, i18n, repoName, onOpenPanel }) {

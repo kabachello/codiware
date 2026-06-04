@@ -13,7 +13,9 @@ export class LayoutManager {
     this.bus = bus;
     this.slots = {};
     this.sidebarWidth = 260;
-    this.bottomHeight = 0;
+    this.bottomHeight = 220;
+    this.bottomCollapsed = true;
+    this.bottomStripHeight = 32;
   }
 
   build() {
@@ -53,7 +55,13 @@ export class LayoutManager {
     const splitterY = el('div', 'ide-splitter');
     splitterY.style.cursor = 'row-resize';
     const bottom = el('div', 'ide-bottom');
+    const bottomTabs = el('div', 'ide-bottom-tabs');
+    const bottomContent = el('div', 'ide-bottom-content');
+    bottom.append(bottomTabs, bottomContent);
     this.slots.bottomPanel = bottom;
+    this.slots.bottomTabs = bottomTabs;
+    this.slots.bottomContent = bottomContent;
+    this.slots.bottomSplitter = splitterY;
 
     main.append(editorArea, splitterY, bottom);
     body.append(sidebar, splitterX, main);
@@ -68,7 +76,7 @@ export class LayoutManager {
     this.root.append(title, body, status);
 
     // Default layout state
-    this.setBottomHeight(0);
+    this.collapseBottom();
 
     // Sidebar resize
     attachSplitter(splitterX, {
@@ -88,7 +96,7 @@ export class LayoutManager {
       onResize: {
         invert: true,
         getSize: () => this.bottomHeight,
-        apply: (px) => this.setBottomHeight(Math.max(0, Math.min(window.innerHeight - 200, px)))
+        apply: (px) => this.expandBottom(Math.max(this.bottomStripHeight + 40, Math.min(window.innerHeight - 200, px)))
       }
     });
   }
@@ -107,19 +115,52 @@ export class LayoutManager {
   setStatusRight(text) { this.slots.statusRight.textContent = text; }
 
   setBottomHeight(px) {
-    this.bottomHeight = px;
-    const main = this.root.querySelector('.ide-main');
-    if (px <= 0) {
-      main.classList.remove('has-bottom');
-      main.style.gridTemplateRows = '1fr 0 0';
-    } else {
-      main.classList.add('has-bottom');
-      main.style.gridTemplateRows = `1fr 5px ${px}px`;
+    if (px <= this.bottomStripHeight) {
+      this.collapseBottom();
+      return;
     }
+    this.expandBottom(px);
   }
 
   toggleBottom(defaultHeight = 220) {
-    this.setBottomHeight(this.bottomHeight > 0 ? 0 : defaultHeight);
+    if (this.bottomCollapsed) this.expandBottom(defaultHeight);
+    else this.collapseBottom();
+  }
+
+  isBottomCollapsed() {
+    return this.bottomCollapsed;
+  }
+
+  collapseBottom() {
+    this.bottomCollapsed = true;
+    this._applyBottomState();
+  }
+
+  expandBottom(px = 220) {
+    this.bottomCollapsed = false;
+    this.bottomHeight = Math.max(this.bottomStripHeight + 40, px || this.bottomHeight || 220);
+    this._applyBottomState();
+  }
+
+  _applyBottomState() {
+    const main = this.root.querySelector('.ide-main');
+    const splitter = this.slots.bottomSplitter;
+    const bottom = this.slots.bottomPanel;
+
+    if (this.bottomCollapsed) {
+      main.classList.remove('has-bottom');
+      // When collapsed, the splitter is hidden, so use a two-row grid to avoid
+      // the bottom panel being placed into the (0px) splitter row by auto-flow.
+      main.style.gridTemplateRows = `1fr ${this.bottomStripHeight}px`;
+      splitter.style.display = 'none';
+      bottom.classList.add('is-collapsed');
+      return;
+    }
+
+    main.classList.add('has-bottom');
+    main.style.gridTemplateRows = `1fr 5px ${this.bottomHeight}px`;
+    splitter.style.display = '';
+    bottom.classList.remove('is-collapsed');
   }
 }
 

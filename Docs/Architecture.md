@@ -12,7 +12,7 @@ The package itself owns only IDE concerns: static assets, file operations, Git o
 - Mounted in any host application as one middleware that handles only the configured `codiware/*` URL prefix and passes all other requests onward.
 - Initial IDE entry always uses a `repo/{path}` URL, where the path resolves to an allowed workspace root.
 - Works on PHP 8.2+ on Windows and Linux.
-- Provides a modern IDE layout with type-specific editors, tab restoration, file tree, Git side panel, bottom search and console panels, toast notifications, skins, translations, and dark mode.
+- Provides a modern IDE layout with type-specific editors, tab restoration, file tree, Git side panel, a tabbed bottom panel (console first, extensible for previews and graphs), toast notifications, skins, translations, and dark mode.
 - Keeps ExFace integration in the separate `axenox/ide` package; this package remains framework-neutral.
 
 ## System Context
