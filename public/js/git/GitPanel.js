@@ -19,10 +19,11 @@ export class GitPanel {
     const toolbar = el('div');
     toolbar.className = 'panel-toolbar';
     this.pushBtn = tbBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push());
+    this.pullBtn = tbBtn('fa fa-cloud-download', this.i18n.t('git.pull'), () => this.pull());
     toolbar.append(
       tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
       this.pushBtn,
-      tbBtn('fa fa-cloud-download', this.i18n.t('git.pull'), () => this.pull())
+      this.pullBtn
     );
 
     this.msg = document.createElement('textarea');
@@ -62,6 +63,7 @@ export class GitPanel {
       const data = await this.api.get('/git/status');
       this.bus?.emit?.('git:status-updated', data);
       this._updatePushButton(data);
+      this._updatePullButton(data);
       this._updateCommitButton(data);
       this.render(data);
     } catch (e) {
@@ -70,20 +72,34 @@ export class GitPanel {
   }
 
   _updatePushButton(status) {
-    if (!this.pushBtn) return;
-    const hasCommitsToPush = Number(status?.ahead || 0) > 0;
-    this.pushBtn.classList.toggle('primary', hasCommitsToPush);
+    const ahead = Number(status?.ahead || 0);
+    this._updateSyncButton(this.pushBtn, this.i18n.t('git.push'), ahead);
+  }
 
-    let label = this.pushBtn.querySelector('.tb-btn-label');
-    if (hasCommitsToPush) {
+  _updatePullButton(status) {
+    const behind = Number(status?.behind || 0);
+    this._updateSyncButton(this.pullBtn, this.i18n.t('git.pull'), behind);
+  }
+
+  _updateSyncButton(button, baseLabel, count) {
+    if (!button) return;
+    const hasWork = count > 0;
+    button.classList.toggle('primary', hasWork);
+
+    let label = button.querySelector('.tb-btn-label');
+    if (hasWork) {
       if (!label) {
         label = document.createElement('span');
         label.className = 'tb-btn-label';
-        this.pushBtn.append(label);
+        button.append(label);
       }
-      label.textContent = this.i18n.t('git.push');
-    } else if (label) {
-      label.remove();
+      label.textContent = `${baseLabel} (${count})`;
+      button.title = `${baseLabel} (${count})`;
+      button.setAttribute('aria-label', `${baseLabel} (${count})`);
+    } else {
+      if (label) label.remove();
+      button.title = baseLabel;
+      button.setAttribute('aria-label', baseLabel);
     }
   }
 
