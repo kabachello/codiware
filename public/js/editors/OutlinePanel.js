@@ -97,6 +97,11 @@ export class OutlinePanel {
     const symbols = [];
     const SymbolKind = this._monaco.languages.SymbolKind;
 
+    // SQL outline is comment-driven: every comment-starting line becomes an item.
+    if (language === 'sql') {
+      return this._parseSqlCommentSymbols(content, SymbolKind);
+    }
+
     const patterns = {
       php: [
         // Classes (with optional abstract/final)
@@ -182,6 +187,119 @@ export class OutlinePanel {
     return symbols;
   }
 
+  /**
+   * Build an outline for SQL files from comments.
+   * - Every line that starts with a single-line comment marker is listed.
+   * - Multi-line block comments are represented once by their first line.
+   * - Captions are truncated to a single short line for compact display.
+   */
+  _parseSqlCommentSymbols(content, SymbolKind) {
+    const lines = content.split('\n');
+    const symbols = [];
+    const maxLen = 30;
+    let inBlockComment = false;
+
+    const toSingleLine = (text) => {
+      const normalized = (text || '').replace(/\s+/g, ' ').trim();
+      if (!normalized) return '';
+      if (normalized.length <= maxLen) return normalized;
+      return normalized.slice(0, maxLen).trimEnd() + '...';
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] || '';
+      const lineNumber = i + 1;
+      const trimmed = line.trimStart();
+      const firstNonWs = line.length - trimmed.length;
+
+      if (inBlockComment) {
+        if (trimmed.includes('*/')) {
+          inBlockComment = false;
+        }
+        continue;
+      }
+
+      if (trimmed.startsWith('--')) {
+        const raw = trimmed.slice(2);
+        const name = toSingleLine(raw);
+        symbols.push({
+          name,
+          kind: SymbolKind.String,
+          isSqlComment: true,
+          depth: 0,
+          range: {
+            startLineNumber: lineNumber,
+            startColumn: firstNonWs + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.length + 1,
+          },
+          selectionRange: {
+            startLineNumber: lineNumber,
+            startColumn: firstNonWs + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.length + 1,
+          },
+        });
+        continue;
+      }
+
+      if (trimmed.startsWith('#')) {
+        const raw = trimmed.slice(1);
+        const name = toSingleLine(raw);
+        symbols.push({
+          name,
+          kind: SymbolKind.String,
+          isSqlComment: true,
+          depth: 0,
+          range: {
+            startLineNumber: lineNumber,
+            startColumn: firstNonWs + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.length + 1,
+          },
+          selectionRange: {
+            startLineNumber: lineNumber,
+            startColumn: firstNonWs + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.length + 1,
+          },
+        });
+        continue;
+      }
+
+      if (trimmed.startsWith('/*')) {
+        const closeIdx = trimmed.indexOf('*/', 2);
+        const raw = closeIdx >= 0 ? trimmed.slice(2, closeIdx) : trimmed.slice(2);
+        const name = toSingleLine(raw);
+
+        symbols.push({
+          name,
+          kind: SymbolKind.String,
+          isSqlComment: true,
+          depth: 0,
+          range: {
+            startLineNumber: lineNumber,
+            startColumn: firstNonWs + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.length + 1,
+          },
+          selectionRange: {
+            startLineNumber: lineNumber,
+            startColumn: firstNonWs + 1,
+            endLineNumber: lineNumber,
+            endColumn: line.length + 1,
+          },
+        });
+
+        if (closeIdx < 0) {
+          inBlockComment = true;
+        }
+      }
+    }
+
+    return symbols;
+  }
+
   _showEmpty() {
     this._tree.style.display = 'none';
     this._emptyMsg.style.display = '';
@@ -209,8 +327,11 @@ export class OutlinePanel {
       const line = document.createElement('span');
       line.className = 'outline-line';
       line.textContent = sym.range?.startLineNumber || '';
-      
-      item.append(icon, name, line);
+        if (sym.isSqlComment) {
+          item.append(name, line);
+        } else {
+          item.append(icon, name, line);
+        }
       
       item.addEventListener('click', () => this._goToSymbol(sym));
       
