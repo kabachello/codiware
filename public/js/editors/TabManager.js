@@ -56,7 +56,7 @@ export class TabManager {
     close.addEventListener('click', (e) => { e.stopPropagation(); this.close(key); });
 
     tabEl.append(name, dirtyBtn, close);
-    tabEl.addEventListener('click', () => this.activate(key));
+    this._bindTabInteractions(tabEl, key);
     this.tabBar.appendChild(tabEl);
 
     // Build editor host (dedicated div per tab, hidden when not active)
@@ -129,6 +129,19 @@ export class TabManager {
     } catch (e) {
       this.toasts.error(e.message);
     }
+  }
+
+  _bindTabInteractions(tabEl, key) {
+    tabEl.addEventListener('click', () => this.activate(key));
+    tabEl.addEventListener('mousedown', (e) => {
+      // Prevent browser autoscroll indicator on middle click.
+      if (e.button === 1) e.preventDefault();
+    });
+    tabEl.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      this.close(key);
+    });
   }
 
   saveActive() { if (this.active) return this.save(this.active); }
@@ -221,7 +234,7 @@ export class TabManager {
     close.addEventListener('click', (e) => { e.stopPropagation(); this.close(key); });
 
     tabEl.append(name, dirtyBtn, close);
-    tabEl.addEventListener('click', () => this.activate(key));
+    this._bindTabInteractions(tabEl, key);
     this.tabBar.appendChild(tabEl);
 
     // Build editor host
