@@ -189,6 +189,12 @@ export class FileTree {
         await setOpen(!li.classList.contains('open'));
       });
 
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this._selectRow(row);
+        this._openMenuAt(e.clientX, e.clientY, entry);
+      });
+
       this._setupDropTarget(li, row, entry);
     } else {
       const file = Icon.render(this._iconForFile(entry.name));
@@ -201,6 +207,12 @@ export class FileTree {
         if (e.target.closest('.row-actions')) return;
         this._selectRow(row);
         this.onOpen?.(entry);
+      });
+
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this._selectRow(row);
+        this._openMenuAt(e.clientX, e.clientY, entry);
       });
     }
 
@@ -361,25 +373,34 @@ export class FileTree {
   }
 
   _openMenu(anchor, entry) {
+    PopupMenu.open(anchor, this._menuItemsForEntry(entry));
+  }
+
+  _openMenuAt(x, y, entry) {
+    PopupMenu.openAt(x, y, this._menuItemsForEntry(entry));
+  }
+
+  _menuItemsForEntry(entry) {
     const t = (k) => this.i18n.t(k);
-    const items = entry.type === 'dir'
-      ? [
-          { icon: 'fa fa-file-o', label: t('files.new_file_here'), onClick: () => this._createPrompt(entry.path, 'file') },
-          { icon: 'fa fa-folder', label: t('files.new_folder_here'), onClick: () => this._createPrompt(entry.path, 'dir') },
-          { sep: true },
-          { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
-          { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
-          { sep: true },
-          { icon: 'fa fa-upload', label: t('files.upload'), onClick: () => this._uploadInto(entry.path) },
-          { icon: 'fa fa-file-archive-o', label: t('files.download_zip'), onClick: () => this._download(entry) },
-        ]
-      : [
-          { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
-          { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
-          { sep: true },
-          { icon: 'fa fa-download', label: t('files.download'), onClick: () => this._download(entry) },
-        ];
-    PopupMenu.open(anchor, items);
+    if (entry.type === 'dir') {
+      return [
+        { icon: 'fa fa-file-o', label: t('files.new_file_here'), onClick: () => this._createPrompt(entry.path, 'file') },
+        { icon: 'fa fa-folder', label: t('files.new_folder_here'), onClick: () => this._createPrompt(entry.path, 'dir') },
+        { sep: true },
+        { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
+        { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
+        { sep: true },
+        { icon: 'fa fa-upload', label: t('files.upload'), onClick: () => this._uploadInto(entry.path) },
+        { icon: 'fa fa-file-archive-o', label: t('files.download_zip'), onClick: () => this._download(entry) },
+      ];
+    }
+
+    return [
+      { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
+      { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
+      { sep: true },
+      { icon: 'fa fa-download', label: t('files.download'), onClick: () => this._download(entry) },
+    ];
   }
 
   // ---- Actions ----------------------------------------------------------
@@ -538,6 +559,11 @@ const PopupMenu = {
   current: null,
 
   open(anchor, items) {
+    const rect = anchor.getBoundingClientRect();
+    PopupMenu.openAt(rect.right, rect.bottom + 2, items, { flipYFrom: rect.top - 2 });
+  },
+
+  openAt(x, y, items, options = {}) {
     PopupMenu.close();
     const menu = document.createElement('div');
     menu.className = 'codiware-popup-menu';
@@ -566,21 +592,21 @@ const PopupMenu = {
     }
     document.body.appendChild(menu);
 
-    // Position below the anchor; flip up if it would overflow the viewport.
-    const rect = anchor.getBoundingClientRect();
+    // Position near cursor/anchor; flip and clamp to keep the menu on-screen.
     const mw = menu.offsetWidth;
     const mh = menu.offsetHeight;
-    let left = Math.min(rect.right - mw, window.innerWidth - mw - 4);
+    let left = Math.min(x, window.innerWidth - mw - 4);
     if (left < 4) left = 4;
-    let top = rect.bottom + 2;
+    let top = y;
     if (top + mh > window.innerHeight - 4) {
-      top = Math.max(4, rect.top - mh - 2);
+      const flipYFrom = typeof options.flipYFrom === 'number' ? options.flipYFrom : (y - 4);
+      top = Math.max(4, flipYFrom - mh);
     }
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';
 
     const outside = (e) => {
-      if (!menu.contains(e.target) && e.target !== anchor) PopupMenu.close();
+      if (!menu.contains(e.target)) PopupMenu.close();
     };
     const onKey = (e) => { if (e.key === 'Escape') PopupMenu.close(); };
     const onScroll = () => PopupMenu.close();

@@ -12,17 +12,12 @@
 ### Explorer
 
 * [ ] add duplicate file button
-* [x] add Drag&Drop to move files between folders in the explorer panel
+* [ ] add a "copy path" button
 
 ### Git panel
 
 * [ ] print all git commands and their output in the console automatically, so the user can see the details
 * [ ] if a git command does not work, there is no feedback at all. Perhaps, printing commands to console panel will solve this anyhow. But we will need to open the console panel automatically if something goes wrong.
-
-## Bottom panel
-
-* [ ] Give the panel a title
-* [ ] make bottom panel collapsible. Let a small strip remain visible when collapsed, so a user can expand it manually
 
 ## Editors
 

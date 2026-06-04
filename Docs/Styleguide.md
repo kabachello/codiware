@@ -71,6 +71,8 @@ Each list item inside a sidebar has its own small toolbar, displayed on the righ
 
 The Inline toolbar can show up to 2 most important buttons and the three-dot menu. The menu will hold all buttons, that did not fit.
 
+List items in sidebar trees also support a right-click context menu. This context menu must expose the same item-level actions as the inline toolbar/menu for that item.
+
 ## Editor tabs
 
 The main editor area has tabs for opened files.
