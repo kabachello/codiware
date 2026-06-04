@@ -12,6 +12,7 @@
       var base = (b.url_base || '/').replace(/\/$/, '');
       var assetsApp = base + b.url_to_app.replace(/\/$/, '');
       var assetsNpm = base + b.url_to_npm.replace(/\/$/, ''); 
+      var assetVersion = '20260604-1';
 
       function css(href, id, disabled) {
         var l = document.createElement('link');
@@ -19,12 +20,12 @@
         if (disabled) l.disabled = true;
         document.head.appendChild(l);
       }
-      css(assetsNpm + '/font-awesome/css/font-awesome.min.css', 'codiware-css-fa');
-      css(assetsApp + '/css/base.css', 'codiware-css-base');
-      css(assetsApp + '/css/theme-light.css', 'codiware-css-light');
-      css(assetsApp + '/css/theme-dark.css', 'codiware-css-dark', true);
-      css(assetsNpm + '/toast-ui--editor/dist/toastui-editor.css', 'codiware-css-toastui');
-      css(assetsNpm + '/toast-ui--editor/dist/theme/toastui-editor-dark.css', 'codiware-css-toastui-dark', true);
+      css(assetsNpm + '/font-awesome/css/font-awesome.min.css?v=' + assetVersion, 'codiware-css-fa');
+      css(assetsApp + '/css/base.css?v=' + assetVersion, 'codiware-css-base');
+      css(assetsApp + '/css/theme-light.css?v=' + assetVersion, 'codiware-css-light');
+      css(assetsApp + '/css/theme-dark.css?v=' + assetVersion, 'codiware-css-dark', true);
+      css(assetsNpm + '/toast-ui--editor/dist/toastui-editor.css?v=' + assetVersion, 'codiware-css-toastui');
+      css(assetsNpm + '/toast-ui--editor/dist/theme/toastui-editor-dark.css?v=' + assetVersion, 'codiware-css-toastui-dark', true);
       window.CODIWARE_ASSET_BASE_APP = assetsApp;
       window.CODIWARE_ASSET_BASE_NPM = assetsNpm;
     })();
@@ -38,7 +39,7 @@
     (function () {
       var s = document.createElement('script');
       s.type = 'module';
-      s.src = window.CODIWARE_ASSET_BASE_APP + '/js/app.js';
+      s.src = window.CODIWARE_ASSET_BASE_APP + '/js/app.js?v=20260604-1';
       document.body.appendChild(s);
     })();
   </script>

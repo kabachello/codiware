@@ -123,6 +123,19 @@ textarea { font-family: var(--ide-font-mono); }
   font-family: var(--ide-font-mono);
 }
 
+.ide-status-git-token {
+  font-family: var(--ide-font-mono);
+}
+
+.ide-status-git-token.is-alert {
+  color: #ff4d4f;
+  font-weight: 700;
+}
+
+.ide-status-git-main.is-alert {
+  background: color-mix(in srgb, #ff4d4f 18%, transparent);
+}
+
 .ide-status-git-refresh.is-spinning .ide-icon {
   animation: ide-spin 0.8s linear;
 }

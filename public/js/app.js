@@ -59,8 +59,8 @@ async function main() {
   const layout = new LayoutManager(root, { i18n, state, bus });
   layout.build();
   layout.setWorkspaceLabel(workspace.label || workspace.alias || workspace.path || '');
-  layout.setStatusLeft(workspace.alias || '', workspace.is_git ? 'fa fa-code-fork' : 'fa fa-folder');
-  layout.setStatusRight(`Codiware • ${boot.user?.name || ''}`);
+  layout.setStatusLeft(workspace.alias || '', 'fa fa-folder-open');
+  layout.setStatusRight(`Codiware IDE • ${boot.user?.name || ''}`);
 
   // Tabs + panels
   const tabs = new TabManager({
@@ -243,14 +243,34 @@ function createGitFooterStatus({ api, i18n, repoName, onOpenPanel }) {
   });
   mainBtn.addEventListener('click', () => onOpenPanel?.());
 
+  function renderStatusTokens(container, entries) {
+    container.replaceChildren();
+    entries.forEach(([label, value], index) => {
+      if (index > 0) {
+        container.append(document.createTextNode(' '));
+      }
+      const token = document.createElement('span');
+      token.className = 'ide-status-git-token';
+      token.textContent = `${label}${value}`;
+      token.classList.toggle('is-alert', Number(value) > 0);
+      container.append(token);
+    });
+  }
+
   function updateFromStatus(status) {
     if (!status) return;
     const counts = summarizeGitStatus(status);
-    aheadBehindEl.textContent = `+${status.ahead || 0} -${status.behind || 0}`;
-    countsEl.textContent = `M${counts.changed} D${counts.deleted} ?${counts.untracked} S${counts.staged}`;
+    const ahead = Number(status.ahead || 0);
+    const behind = Number(status.behind || 0);
+    const hasAheadBehind = ahead > 0 || behind > 0;
+    const hasCounts = counts.changed > 0 || counts.deleted > 0 || counts.untracked > 0 || counts.staged > 0;
+
+    renderStatusTokens(aheadBehindEl, [['+', ahead], ['-', behind]]);
+    renderStatusTokens(countsEl, [['M', counts.changed], ['D', counts.deleted], ['?', counts.untracked], ['S', counts.staged]]);
+    mainBtn.classList.toggle('is-alert', hasAheadBehind || hasCounts);
     const title = [
       `${repoName}`,
-      `Ahead: ${status.ahead || 0}  Behind: ${status.behind || 0}`,
+      `Ahead: ${ahead}  Behind: ${behind}`,
       `${i18n.t('git.changes')}: ${counts.changed}`,
       `${i18n.t('git.deleted')}: ${counts.deleted}`,
       `${i18n.t('git.untracked')}: ${counts.untracked}`,
