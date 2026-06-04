@@ -317,7 +317,7 @@ textarea { font-family: var(--ide-font-mono); }
 }
 
 .ide-bottom-tabs button[data-panel].active {
-  background: var(--ide-panel-bg);
+  background: var(--ide-bg);
   border-bottom-color: var(--ide-accent);
 }
 
@@ -372,11 +372,6 @@ textarea { font-family: var(--ide-font-mono); }
   border-radius: 0;
   padding: 6px 10px;
   line-height: 1.4;
-}
-
-.ide-bottom.is-collapsed .ide-bottom-tabs button[data-panel].active {
-  background: var(--ide-panel-bg);
-  border-bottom-color: var(--ide-accent);
 }
 
 .ide-bottom.is-collapsed .ide-bottom-collapse {
