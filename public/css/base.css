@@ -342,6 +342,14 @@ textarea { font-family: var(--ide-font-mono); }
   line-height: 1;
 }
 .panel-toolbar .tb-btn:hover { background: var(--ide-btn-hover); }
+.panel-toolbar .tb-btn.primary {
+  background: var(--ide-accent);
+  color: var(--ide-accent-fg);
+  border: 1px solid var(--ide-accent);
+}
+.panel-toolbar .tb-btn.primary:hover {
+  background: color-mix(in srgb, var(--ide-accent) 88%, black);
+}
 
 .codiware-popup-menu {
   position: fixed;

@@ -18,9 +18,10 @@ export class GitPanel {
     // Use the same toolbar structure and classes as the explorer panel
     const toolbar = el('div');
     toolbar.className = 'panel-toolbar';
+    this.pushBtn = tbBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push());
     toolbar.append(
       tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
-      tbBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push()),
+      this.pushBtn,
       tbBtn('fa fa-cloud-download', this.i18n.t('git.pull'), () => this.pull())
     );
 
@@ -32,10 +33,9 @@ export class GitPanel {
     const commitRow = el('div');
     commitRow.style.display = 'flex'; commitRow.style.gap = '4px'; commitRow.style.marginTop = '4px';
     commitRow.classList.add('panel-toolbar');
-    const commitBtn = btn(this.i18n.t('git.commit'), () => this.commit(false));
-    commitBtn.classList.add('primary');
+    this.commitBtn = btn(this.i18n.t('git.commit'), () => this.commit(false));
     const amendBtn = btn(this.i18n.t('git.amend'), () => this.commit(true));
-    commitRow.append(commitBtn, amendBtn);
+    commitRow.append(this.commitBtn, amendBtn);
 
     this.body = el('div');
 
@@ -61,10 +61,37 @@ export class GitPanel {
     try {
       const data = await this.api.get('/git/status');
       this.bus?.emit?.('git:status-updated', data);
+      this._updatePushButton(data);
+      this._updateCommitButton(data);
       this.render(data);
     } catch (e) {
       this.body.textContent = e.message;
     }
+  }
+
+  _updatePushButton(status) {
+    if (!this.pushBtn) return;
+    const hasCommitsToPush = Number(status?.ahead || 0) > 0;
+    this.pushBtn.classList.toggle('primary', hasCommitsToPush);
+
+    let label = this.pushBtn.querySelector('.tb-btn-label');
+    if (hasCommitsToPush) {
+      if (!label) {
+        label = document.createElement('span');
+        label.className = 'tb-btn-label';
+        this.pushBtn.append(label);
+      }
+      label.textContent = this.i18n.t('git.push');
+    } else if (label) {
+      label.remove();
+    }
+  }
+
+  _updateCommitButton(status) {
+    if (!this.commitBtn) return;
+    const files = Array.isArray(status?.files) ? status.files : [];
+    const hasSomethingToCommit = files.some((f) => f && (f.untracked || f.changed || f.staged));
+    this.commitBtn.classList.toggle('primary', hasSomethingToCommit);
   }
 
   render(s) {
