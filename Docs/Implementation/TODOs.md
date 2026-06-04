@@ -1,7 +1,7 @@
 ## Global
 
 * [ ] add a help icon at the top right button bar. It should open a cheat sheet with all keyboard shortcuts
-* [ ] Add an outline for JSON
+* [x] Add an outline for JSON
 
 ## Side panels
 
@@ -13,8 +13,6 @@
 
 * [ ] add duplicate file button
 * [x] add Drag&Drop to move files between folders in the explorer panel
-* [ ] Bug: ToastUI editor does not load if opening a file after an other 
-  editor was opened previously
 
 ### Git panel
 
@@ -26,14 +24,6 @@
 * [ ] Give the panel a title
 * [ ] make bottom panel collapsible. Let a small strip remain visible when collapsed, so a user can expand it manually
 
-## Footer
-
-* [x] On the right there is already a repo name
-    * [x] add ahead/behind counters
-    * [x] add number of changed, deleted untracked and staged files
-    * [x] open git panel on click
-    * [ ] Make the number for ahead/behind, modifications, untracked files, etc. in the footer stand out if they are not 0. E.g. make the bold red.
-
 ## Editors
 
 ### Markdown
@@ -41,7 +31,7 @@
 * [ ] bug: Icons in toolbar disappear on hover
 * [ ] clicking a search result will open the editor, but not navigate to the correct line. In fact, no line numbers are visible at all. Maybe the search should always open Monaco instead of the file type editor?
 * [ ] make the top toolbar smaller. It is to high and its icons are much bigger than ours
-* [ ] bug: in dark mode the scrollbara are white and look ugly
+* [ ] bug: in dark mode the scrollbars are white and look ugly
 
 ### Monaco editor
 

@@ -102,6 +102,11 @@ export class OutlinePanel {
       return this._parseSqlCommentSymbols(content, SymbolKind);
     }
 
+    // JSON outline shows only top-level object keys.
+    if (language === 'json') {
+      return this._parseJsonTopLevelKeys(content, SymbolKind);
+    }
+
     const patterns = {
       php: [
         // Classes (with optional abstract/final)
@@ -300,6 +305,310 @@ export class OutlinePanel {
     return symbols;
   }
 
+  /**
+   * Build an outline for JSON files from top-level object keys.
+   */
+  _parseJsonTopLevelKeys(content, SymbolKind) {
+    const trimmed = content.trimStart();
+    if (!trimmed.startsWith('{')) {
+      return [];
+    }
+
+    const symbols = [];
+    let rowsSymbolIndex = -1;
+    let i = 0;
+    let line = 1;
+    let col = 1;
+    let objectDepth = 0;
+    let expectingTopKey = false;
+
+    const len = content.length;
+
+    const advance = () => {
+      const ch = content[i];
+      i += 1;
+      if (ch === '\n') {
+        line += 1;
+        col = 1;
+      } else {
+        col += 1;
+      }
+      return ch;
+    };
+
+    const skipWhitespace = () => {
+      while (i < len) {
+        const ch = content[i];
+        if (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n') {
+          advance();
+          continue;
+        }
+        break;
+      }
+    };
+
+    const parseStringToken = () => {
+      if (content[i] !== '"') return null;
+      const startLine = line;
+      const startCol = col;
+      advance(); // opening quote
+
+      let value = '';
+      let escaped = false;
+
+      while (i < len) {
+        const ch = advance();
+        if (escaped) {
+          value += ch;
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          return { value, startLine, startCol, endLine: line, endCol: col };
+        }
+        value += ch;
+      }
+
+      return null;
+    };
+
+    while (i < len) {
+      skipWhitespace();
+      if (i >= len) break;
+
+      const ch = content[i];
+
+      if (ch === '{') {
+        advance();
+        objectDepth += 1;
+        if (objectDepth === 1) {
+          expectingTopKey = true;
+        }
+        continue;
+      }
+
+      if (ch === '}') {
+        advance();
+        if (objectDepth === 1) {
+          expectingTopKey = false;
+        }
+        objectDepth = Math.max(0, objectDepth - 1);
+        continue;
+      }
+
+      if (ch === ',') {
+        advance();
+        if (objectDepth === 1) {
+          expectingTopKey = true;
+        }
+        continue;
+      }
+
+      if (expectingTopKey && objectDepth === 1 && ch === '"') {
+        const keyToken = parseStringToken();
+        if (!keyToken) break;
+
+        const afterKeyLine = line;
+        const afterKeyCol = col;
+        skipWhitespace();
+
+        if (content[i] === ':') {
+          const symbol = {
+            name: keyToken.value,
+            kind: SymbolKind.Property,
+            depth: 0,
+            range: {
+              startLineNumber: keyToken.startLine,
+              startColumn: keyToken.startCol,
+              endLineNumber: keyToken.endLine,
+              endColumn: keyToken.endCol,
+            },
+            selectionRange: {
+              startLineNumber: keyToken.startLine,
+              startColumn: keyToken.startCol,
+              endLineNumber: keyToken.endLine,
+              endColumn: keyToken.endCol,
+            },
+          };
+          if (keyToken.value === 'rows') {
+            rowsSymbolIndex = symbols.length;
+          }
+          symbols.push(symbol);
+          expectingTopKey = false;
+          advance(); // ':'
+          continue;
+        }
+
+        // Invalid key token position: restore to continue scanning safely.
+        line = afterKeyLine;
+        col = afterKeyCol;
+        continue;
+      }
+
+      if (ch === '"') {
+        // Skip non-key strings safely.
+        parseStringToken();
+        continue;
+      }
+
+      advance();
+    }
+
+    return this._appendRowsExportSummaryItems(content, symbols, rowsSymbolIndex, SymbolKind);
+  }
+
+  _appendRowsExportSummaryItems(content, symbols, rowsSymbolIndex, SymbolKind) {
+    if (rowsSymbolIndex < 0) {
+      return symbols;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return symbols;
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Array.isArray(parsed.rows)) {
+      return symbols;
+    }
+
+    const values = parsed.rows
+      .map((row) => {
+        if (!row || typeof row !== 'object') {
+          return undefined;
+        }
+        return Object.prototype.hasOwnProperty.call(row, '_EXPORT_SUMMARY') ? row._EXPORT_SUMMARY : undefined;
+      })
+      .filter((value) => value !== undefined && value !== null);
+
+    if (values.length === 0) {
+      return symbols;
+    }
+
+    const truncate = (value) => {
+      const text = String(value).replace(/\s+/g, ' ').trim();
+      if (text.length <= 30) {
+        return text;
+      }
+      return text.slice(0, 30).trimEnd() + '...';
+    };
+
+    const rowsRange = this._findTopLevelRowsArrayRange(content);
+    if (!rowsRange) {
+      return symbols;
+    }
+
+    const occurrences = [];
+    const regex = /"_EXPORT_SUMMARY"\s*:/g;
+    regex.lastIndex = rowsRange.start;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      if (match.index > rowsRange.end) {
+        break;
+      }
+      const before = content.slice(0, match.index);
+      const startLineNumber = before.split('\n').length;
+      const startColumn = match.index - before.lastIndexOf('\n');
+      occurrences.push({ startLineNumber, startColumn });
+    }
+
+    if (occurrences.length === 0) {
+      return symbols;
+    }
+
+    const count = Math.min(values.length, occurrences.length);
+    const children = [];
+    for (let i = 0; i < count; i++) {
+      const pos = occurrences[i];
+      children.push({
+        name: truncate(values[i]).trimStart(),
+        kind: SymbolKind.String,
+        isPlainTextItem: true,
+        depth: 1,
+        range: {
+          startLineNumber: pos.startLineNumber,
+          startColumn: pos.startColumn,
+          endLineNumber: pos.startLineNumber,
+          endColumn: pos.startColumn + 1,
+        },
+        selectionRange: {
+          startLineNumber: pos.startLineNumber,
+          startColumn: pos.startColumn,
+          endLineNumber: pos.startLineNumber,
+          endColumn: pos.startColumn + 1,
+        },
+      });
+    }
+
+    symbols.splice(rowsSymbolIndex + 1, 0, ...children);
+    return symbols;
+  }
+
+  _findTopLevelRowsArrayRange(content) {
+    const rowsKeyMatch = /"rows"\s*:/g.exec(content);
+    if (!rowsKeyMatch) {
+      return null;
+    }
+
+    let i = rowsKeyMatch.index + rowsKeyMatch[0].length;
+    const len = content.length;
+
+    while (i < len && /\s/.test(content[i])) {
+      i++;
+    }
+    if (content[i] !== '[') {
+      return null;
+    }
+
+    const start = i;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (; i < len; i++) {
+      const ch = content[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === '[') {
+        depth++;
+        continue;
+      }
+
+      if (ch === ']') {
+        depth--;
+        if (depth === 0) {
+          return { start, end: i };
+        }
+      }
+    }
+
+    return null;
+  }
+
   _showEmpty() {
     this._tree.style.display = 'none';
     this._emptyMsg.style.display = '';
@@ -327,7 +636,7 @@ export class OutlinePanel {
       const line = document.createElement('span');
       line.className = 'outline-line';
       line.textContent = sym.range?.startLineNumber || '';
-        if (sym.isSqlComment) {
+        if (sym.isSqlComment || sym.isPlainTextItem) {
           item.append(name, line);
         } else {
           item.append(icon, name, line);
