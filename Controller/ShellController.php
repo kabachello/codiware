@@ -79,6 +79,7 @@ final class ShellController
                 'git' => (bool)$this->config->get('GIT.ENABLED', true),
                 'console' => (bool)$this->config->get('CONSOLE.ENABLED', true),
             ],
+            'cache_bust' => $this->config->get('CACHE_BUST', ''),
         ]);
 
         return $this->responses->raw(200, $html, 'text/html; charset=utf-8', [

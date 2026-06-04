@@ -2,6 +2,87 @@
  * Markdown editor using Toast UI Editor.
  * Provides a rich WYSIWYG editing experience with split markdown/preview modes.
  */
+
+let toastUiEditorCtorPromise = null;
+const loadedClassicToastUiSources = new Set();
+
+function resolveAssetUrl(path, fallbackBase) {
+  if (!path) return path;
+  if (/^(https?:)?\/\//i.test(path) || path.startsWith('/')) return path;
+  const base = (window.CODIWARE_BOOT?.url_base || fallbackBase || '').replace(/\/$/, '');
+  return `${base}/${path.replace(/^\//, '')}`;
+}
+
+function extractEditorCtor(mod) {
+  const candidates = [
+    mod,
+    mod?.default,
+    mod?.Editor,
+    mod?.default?.Editor,
+    window.toastui?.Editor,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'function') return candidate;
+  }
+  return null;
+}
+
+function loadClassicScript(src) {
+  if (window.toastui?.Editor) return Promise.resolve();
+  if (loadedClassicToastUiSources.has(src)) return Promise.resolve();
+
+  return fetch(src)
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error('Failed to load Toast UI script: ' + src + ' (' + res.status + ')');
+      }
+      return res.text();
+    })
+    .then((code) => {
+      // Evaluate in function scope with local define/exports/module shadows so
+      // UMD picks the global branch without mutating window.define.
+      const evaluator = new Function(
+        'window',
+        'self',
+        'globalThis',
+        `${"var define, exports, module;\n"}${code}\n//# sourceURL=${src}`
+      );
+      evaluator.call(window, window, window, window);
+      loadedClassicToastUiSources.add(src);
+    });
+}
+
+async function loadToastUiEditorCtor() {
+  if (toastUiEditorCtorPromise) return toastUiEditorCtorPromise;
+
+  toastUiEditorCtorPromise = (async () => {
+    const assetBase = window.CODIWARE_ASSET_BASE_NPM || '/codiware/assets';
+    const includeRaw = window.CODIWARE_BOOT?.extensions?.['codiware.markdown']?.['INCLUDES.EDITOR_JS'] || assetBase + '/toast-ui--editor/dist/esm/index.js';
+    const include = resolveAssetUrl(includeRaw, assetBase);
+
+    if (window.toastui?.Editor) return window.toastui.Editor;
+
+    const looksLikeUmd = /toastui-editor-all\.min\.js(?:\?.*)?$/i.test(include) || /(?:^|\/)umd(?:\/|$)/i.test(include);
+    if (looksLikeUmd) {
+      await loadClassicScript(include);
+      const ctor = extractEditorCtor(null);
+      if (!ctor) {
+        throw new Error('Failed to initialize Toast UI editor: UMD global not found after script load');
+      }
+      return ctor;
+    }
+
+    const mod = await import(include);
+    const ctor = extractEditorCtor(mod);
+    if (!ctor) {
+      throw new Error('Failed to initialize Toast UI editor: editor export not found');
+    }
+    return ctor;
+  })();
+
+  return toastUiEditorCtorPromise;
+}
+
 export class MarkdownEditor {
   constructor(host, ctx) {
     this.host = host;
@@ -51,14 +132,12 @@ export class MarkdownEditor {
     this.editorEl.style.overflow = 'hidden';
     host.appendChild(this.editorEl);
 
-    // Dynamically import Toast UI Editor (ESM bundle has all deps included)
-    const assetBase = window.CODIWARE_ASSET_BASE_NPM || '/codiware/assets';
-    const { default: Editor } = await import(window.CODIWARE_BOOT?.extensions['codiware.markdown']['INCLUDES.EDITOR_JS'] || assetBase + '/toast-ui--editor/dist/esm/index.js');
+    const Editor = await loadToastUiEditorCtor();
 
     // Detect dark mode
     const isDark = document.documentElement.dataset.theme === 'dark';
 
-    this.editor = toastui.Editor.factory({
+    const editorOptions = {
       el: this.editorEl,
       height: '100%',
       initialEditType: 'markdown',
@@ -73,7 +152,11 @@ export class MarkdownEditor {
         ['table', 'link', 'image'],
         ['code', 'codeblock'],
       ],
-    });
+    };
+
+    this.editor = typeof Editor.factory === 'function'
+      ? Editor.factory(editorOptions)
+      : new Editor(editorOptions);
 
     // Wire up change events
     this.editor.on('change', () => {
