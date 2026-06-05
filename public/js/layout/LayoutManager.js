@@ -13,6 +13,8 @@ export class LayoutManager {
     this.bus = bus;
     this.slots = {};
     this.sidebarWidth = 260;
+    this.sidebarCollapsed = false;
+    this.sidebarStripWidth = 44;
     this.bottomHeight = 220;
     this.bottomCollapsed = true;
     this.bottomStripHeight = 32;
@@ -36,6 +38,7 @@ export class LayoutManager {
     // Body
     const body = el('div', 'ide-body');
     body.style.gridTemplateColumns = this.sidebarWidth + 'px 5px 1fr';
+    this.slots.body = body;
     const sidebar = el('aside', 'ide-sidebar');
     const tabs = el('div', 'ide-sidebar-tabs');
     const content = el('div', 'ide-sidebar-content');
@@ -44,6 +47,7 @@ export class LayoutManager {
     this.slots.sidebarContent = content;
 
     const splitterX = el('div', 'ide-splitter');
+    this.slots.sidebarSplitter = splitterX;
     const main = el('section', 'ide-main');
     const editorArea = el('div', 'ide-editor-area');
     const tabBar = el('div', 'ide-tabs');
@@ -85,7 +89,7 @@ export class LayoutManager {
         getSize: () => this.sidebarWidth,
         apply: (px) => {
           this.sidebarWidth = Math.max(160, Math.min(600, px));
-          body.style.gridTemplateColumns = this.sidebarWidth + 'px 5px 1fr';
+          this._applySidebarState();
         }
       }
     });
@@ -113,6 +117,34 @@ export class LayoutManager {
     this.slots.statusLeft.append(t);
   }
   setStatusRight(text) { this.slots.statusRight.textContent = text; }
+
+  setSidebarWidth(px) {
+    if (px <= this.sidebarStripWidth) {
+      this.collapseSidebar();
+      return;
+    }
+    this.expandSidebar(px);
+  }
+
+  toggleSidebar(defaultWidth = 260) {
+    if (this.sidebarCollapsed) this.expandSidebar(defaultWidth);
+    else this.collapseSidebar();
+  }
+
+  isSidebarCollapsed() {
+    return this.sidebarCollapsed;
+  }
+
+  collapseSidebar() {
+    this.sidebarCollapsed = true;
+    this._applySidebarState();
+  }
+
+  expandSidebar(px = 260) {
+    this.sidebarCollapsed = false;
+    this.sidebarWidth = Math.max(160, Math.min(600, px || this.sidebarWidth || 260));
+    this._applySidebarState();
+  }
 
   setBottomHeight(px) {
     if (px <= this.bottomStripHeight) {
@@ -161,6 +193,28 @@ export class LayoutManager {
     main.style.gridTemplateRows = `1fr 5px ${this.bottomHeight}px`;
     splitter.style.display = '';
     bottom.classList.remove('is-collapsed');
+  }
+
+  _applySidebarState() {
+    const body = this.slots.body;
+    const sidebar = this.root.querySelector('.ide-sidebar');
+    const splitter = this.slots.sidebarSplitter;
+
+    if (!body || !sidebar || !splitter) return;
+
+    if (this.sidebarCollapsed) {
+      // When collapsed, the splitter is hidden, so use a two-column grid to
+      // avoid the main area (and its bottom panel) being auto-placed into the
+      // now-empty splitter track by grid auto-flow.
+      body.style.gridTemplateColumns = `${this.sidebarStripWidth}px 1fr`;
+      splitter.style.display = 'none';
+      sidebar.classList.add('is-collapsed');
+      return;
+    }
+
+    body.style.gridTemplateColumns = `${this.sidebarWidth}px 5px 1fr`;
+    splitter.style.display = '';
+    sidebar.classList.remove('is-collapsed');
   }
 }
 

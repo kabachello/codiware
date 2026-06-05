@@ -5,7 +5,7 @@
 
 ## Side panels
 
-* [ ] add a right-click menu to files and folders in the explorer for all button operations
+* [x] add a right-click menu to files and folders in the explorer for all button operations
 * [x] add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished.
 * [ ] make Panels collapsible
 

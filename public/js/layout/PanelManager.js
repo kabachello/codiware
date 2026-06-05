@@ -4,12 +4,19 @@ import { Icon } from '../core/Icon.js';
  * Sidebar panel manager: registers named panels (files/git/search) and switches between them.
  */
 export class PanelManager {
-  constructor({ tabsEl, contentEl, i18n }) {
+  constructor({ tabsEl, contentEl, i18n, layout }) {
     this.tabsEl = tabsEl;
     this.contentEl = contentEl;
     this.i18n = i18n;
+    this.layout = layout;
     this.panels = new Map();
     this.active = null;
+
+    this.tabsEl.addEventListener('click', (event) => {
+      if (!this.layout || !this.layout.isSidebarCollapsed?.()) return;
+      if (event.target instanceof HTMLButtonElement) return;
+      if (this.active) this.layout.expandSidebar();
+    });
   }
 
   register(id, { label, icon, mount, onActivate }) {
@@ -19,8 +26,10 @@ export class PanelManager {
     btn.title = label;
     btn.setAttribute('aria-label', label);
     btn.append(Icon.render(icon));
-    btn.addEventListener('click', () => this.activate(id));
-    this.tabsEl.appendChild(btn);
+    btn.addEventListener('click', () => this.activate(id, { expand: true }));
+    const collapseBtn = this.tabsEl.querySelector('.ide-sidebar-collapse');
+    if (collapseBtn) this.tabsEl.insertBefore(btn, collapseBtn);
+    else this.tabsEl.appendChild(btn);
 
     const host = document.createElement('div');
     host.style.display = 'none';
@@ -44,10 +53,10 @@ export class PanelManager {
       mounted: false,
       busyCount: 0,
     });
-    if (this.active === null) this.activate(id);
+    if (this.active === null) this.activate(id, { expand: false });
   }
 
-  activate(id) {
+  activate(id, { expand = true, width = 260 } = {}) {
     const panel = this.panels.get(id);
     if (!panel) return;
     for (const p of this.panels.values()) {
@@ -60,6 +69,7 @@ export class PanelManager {
       catch (e) { console.error('[PanelManager] mount', id, e); }
     }
     this.active = id;
+    if (expand && this.layout) this.layout.expandSidebar(width);
     if (typeof panel.onActivate === 'function') {
       try { panel.onActivate({ firstActivation }); }
       catch (e) { console.error('[PanelManager] onActivate', id, e); }

@@ -75,6 +75,7 @@ async function main() {
     tabsEl: layout.slots.sidebarTabs,
     contentEl: layout.slots.sidebarContent,
     i18n,
+    layout,
   });
   const bottomSlots = ensureBottomPanelSlots(layout);
   const bottomPanels = new BottomPanelManager({
@@ -108,6 +109,29 @@ async function main() {
   new MutationObserver(() => updateBottomToggleIcon())
     .observe(layout.slots.bottomPanel, { attributes: true, attributeFilter: ['class'] });
   updateBottomToggleIcon();
+
+  const sidebarCollapseBtn = document.createElement('button');
+  sidebarCollapseBtn.type = 'button';
+  sidebarCollapseBtn.className = 'ide-sidebar-collapse';
+
+  const updateSidebarToggleIcon = () => {
+    const isCollapsed = layout.isSidebarCollapsed();
+    const title = isCollapsed ? expandTitle : collapseTitle;
+    sidebarCollapseBtn.title = title;
+    sidebarCollapseBtn.setAttribute('aria-label', title);
+    sidebarCollapseBtn.replaceChildren(Icon.render(isCollapsed ? 'fa fa-angle-right' : 'fa fa-angle-left'));
+  };
+
+  sidebarCollapseBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (layout.isSidebarCollapsed()) layout.expandSidebar(260);
+    else layout.collapseSidebar();
+    updateSidebarToggleIcon();
+  });
+  layout.slots.sidebarTabs.append(sidebarCollapseBtn);
+  new MutationObserver(() => updateSidebarToggleIcon())
+    .observe(layout.root.querySelector('.ide-sidebar'), { attributes: true, attributeFilter: ['class'] });
+  updateSidebarToggleIcon();
 
   const panelByRequestPath = (path) => {
     if (typeof path !== 'string') return null;

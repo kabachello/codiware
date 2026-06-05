@@ -41,6 +41,12 @@ Bottom panel behavior:
 * can be collapsed to a narrow stripe that still shows tab names
 * clicking a tab in collapsed mode expands the panel and opens that tab
 
+Sidebar behavior:
+
+* left and right sidebars can be collapsed to a narrow stripe that still shows panel tab icons
+* each sidebar has a collapse/expand toggle button with the same visual language as the bottom panel toggle
+* clicking a sidebar tab in collapsed mode expands the sidebar and opens that tab
+
 ### Lists and hierarchies 
 
 Sidebar panels contain hierarchical lists. On top of each list there is a toolbar with global buttons, applicable without selecting a list item.

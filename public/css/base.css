@@ -178,9 +178,61 @@ textarea { font-family: var(--ide-font-mono); }
   background: var(--ide-bg);
   border-bottom-color: var(--ide-accent);
 }
+
+.ide-sidebar-collapse {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  border-radius: 3px;
+  padding: 4px 8px;
+  line-height: 1;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ide-sidebar-collapse:hover {
+  background: var(--ide-btn-hover);
+}
 .ide-sidebar-content {
   flex: 1; overflow: auto;
   padding: 4px;
+}
+
+.ide-sidebar.is-collapsed .ide-sidebar-tabs {
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: 0;
+  height: 100%;
+  padding: 4px 0;
+}
+
+.ide-sidebar.is-collapsed .ide-sidebar-tabs button {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 8px 0;
+  border-bottom: 0;
+  border-left: 2px solid transparent;
+}
+
+.ide-sidebar.is-collapsed .ide-sidebar-tabs button.active {
+  border-bottom-color: transparent;
+  border-left-color: var(--ide-accent);
+}
+
+.ide-sidebar.is-collapsed .ide-sidebar-tabs .ide-sidebar-collapse {
+  margin-left: 0;
+  margin-top: 0;
+  margin-bottom: 4px;
+  order: -1;
+  width: 100%;
+  border-left: 0;
+  padding: 8px 0;
+}
+
+.ide-sidebar.is-collapsed .ide-sidebar-content {
+  display: none;
 }
 
 .ide-sidebar-panel-host {
