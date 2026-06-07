@@ -1,23 +1,20 @@
 ## Global
 
 * [ ] add a help icon at the top right button bar. It should open a cheat sheet with all keyboard shortcuts
-* [x] Add an outline for JSON
-
-## Side panels
-
-* [x] add a right-click menu to files and folders in the explorer for all button operations
-* [x] add a busy indicator to the sidebar while waiting for a request to the server. E.g. when a commit or push is on the way, there is no feedback, that the operation is still not finished.
-* [ ] make Panels collapsible
 
 ### Explorer
 
 * [ ] add duplicate file button
 * [ ] add a "copy path" button
 
+## Console
+
+- Rebuild the console panel using xterm.js and symfony console in the backend. Make the console write output line-by-line - see working example in WebConsoleFacade.php.
+
 ### Git panel
 
-* [ ] print all git commands and their output in the console automatically, so the user can see the details
-* [ ] if a git command does not work, there is no feedback at all. Perhaps, printing commands to console panel will solve this anyhow. But we will need to open the console panel automatically if something goes wrong.
+- Make all cli commands performed by the user  either directly or via button in the git panel to visible in the console panel including their output. Open the panel automatically if a command from the git panel fails. 
+	- Keep the log of all commands in the console panel as long as the editor UI is opened. 
 
 ## Editors
 
