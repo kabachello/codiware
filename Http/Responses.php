@@ -116,6 +116,25 @@ final class Responses
         return $response;
     }
 
+    /**
+     * Build a 200 response whose body is produced incrementally by a generator
+     * (or any {@see \Traversable} yielding strings). Used for live command
+     * output: the body is flushed chunk-by-chunk instead of being buffered.
+     *
+     * `X-Accel-Buffering: no` asks reverse proxies (e.g. nginx) not to buffer.
+     */
+    public function streamIterator(\Traversable $iterator, string $contentType = 'text/plain-stream', array $headers = []): ResponseInterface
+    {
+        $response = $this->responseFactory->createResponse(200)
+            ->withHeader('Content-Type', $contentType)
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('X-Accel-Buffering', 'no');
+        foreach ($headers as $name => $value) {
+            $response = $response->withHeader($name, $value);
+        }
+        return $response->withBody(new IteratorStream($iterator));
+    }
+
     public function streamFactory(): StreamFactoryInterface
     {
         return $this->streamFactory;

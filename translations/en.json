@@ -67,7 +67,12 @@
   "console.title": "Console",
   "console.placeholder": "Run a preset or allowed command…",
   "console.run": "Run",
+  "console.stop": "Stop",
   "console.presets": "Presets",
+  "console.idle": "Idle",
+  "console.running": "Running…",
+  "console.failed": "Failed",
+  "console.welcome": "Codiware console. Type an allowed command and press Enter.",
 
   "editor.unsaved": "Unsaved changes",
   "editor.binary": "Cannot edit binary file",

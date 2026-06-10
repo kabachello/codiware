@@ -256,21 +256,34 @@ export class GitPanel {
     const message = this.msg.value.trim();
     if (!message && !amend) { this.toasts.error(this.i18n.t('git.commit_message')); return; }
     try {
-      await this.api.post(amend ? '/git/amend' : '/git/commit', { message });
+      const resp = await this.api.post(amend ? '/git/amend' : '/git/commit', { message });
+      this._injectConsole(resp);
       this.msg.value = '';
       this.toasts.success((amend ? 'Amended' : 'Committed') + ' ✓');
       this.refresh();
-    } catch (e) { this.toasts.error(e.message); }
+    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
   async push() {
-    try { await this.api.post('/git/push', {}); this.toasts.success('Pushed ✓'); this.refresh(); }
-    catch (e) { this.toasts.error(e.message); }
+    try { const resp = await this.api.post('/git/push', {}); this._injectConsole(resp); this.toasts.success('Pushed ✓'); this.refresh(); }
+    catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
   async pull() {
-    try { await this.api.post('/git/pull', {}); this.toasts.success('Pulled ✓'); this.refresh(); }
-    catch (e) { this.toasts.error(e.message); }
+    try { const resp = await this.api.post('/git/pull', {}); this._injectConsole(resp); this.toasts.success('Pulled ✓'); this.refresh(); }
+    catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
+  }
+
+  /** Surface the CLI output embedded in a structured git response in the console. */
+  _injectConsole(resp) {
+    const block = resp?.console;
+    if (block && this.bus) this.bus.emit('console:inject', block);
+  }
+
+  /** Surface the CLI output carried by a failed git request and open the console. */
+  _injectConsoleError(e) {
+    const block = e?.details?.console;
+    if (block && this.bus) this.bus.emit('console:inject', { ...block, ok: false, autoOpen: true });
   }
 }
 

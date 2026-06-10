@@ -17,6 +17,7 @@ use kabachello\Codiware\Http\Responses;
 use kabachello\Codiware\Http\Router;
 use kabachello\Codiware\Service\ConsoleService;
 use kabachello\Codiware\Service\FileService;
+use kabachello\Codiware\Service\GitColorNormalizer;
 use kabachello\Codiware\Service\GitService;
 use kabachello\Codiware\Service\SearchService;
 use kabachello\Codiware\Service\TranslationService;
@@ -141,9 +142,10 @@ final class CodiwareMiddleware implements MiddlewareInterface
     {
         $translations = new TranslationService();
         $fileService = new FileService($this->pathGuard, $this->config);
-        $gitService = new GitService($this->config, $this->logger);
+        $gitColorNormalizer = new GitColorNormalizer();
+        $gitService = new GitService($this->config, $this->logger, $gitColorNormalizer);
         $searchService = new SearchService($this->pathGuard);
-        $consoleService = new ConsoleService($this->config, $this->logger);
+        $consoleService = new ConsoleService($this->config, $this->logger, [$gitColorNormalizer]);
 
         $shell = new ShellController($this->responses, $this->config, $this->workspaces, $this->basePath, $this->user);
         $assets = new AssetController($this->responses);

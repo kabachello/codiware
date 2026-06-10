@@ -223,17 +223,18 @@ async function main() {
   // Bottom tabs
   if (boot.features?.console !== false) {
     const consoleLabel = i18n.t('console.title');
+    // Instantiate eagerly so the panel can subscribe to the bus and receive
+    // injected output (e.g. from the Git panel) even before it is first opened.
+    // The xterm terminal itself is created lazily on first mount.
+    const consolePanel = new ConsolePanel({
+      api, i18n, toasts, bus,
+      open: () => bottomPanels.activate('console', { expand: true }),
+    });
     bottomPanels.register('console', {
       label: consoleLabel && consoleLabel !== 'console.title' ? consoleLabel : 'Console',
       icon: 'fa fa-terminal',
-      mount: (host) => {
-        const consolePanel = new ConsolePanel({ api, i18n, toasts });
-        consolePanel.mount(host);
-      },
+      mount: (host) => consolePanel.mount(host),
     });
-
-    // Ensure initial state is always a populated collapsed stripe.
-    
   }
 
   // Toolbar: theme toggle + bottom panel toggle + save

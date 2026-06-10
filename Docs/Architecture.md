@@ -129,6 +129,7 @@ src/
     JsonResponder.php
     ErrorResponder.php
     StaticAssetResponder.php
+    IteratorStream.php
   Controller/
     ShellController.php
     AssetController.php
@@ -148,6 +149,8 @@ src/
     GitService.php
     SearchService.php
     ConsoleService.php
+    CommandNormalizerInterface.php
+    GitColorNormalizer.php
     TranslationService.php
 public/
   index.html
@@ -264,10 +267,36 @@ The search panel stays open while files are opened from results. Opening a resul
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/console/presets` | Returns configured command presets. |
-| `POST` | `/console/run` | Runs an allowed command in an allowed root/path and streams or polls output. |
-| `POST` | `/console/stop` | Stops a running command process when supported. |
+| `POST` | `/console/run` | Runs an allowed command and streams its output incrementally. |
 
 Console commands are denied by default. A command is allowed only when it matches a configured allow-pattern or exactly matches a configured preset. Presets are inserted into the front-end console input but are not executed automatically, so users can edit them before submitting.
+
+#### Streaming model
+
+The console renders with [xterm.js](https://xtermjs.org/) on the front-end and streams output line-by-line from the back-end. `POST /console/run` returns a `text/plain-stream` response whose body is an `Http\IteratorStream` backed by a PHP generator (`ConsoleService::stream()`). The generator drives a `symfony/process` process started with `Process::fromShellCommandline(...)->start()` and yields each incremental output buffer as it arrives, preserving ANSI color codes verbatim. This mirrors the model proven in ExFace's `WebConsoleFacade` / `IteratorStream`, but Codiware ships its own framework-neutral copy and does not depend on `exface/core`.
+
+There is **no** `/console/stop` endpoint. Stopping is performed by the client aborting the `/console/run` request via an `AbortController`; the emitter stops reading the stream, the generator is destroyed and `symfony/process` terminates the process. The process lifetime is therefore bound to the single streaming request — no job store, temp files, or PID tracking are needed.
+
+No exit code is printed as terminal text. Running vs. finished vs. failed is reflected through the panel's status badge and the prompt marker color.
+
+#### Command normalizers
+
+Command-family tweaks are applied through injectable `Service\CommandNormalizerInterface` implementations rather than hard-coded in the console core. The default set contains `GitColorNormalizer`, which injects `-c color.ui=always` into `git` commands (plus the process env `FORCE_COLOR=1` / `TERM=xterm-256color`) so Git emits color even over a non-TTY pipe. Future families (Composer, npm) can add their own normalizer without touching the console.
+
+#### Ingestion paths: `run` vs. `inject`
+
+The console is a generic command-output hub with two ingestion paths, both reachable directly and via the event bus (`console:run`, `console:inject`):
+
+- **Streamed (`run`)** — typed/interactive commands run through `POST /console/run` and stream live. No structured result.
+- **Injected (`inject`)** — UI-triggered actions that need a *structured* JSON result (e.g. the Git panel) keep their own endpoint and embed the captured CLI output in the response as a `console` block:
+
+  ```json
+  { "console": { "command": "git push", "output": "<raw output with ANSI>", "exit_code": 0, "ok": true } }
+  ```
+
+  The calling panel reads its structured fields and hands the `console` block to the console (`console.inject(...)` / `console:inject`), which echoes it once after the request resolves. On `ok === false` the console auto-opens. A streaming endpoint cannot also return a clean JSON envelope on the same request, which is why Git stays injected: it needs parsed status fields and PHP exception logging more than live output.
+
+The console module has zero imports from `git/`; the Git panel depends on the console, never the reverse.
 
 Recommended default Git presets:
 
@@ -317,6 +346,7 @@ public/js/
     SearchPanel.js
   console/
     ConsolePanel.js
+    ConsoleClient.js
 ```
 
 ### Layout

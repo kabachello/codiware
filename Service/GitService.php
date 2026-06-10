@@ -19,11 +19,17 @@ final class GitService
 {
     private string $binary;
 
+    private CommandNormalizerInterface $colorNormalizer;
+
     public function __construct(
         private readonly CodiwareConfig $config,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        ?CommandNormalizerInterface $colorNormalizer = null
     ) {
         $this->binary = (string)($config->get('GIT.BINARY', 'git') ?? 'git');
+        // Shared with the console so output captured for injection is colored the
+        // same way as commands typed into the console.
+        $this->colorNormalizer = $colorNormalizer ?? new GitColorNormalizer();
     }
 
     public function isRepository(WorkspaceRoot $root): bool
@@ -153,22 +159,31 @@ final class GitService
             'GIT_COMMITTER_NAME' => $authorName,
             'GIT_COMMITTER_EMAIL' => $authorEmail,
         ];
-        $out = $this->run($root, $args, env: $env);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, $args, $env);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('commit', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     public function push(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
-        $out = $this->run($root, ['push'], expectExit: [0]);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, ['push']);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('push', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     public function pull(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
-        $out = $this->run($root, ['pull'], expectExit: [0]);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, ['pull']);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('pull', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     /**
@@ -195,8 +210,11 @@ final class GitService
             $args[] = '-b';
         }
         $args[] = $branch;
-        $out = $this->run($root, $args);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, $args);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('checkout', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     /**
@@ -232,6 +250,55 @@ final class GitService
     {
         $this->requireRepo($root);
         return $this->run($root, ['show', $commit . ':' . $path]);
+    }
+
+    /**
+     * Run a git command capturing its combined, colored output for display in
+     * the console. Unlike {@see run()} this never throws on a non-zero exit so
+     * callers can decide how to surface failures while still echoing the CLI
+     * output to the user.
+     *
+     * @param string[] $args
+     * @param array<string,string> $env
+     * @return array{command:string,output:string,exit_code:int,ok:bool}
+     */
+    private function consoleCapture(WorkspaceRoot $root, array $args, array $env = []): array
+    {
+        // Force color the same way the console does for typed git commands.
+        $colored = array_merge(['-c', 'color.ui=always'], $args);
+        $process = new Process(array_merge([$this->binary], $colored), $root->path, $env === [] ? null : $env);
+        $process->setTimeout(60);
+        $process->run();
+        $exit = (int)($process->getExitCode() ?? -1);
+        return [
+            'command' => $this->colorNormalizer->normalize(implode(' ', array_merge([$this->binary], $args))),
+            'output' => $process->getOutput() . $process->getErrorOutput(),
+            'exit_code' => $exit,
+            'ok' => $exit === 0,
+        ];
+    }
+
+    /**
+     * Build the exception for a failed console-captured git command. The raw CLI
+     * output is attached as a `console` detail so the front-end can inject it
+     * into the console and auto-open it, while server-side logging is preserved.
+     *
+     * @param array{command:string,output:string,exit_code:int,ok:bool} $console
+     */
+    private function consoleFailure(string $operation, array $console): CodiwareException
+    {
+        $this->logger->warning('git command failed', [
+            'cmd' => $console['command'],
+            'exit' => $console['exit_code'],
+            'output' => $console['output'],
+        ]);
+        $detail = trim($console['output']);
+        return new CodiwareException(
+            'git ' . $operation . ' failed: ' . ($detail !== '' ? $detail : 'exit ' . $console['exit_code']),
+            'git_failed',
+            500,
+            ['exit' => $console['exit_code'], 'console' => $console]
+        );
     }
 
     /**

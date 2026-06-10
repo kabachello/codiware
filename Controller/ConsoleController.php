@@ -36,7 +36,12 @@ final class ConsoleController
         $body = $this->decodeJson($request);
         $command = (string)($body['command'] ?? '');
         $preset = isset($body['preset']) ? (string)$body['preset'] : null;
-        return $this->responses->ok($this->console->run($root, $command, $preset));
+        // Validation runs synchronously inside stream(); a rejected command throws
+        // here and is turned into a JSON error by the middleware before any
+        // streaming body is produced. On success the generator drives the process
+        // and the response body is flushed chunk-by-chunk.
+        $generator = $this->console->stream($root, $command, $preset);
+        return $this->responses->streamIterator($generator);
     }
 
     private function root(ServerRequestInterface $request): WorkspaceRoot
