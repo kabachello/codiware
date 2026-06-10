@@ -17,16 +17,20 @@ The current Codiware console is a minimal request/response shell:
 3. Automatically add `--color` to Git commands so output is colored even when Git would otherwise disable color for non-TTY pipes.
 4. Keep the **deny-by-default allow-regex array** and **command presets** in config, but **inject** them into the console from the outside rather than hard-coding them.
 5. **Do not** print the exit code as terminal text. Indicate *running* vs *finished* (and failed) through dedicated UI state.
-6. Make the console the **central hub for all CLI commands** — anything typed by the user *or* triggered by the UI (Git panel today; Composer, npm, etc. later). The console module must be **self-contained**: the Git panel depends on the console, but the console must not depend on the Git panel.
+6. Make the console the **central hub for all CLI command output** — output of anything typed by the user *or* triggered by the UI (Git panel today; Composer, npm, etc. later) becomes visible there. There are two ingestion paths:
+   - **Streamed**: interactive/typed commands stream live via `POST /console/run` (Symfony Process + generator).
+   - **Injected**: UI-triggered actions that need *structured* results keep their own JSON endpoint (e.g. `/git/*`) and embed the captured CLI output in the response; the calling panel **injects** that output block into the console for display.
+   The console module must be **self-contained**: the Git panel depends on the console, but the console must not depend on the Git panel.
 
 ### Success criteria
 
-- [ ] Running `git status` (typed or via a Git-panel button) streams output incrementally into the xterm terminal with correct colors.
+- [ ] Running `git status` typed into the console streams output incrementally into the xterm terminal with correct colors.
 - [ ] A long-running command shows a clear "running" indicator and can be stopped.
 - [ ] No `[exit N]` line is printed; instead the prompt/status reflects success or failure.
 - [ ] Works on both Windows (`cmd`/PowerShell host) and Linux (`/bin/sh`).
 - [ ] Allowed-command regexes and presets continue to come from `CONSOLE.*` config and are passed into the console service/panel as constructor arguments — no console code references Git-specific config keys.
-- [ ] The Git panel routes its CLI commands through the central console API; failing commands auto-open the console panel.
+- [ ] Git-panel buttons keep calling the structured `/git/*` JSON endpoints; the CLI output embedded in those responses is **injected** into the console, and the panel auto-opens the console when a command fails.
+- [ ] Git/CLI failures still log PHP exceptions server-side (unchanged) while the captured CLI output is surfaced to the user via the console.
 - [ ] All existing command logs remain visible for the lifetime of the open editor session.
 - [ ] Installs and runs after `composer install` with **no `npm install` / build step** (xterm is loaded from `vendor/npm-asset/xterm--xterm`).
 
@@ -47,8 +51,9 @@ App designers and developers working inside the Codiware IDE (standalone and emb
  |    - owns xterm Terminal, FitAddon                        |
  |    - renders streamed chunks verbatim (ANSI preserved)    |
  |    - shows running/finished/failed state                  |
- |    - exposes runCommand(cmd, {label, cwd, presetId})      |
- |    - subscribes to bus 'console:run' requests             |
+ |    - run(cmd, opts)   -> stream via /console/run          |
+ |    - inject(block)    -> echo pre-run CLI output (git)    |
+ |    - subscribes to bus 'console:run' / 'console:inject'   |
  +----------------------------+------------------------------+
                               | ConsoleClient (transport)
                               v
@@ -68,7 +73,41 @@ App designers and developers working inside the Codiware IDE (standalone and emb
  +-----------------------------------------------------------+
 ```
 
-Key principle: **the console is a generic command runner.** The Git panel becomes a *consumer* that asks the console to run a command (via the front-end `bus` event `console:run` and, on the back-end, the same `ConsoleService`). No `git`-specific knowledge lives in the console module; Git specifics (which commands, presets) are injected from the Git feature and from `CONSOLE.*` config.
+Key principle: **the console is a generic command-output hub.** It supports two ingestion paths:
+
+- **Streamed** — typed/interactive commands run through the console's own `POST /console/run` (Symfony Process + generator), streaming live.
+- **Injected** — other features (the Git panel today) keep their structured JSON endpoints and embed a `console` block describing the CLI they executed; the calling panel hands that block to the console via a public `inject()` method.
+
+Either way, no `git`-specific knowledge lives in the console module. The Git panel depends on the console; the console never imports from `git/`.
+
+#### Choosing `run` vs `inject`
+
+Each consumer (the Git panel today; Composer, npm, etc. later) picks one of the two paths. The trade-off:
+
+| Want | Use | How it behaves |
+|---|---|---|
+| Live line-by-line output, long-running or interactive feel, stoppable | **Streamed** `run` (`POST /console/run`) | Request stays open; output streams as the process produces it; "running" indicator; abort to stop. No structured result. |
+| Structured/parsed JSON result + server-side PHP exception handling, output is secondary | **Injected** `inject` (own JSON endpoint + `console` block) | The endpoint runs the command to completion, returns parsed fields *and* the captured CLI output; the console echoes it once, after the AJAX call resolves. No live streaming. |
+
+Notes:
+
+- The two are **not mutually exclusive**: an extension may call a structured endpoint for the result *and* separately stream a related command, if useful.
+- A streamed endpoint **cannot also** return a clean JSON envelope on the same request \u2014 streaming chunks and a single JSON body are incompatible. This is exactly why Git stays **injected**: it needs parsed status fields and PHP exception logging more than live output.
+- Git buttons therefore wait for the whole command before showing output; typed/native console commands stream incrementally. This difference is expected and acceptable.
+
+```text
+ Git panel button ──► GET/POST /git/<op>  (GitController + GitService)
+                         │  runs git via Symfony Process,
+                         │  parses porcelain → structured fields,
+                         │  logs PHP exceptions on failure,
+                         │  captures raw CLI output
+                         ▼
+        JSON: { ...structured..., console: { command, output, exit_code, ok } }
+                         │
+  GitPanel ──────────────┘ reads structured fields for its UI
+     │
+     └─► console.inject(resp.console)   // echo the CLI block, auto-open on failure
+```
 
 ### Streaming transport: reuse ExFace's proven model
 
@@ -104,20 +143,36 @@ Codiware-side implementation: Codiware ships its own small `StreamInterface`/gen
 Front-end:
 
 - New `public/js/console/ConsoleClient.js` — transport only: `fetch()` streaming read of `/console/run`, `AbortController` for stop, `/console/presets`.
-- Rework `public/js/console/ConsolePanel.js` — owns xterm + status; **no Git imports**.
-- `ConsolePanel` listens on `bus` for `console:run` `{ command, label?, cwd?, presetId?, autoOpen? }` and exposes a public `run()` method.
+- Rework `public/js/console/ConsolePanel.js` — owns xterm + status; **no Git imports**. It exposes two public entry points:
+  - `run(command, opts)` — submit to `/console/run` and stream live (for typed commands and future streaming consumers).
+  - `inject(consoleBlock, opts)` — echo an already-executed CLI block (`{ command, output, exit_code, ok }`) returned by another endpoint, without running anything. Used by the Git panel.
+- Both entry points are also reachable via the `bus`: `console:run` `{ command, label?, cwd?, autoOpen? }` and `console:inject` `{ command, output, exit_code, ok, label?, autoOpen? }`. On failure (or `autoOpen`), the panel auto-expands the bottom panel.
 - Allowed patterns/presets are **not** read by the panel; the panel just submits commands and the back-end enforces policy. Presets are fetched generically via `/console/presets`.
 
 Back-end:
 
 - `ConsoleService` keeps receiving `allowPatterns`/`presets`/`timeout` from `CONSOLE.*` config (already does). No Git keys referenced.
-- Add an injectable `CommandNormalizer` list (default includes a `GitColorNormalizer`) so command-family tweaks (git color, future composer/npm flags) are pluggable and the console core stays generic.
+- Add an injectable `CommandNormalizer` list (default includes a `GitColorNormalizer`) so command-family tweaks (git color, future composer/npm flags) are pluggable and the console core stays generic. Normalizers apply to streamed commands; `GitService` can reuse `GitColorNormalizer` so injected output is colored too.
+
+The `console` block embedded by structured endpoints:
+
+```json
+{
+  "console": {
+    "command": "git -c color.ui=always push origin main",
+    "output": "<raw stdout+stderr with ANSI codes>",
+    "exit_code": 0,
+    "ok": true
+  }
+}
+```
 
 Git panel integration:
 
-- `GitPanel` stops calling raw `/git/*` for *mutating CLI* actions it wants visible and instead emits `bus.emit('console:run', { command: 'git ...', label: 'Push', autoOpen: true })`. (Read-only status parsing for the panel UI can stay on `/git/status`.)
-- On command failure the console panel auto-expands the bottom panel.
-- Decision point (Phase 2): which Git actions move to the console (push/pull/fetch/clean — long, log-worthy) vs. stay structured (status/diff parsing the UI needs). Keep structured endpoints for data the panel renders; route user-visible *operations* through the console.
+- `GitPanel` keeps calling the structured `/git/*` JSON endpoints. For operations whose CLI output is worth showing (push, pull, fetch, clean, commit, checkout…), `GitController`/`GitService` capture the raw CLI output and add the `console` block to the existing JSON response.
+- The panel renders its UI from the structured fields and calls `console.inject(resp.console)` (or emits `console:inject`) to surface the CLI output. On `ok === false`, the console auto-opens.
+- **Server-side error handling is unchanged**: `GitService` still throws/logs PHP exceptions on hard failures (e.g. via the injected `LoggerInterface`); the `console` block additionally carries the human-readable CLI output so the user sees *why* it failed without parsing the terminal.
+- The console module stays free of Git specifics; it only knows how to echo a generic `console` block.
 
 ---
 
@@ -148,26 +203,28 @@ Port ExFace's proven streaming pieces into framework-neutral Codiware classes: a
 
 **1.5 xterm front-end shell (Medium).**
 - `ConsoleClient.js` transport: `POST /console/run` read via `fetch()` + `ReadableStream` reader, pushing chunks to a callback; `AbortController` to cancel (= stop). Plus `GET /console/presets`.
-- Rebuild `ConsolePanel.js`: instantiate xterm `Terminal`, load `xterm.css`, fit-to-container, write streamed chunks verbatim (ANSI preserved), input line with history (Up/Down), running/finished/failed status in the header, **no exit-code line**. *Dependency: 1.4.*
+- Rebuild `ConsolePanel.js`: instantiate xterm `Terminal`, load `xterm.css`, fit-to-container, write streamed chunks verbatim (ANSI preserved), input line with history (Up/Down), running/finished/failed status in the header, **no exit-code line**. Implement both `run()` (stream) and `inject()` (echo a pre-executed `console` block). *Dependency: 1.4.*
 
 ### Phase 2: Core functionality — central hub + Git integration
 
 **2.1 Console as bus-driven hub (Small).**
-- `ConsolePanel` subscribes to `bus` `console:run`; exposes public `run()`. Auto-expand bottom panel when `autoOpen` or on failure. *Dependency: 1.5.*
+- `ConsolePanel` subscribes to `bus` `console:run` and `console:inject`; exposes public `run()` and `inject()`. Auto-expand bottom panel when `autoOpen` or on failure. *Dependency: 1.5.*
 
 **2.2 Generic presets UX (Small).**
 - Render presets from `/console/presets` into the input (insert, do not auto-run), per the Architecture spec. Keep preset source in `CONSOLE.PRESETS`. *Dependency: 1.5.*
 
-**2.3 Git panel routes operations through the console (Medium).**
-- Update [public/js/git/GitPanel.js](../../../public/js/git/GitPanel.js): push/pull/fetch/clean (and similar user-visible operations) emit `console:run` with a friendly `label` and `autoOpen: true`; refresh status after completion via the existing `/git/status`.
-- Keep structured `/git/status` and `/git/diff` for panel rendering.
+**2.3 Git endpoints embed CLI output; panel injects it (Medium).**
+- Back-end: in [Service/GitService.php](../../../Service/GitService.php), capture raw CLI output (and exit code) for user-visible operations (push, pull, fetch, clean, commit, checkout). Add a `console` block to the structured JSON returned by the relevant [Controller/GitController.php](../../../Controller/GitController.php) endpoints. Keep throwing/logging PHP exceptions on hard failures (unchanged).
+  - Reuse `GitColorNormalizer` so the captured output is colored.
+- Front-end: in [public/js/git/GitPanel.js](../../../public/js/git/GitPanel.js), keep reading structured fields for the UI; after each operation call `console.inject(resp.console)` (or emit `console:inject`). Open the console on `ok === false`.
+- Keep structured `/git/status` and `/git/diff` purely structured (no console block needed unless useful).
 - Ensure the console module has **zero** imports from `git/`. *Dependency: 2.1.*
 
 **2.4 Command history & persistence (Small).**
 - Keep the full command/output log for the lifetime of the open editor session (in-memory xterm buffer). Persist input history per workspace in `localStorage` (optional). *Dependency: 1.5.*
 
 **2.5 Architecture validation for future extensions (Small).**
-- Confirm a hypothetical Composer/npm consumer can call `bus.emit('console:run', ...)` and add a `CommandNormalizer` without touching console internals. Document the extension contract. *Dependency: 2.1, 1.3.*
+- Confirm a hypothetical Composer/npm consumer can either stream via `console:run` or embed a `console` block + `console:inject`, and add a `CommandNormalizer`, without touching console internals. Document the extension contract. *Dependency: 2.1, 1.3.*
 
 ### Phase 3: Polish, cross-platform, docs
 
@@ -188,7 +245,7 @@ Port ExFace's proven streaming pieces into framework-neutral Codiware classes: a
 - Add/adjust `console.*` keys (run, stop, running, finished, failed, denied, placeholder) in `translations/`. *Dependency: 1.5.*
 
 **3.5 Docs (Small).**
-- Update [Docs/Architecture.md](../../Architecture.md) Console section (generator/`IteratorStream` streaming model, abort-to-stop, normalizers, hub/injection contract). Note the deviation from the existing `/console/stop` / `/console/output` endpoints listed there.
+- Update [Docs/Architecture.md](../../Architecture.md) Console section (generator/`IteratorStream` streaming model, abort-to-stop, normalizers, the two ingestion paths `run`/`inject`, and the `console` block embedded by structured endpoints). Note the deviation from the existing `/console/stop` / `/console/output` endpoints listed there.
 - Tick the relevant items in [Docs/Implementation/TODOs.md](../TODOs.md). *Dependency: all.*
 
 ---
