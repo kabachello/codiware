@@ -21,6 +21,8 @@
 	- make sure command output is colored. For git commands add `--colors` automatically just to be sure. 
 	- keep the logic with an array of allowed regexes for commands in the config
 	- xterm.js is already available in `npm-asssets/xterm--xterm`.
+	- show the command output in the same way, a windows/linux terminal would. Do not print the exit code at the and like the current implementation does.
+	- Clearly indicate if a command is still running or has finished
 - The console should be the central hub für all cli commands sent by the UI or typed by the user. In future, more extensions will use the console: possibly a composer extension, npm, or others. 
 - make sure all code for the console itself is centralized. The git panel should use it, but the console must not depend on the git panel in any way. In particular allowed-command-regex and command presets should be injected from outside
 
