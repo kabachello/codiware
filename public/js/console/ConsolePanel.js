@@ -70,6 +70,7 @@ export class ConsolePanel {
     this.history = this._loadHistory();
     this.historyIndex = this.history.length;
     this.line = '';
+    this.cursor = 0;
     this.running = false;
     this.abort = null;
     this.lastFailed = false;
@@ -159,6 +160,22 @@ export class ConsolePanel {
     });
     this._themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+    // Let the browser handle clipboard shortcuts natively so the console
+    // behaves like a regular terminal: Ctrl/Cmd+V pastes (the resulting
+    // `paste` event is fed back through onData) and Ctrl/Cmd+C copies the
+    // current selection. Returning false tells xterm not to consume the key.
+    this.term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown') return true;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return true;
+      const key = e.key.toLowerCase();
+      if (key === 'v') return false;                         // paste
+      if (key === 'c' && (this.term.hasSelection() || e.shiftKey)) return false; // copy
+      if (key === 'x' && this.term.hasSelection()) return false; // cut (copy)
+      if (key === 'a' && e.shiftKey) return false;           // select all
+      return true;
+    });
+
     this.term.onData((data) => this._onData(data));
 
     this.ready = true;
@@ -206,31 +223,154 @@ export class ConsolePanel {
 
   // --- Input line editing -------------------------------------------------
 
+  /**
+   * Single entry point for all keyboard / paste input from xterm.
+   *
+   * `data` is whatever the terminal emits: a single keypress, a control
+   * sequence (arrow keys, Home/End, …) or a whole chunk of pasted text. We
+   * keep a full line buffer (`this.line`) plus a cursor position
+   * (`this.cursor`) so the line can be edited like in a real terminal:
+   * insert/delete anywhere, move with the arrows, copy a selection, etc.
+   */
   _onData(data) {
     if (this.running) {
-      if (data === '\u0003') this.stop(); // Ctrl+C
+      if (data === '\u0003') this.stop(); // Ctrl+C aborts the running command
       return;
     }
-    if (data === '\x1b[A') { this._historyPrev(); return; }
-    if (data === '\x1b[B') { this._historyNext(); return; }
-    if (data === '\x1b[C' || data === '\x1b[D') return; // ignore left/right
-    for (const ch of data) {
-      if (ch === '\r' || ch === '\n') { this._submitLine(); }
-      else if (ch === '\u007f' || ch === '\b') { this._backspace(); }
-      else if (ch === '\u0003') { this._cancelLine(); }
-      else if (ch.charCodeAt(0) >= 32) { this.line += ch; this.term.write(ch); }
+
+    // Recognised control sequences / shortcuts (each arrives as its own chunk).
+    switch (data) {
+      case '\x1b[A': this._historyPrev(); return;            // Up
+      case '\x1b[B': this._historyNext(); return;            // Down
+      case '\x1b[C': this._cursorRight(); return;            // Right
+      case '\x1b[D': this._cursorLeft(); return;             // Left
+      case '\x1b[H': case '\x1bOH': case '\x1b[1~': case '\x01': // Home / Ctrl+A
+        this._cursorHome(); return;
+      case '\x1b[F': case '\x1bOF': case '\x1b[4~': case '\x05': // End / Ctrl+E
+        this._cursorEnd(); return;
+      case '\x1b[3~': this._deleteAtCursor(); return;        // Delete
+      case '\x15': this._killToStart(); return;              // Ctrl+U
+      case '\x0b': this._killToEnd(); return;                // Ctrl+K
+      case '\x17': case '\x1b\x7f': this._deleteWord(); return; // Ctrl+W / Alt+Backspace
+      default: break;
     }
+
+    // Everything else: a keypress or pasted text. Walk the characters so a
+    // multi-line paste runs each complete line, exactly like a real shell.
+    let chunk = '';
+    const flush = () => { if (chunk) { this._insert(chunk); chunk = ''; } };
+    for (const ch of data) {
+      const code = ch.codePointAt(0);
+      if (ch === '\r' || ch === '\n') { flush(); this._submitLine(); }
+      else if (ch === '\u007f' || ch === '\b') { flush(); this._backspace(); }
+      else if (ch === '\u0003') { flush(); this._copyOrCancel(); }
+      else if (code >= 32 && code !== 127) { chunk += ch; }
+      // Other control characters are ignored.
+    }
+    flush();
   }
 
+  /** Insert `text` at the cursor, redrawing the tail of the line. */
+  _insert(text) {
+    const after = this.line.slice(this.cursor);
+    this.line = this.line.slice(0, this.cursor) + text + after;
+    this.cursor += text.length;
+    this.term.write(text + after);
+    if (after.length) this.term.write('\x1b[' + after.length + 'D');
+  }
+
+  /** Delete the character before the cursor (Backspace). */
   _backspace() {
-    if (this.line.length === 0) return;
-    this.line = this.line.slice(0, -1);
-    this.term.write('\b \b');
+    if (this.cursor === 0) return;
+    const after = this.line.slice(this.cursor);
+    this.line = this.line.slice(0, this.cursor - 1) + after;
+    this.cursor -= 1;
+    this.term.write('\b' + after + ' ' + '\x1b[' + (after.length + 1) + 'D');
+  }
+
+  /** Delete the character at the cursor (Delete key). */
+  _deleteAtCursor() {
+    if (this.cursor >= this.line.length) return;
+    const after = this.line.slice(this.cursor + 1);
+    this.line = this.line.slice(0, this.cursor) + after;
+    this.term.write(after + ' ' + '\x1b[' + (after.length + 1) + 'D');
+  }
+
+  _cursorLeft() {
+    if (this.cursor <= 0) return;
+    this.cursor -= 1;
+    this.term.write('\x1b[D');
+  }
+
+  _cursorRight() {
+    if (this.cursor >= this.line.length) return;
+    this.cursor += 1;
+    this.term.write('\x1b[C');
+  }
+
+  _cursorHome() {
+    if (this.cursor <= 0) return;
+    this.term.write('\x1b[' + this.cursor + 'D');
+    this.cursor = 0;
+  }
+
+  _cursorEnd() {
+    const d = this.line.length - this.cursor;
+    if (d <= 0) return;
+    this.term.write('\x1b[' + d + 'C');
+    this.cursor = this.line.length;
+  }
+
+  /** Ctrl+U: delete everything before the cursor. */
+  _killToStart() {
+    if (this.cursor === 0) return;
+    const n = this.cursor;
+    const after = this.line.slice(this.cursor);
+    this.line = after;
+    this.cursor = 0;
+    this.term.write('\x1b[' + n + 'D' + after + ' '.repeat(n) + '\x1b[' + (after.length + n) + 'D');
+  }
+
+  /** Ctrl+K: delete everything from the cursor to the end of the line. */
+  _killToEnd() {
+    const n = this.line.length - this.cursor;
+    if (n <= 0) return;
+    this.line = this.line.slice(0, this.cursor);
+    this.term.write(' '.repeat(n) + '\x1b[' + n + 'D');
+  }
+
+  /** Ctrl+W / Alt+Backspace: delete the word before the cursor. */
+  _deleteWord() {
+    if (this.cursor === 0) return;
+    let start = this.cursor;
+    while (start > 0 && this.line[start - 1] === ' ') start -= 1;
+    while (start > 0 && this.line[start - 1] !== ' ') start -= 1;
+    const removed = this.cursor - start;
+    const after = this.line.slice(this.cursor);
+    this.line = this.line.slice(0, start) + after;
+    this.cursor = start;
+    this.term.write('\x1b[' + removed + 'D' + after + ' '.repeat(removed)
+      + '\x1b[' + (after.length + removed) + 'D');
+  }
+
+  /** Ctrl+C: copy the active selection if any, otherwise cancel the line. */
+  _copyOrCancel() {
+    if (this.term?.hasSelection?.()) {
+      const sel = this.term.getSelection();
+      if (sel) {
+        try { navigator.clipboard?.writeText(sel); } catch { /* clipboard blocked */ }
+        this.term.clearSelection();
+        return;
+      }
+    }
+    this._cancelLine();
   }
 
   _cancelLine() {
+    this._cursorEnd();
     this.term.write('^C');
     this.line = '';
+    this.cursor = 0;
     this.term.write('\r\n');
     this.promptActive = false;
     this._writePrompt();
@@ -238,16 +378,26 @@ export class ConsolePanel {
 
   _setLine(text) {
     if (!this.term || this.running) return;
-    // Clear the current line content, then write the new text.
-    while (this.line.length > 0) this._backspace();
+    this._clearLine();
     this.line = String(text);
+    this.cursor = this.line.length;
     this.term.write(this.line);
     this.term.focus();
+  }
+
+  /** Visually erase the current input line and reset the buffer. */
+  _clearLine() {
+    this._cursorEnd();
+    const n = this.line.length;
+    if (n > 0) this.term.write('\b'.repeat(n) + ' '.repeat(n) + '\x1b[' + n + 'D');
+    this.line = '';
+    this.cursor = 0;
   }
 
   _submitLine() {
     const cmd = this.line;
     this.line = '';
+    this.cursor = 0;
     this.term.write('\r\n');
     this.promptActive = false;
     const trimmed = cmd.trim();
