@@ -528,7 +528,7 @@ Base styling uses CSS custom properties in `public/css/base.css`. Built-in files
 - `skins/exface-jeasyui.css`
 - `skins/openui5-horizon.css`
 
-The host can select a skin in configuration or by boot metadata. Dark mode can be automatic through `prefers-color-scheme` or explicitly selected by the user and persisted in `localStorage`.
+The host can select a skin in configuration or by boot metadata. Dark mode can be automatic through `prefers-color-scheme` or explicitly selected by the user and persisted globally via `SettingsStore` (see below).
 
 ## Configuration
 
@@ -609,6 +609,18 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
 ```
 
 Per-user state stays in the browser because the Codiware package does not own user sessions. The storage key includes package version, base path, workspace id, and root id to avoid collisions between iframes or host installations.
+
+### SettingsStore
+
+`SettingsStore` (`public/js/core/SettingsStore.js`) is the single abstraction for persistent per-user UI state. It is backed by `localStorage` and offers two scopes:
+
+- **global** – shared across all workspaces of one installation, e.g. the dark/light theme. Keys are `codiware:{basePath}:global:{name}`.
+- **repo** – scoped to a single workspace/repository, e.g. expanded folders in the file tree or panel widths. Keys are `codiware:{basePath}:repo:{workspaceId}:{name}`.
+
+The installation base path namespaces keys so multiple Codiware instances on the same origin do not collide. Values are JSON-encoded and every access is wrapped in try/catch, so the IDE keeps working when storage is unavailable (private mode, quota). The store is exposed as `window.Codiware.settings` for extensions.
+
+`localStorage` is chosen over the alternatives because UI preferences must survive reloads and browser restarts (ruling out `sessionStorage`), are client-only and must not be sent on every request (ruling out cookies), and are small synchronous values that do not need a transactional database (ruling out IndexedDB).
+
 
 ## Security Architecture
 

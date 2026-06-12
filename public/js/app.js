@@ -1,5 +1,6 @@
 import { EventBus } from './core/EventBus.js';
 import { StateStore } from './core/StateStore.js';
+import { SettingsStore } from './core/SettingsStore.js';
 import { ApiClient } from './core/ApiClient.js';
 import { I18n } from './core/I18n.js';
 import { Toasts } from './core/Toasts.js';
@@ -27,9 +28,14 @@ async function main() {
   const basePath = (boot.url_to_api || '/codiware').replace(/\/$/, '');
   const workspace = boot.workspace || {};
 
-  // Theme
-  document.documentElement.dataset.theme = (boot.theme?.default) || 'light';
-  applyTheme(document.documentElement.dataset.theme);
+  // Persistent per-user settings (localStorage). Theme is stored globally,
+  // i.e. shared across all workspaces; other settings may be stored per repo.
+  const settings = new SettingsStore({ install: basePath, workspace: workspace.alias || '' });
+
+  // Theme: prefer the user's saved choice, then the boot default, then light.
+  const initialTheme = settings.getGlobal('theme') || (boot.theme?.default) || 'light';
+  document.documentElement.dataset.theme = initialTheme;
+  applyTheme(initialTheme);
 
   const bus = new EventBus();
   const state = new StateStore({ workspace });
@@ -245,6 +251,7 @@ async function main() {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     applyTheme(next);
+    settings.setGlobal('theme', next);
   });
   const saveBtn = document.createElement('button');
   saveBtn.append(Icon.render('fa fa-floppy-o'), withLabel(i18n.t('actions.save')));
@@ -263,7 +270,7 @@ async function main() {
 
   // Expose minimal extension API on window for late-loading plugins.
   window.Codiware = {
-    api, bus, state, i18n, toasts,
+    api, bus, state, settings, i18n, toasts,
     registerEditor: (d) => registry.register(d),
     openFile: (entry) => tabs.open(entry),
   };
