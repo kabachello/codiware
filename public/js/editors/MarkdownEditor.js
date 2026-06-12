@@ -163,13 +163,17 @@ export class MarkdownEditor {
       this._emit('change');
     });
 
-    // Handle Ctrl+S save request
+    // Handle Ctrl+S save request.
+    // Use the capture phase and stop propagation so the event never reaches
+    // Toast UI's underlying ProseMirror keymap, which otherwise binds Ctrl+S
+    // to insert a code block (`~~~~`) at the caret.
     this.editorEl.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
+        e.stopPropagation();
         this._emit('save-request');
       }
-    });
+    }, true);
 
     // Observe theme changes
     this._themeObserver = new MutationObserver(() => this._applyTheme());
@@ -200,6 +204,15 @@ export class MarkdownEditor {
 
   isDirty() {
     return this.getContent() !== this.originalContent;
+  }
+
+  /**
+   * Move keyboard focus into the editor. No-op while Toast UI is still
+   * initialising. Called when the owning tab is activated so the editor's
+   * Ctrl+S keydown listener targets this document instead of the sidebar.
+   */
+  focus() {
+    this.editor?.focus?.();
   }
 
   markClean() {

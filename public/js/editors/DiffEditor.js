@@ -211,10 +211,17 @@ export class DiffEditor {
       this._updateRevertButtons();
     });
 
-    // Add save shortcut
+    // Scope the save shortcut to this editor instance. `addCommand` registers
+    // on Monaco's shared keybinding service, so with multiple open editors only
+    // the last-registered command fires regardless of focus. `onKeyDown` is
+    // per-instance and routes to the focused tab.
     const modifiedEditor = this._editor.getModifiedEditor();
-    modifiedEditor.addCommand(this._monaco.KeyMod.CtrlCmd | this._monaco.KeyCode.KeyS, () => {
-      this._bus.emit('save-request', this);
+    modifiedEditor.onKeyDown((e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.keyCode === this._monaco.KeyCode.KeyS) {
+        e.preventDefault();
+        e.stopPropagation();
+        this._bus.emit('save-request', this);
+      }
     });
 
     this._dirty = false;
@@ -359,6 +366,15 @@ export class DiffEditor {
   }
 
   isDirty() { return this._dirty; }
+
+  /**
+   * Move keyboard focus into the editable (modified) side of the diff editor.
+   * No-op while Monaco is still loading. Called when the owning tab is
+   * activated so editor shortcuts target this document.
+   */
+  focus() {
+    this._editor?.getModifiedEditor()?.focus();
+  }
 
   markClean() {
     this._dirty = false;

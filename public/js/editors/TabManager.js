@@ -110,6 +110,10 @@ export class TabManager {
     }
     this.active = key;
     this.bus.emit('tab:activated', record);
+    // Move keyboard focus into the editor so shortcuts like Ctrl+S target the
+    // active document instead of staying on the sidebar element that was
+    // clicked last. The editor may still be initialising, so this is optional.
+    record.editor.focus?.();
   }
 
   async save(key) {

@@ -194,8 +194,16 @@ export class MonacoEditor {
       this._bus.emit('change', this);
     });
 
-    this._editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      this._bus.emit('save-request', this);
+    // Scope the save shortcut to this editor instance. Using `addCommand`
+    // registers the keybinding on Monaco's shared keybinding service, so with
+    // multiple open editors only the last-registered command fires regardless
+    // of focus. `onKeyDown` is per-instance and routes to the focused tab.
+    this._editor.onKeyDown((e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.keyCode === monaco.KeyCode.KeyS) {
+        e.preventDefault();
+        e.stopPropagation();
+        this._bus.emit('save-request', this);
+      }
     });
 
     // Listen for goto-line requests dispatched by the search panel.
@@ -269,6 +277,14 @@ export class MonacoEditor {
   }
 
   isDirty() { return this._dirty; }
+
+  /**
+   * Move keyboard focus into the Monaco editor. No-op while Monaco is still
+   * loading. Called when the owning tab is activated so editor shortcuts work.
+   */
+  focus() {
+    this._editor?.focus();
+  }
 
   markClean() {
     this._dirty = false;
