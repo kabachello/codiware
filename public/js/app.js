@@ -63,7 +63,7 @@ async function main() {
 
   // Build chrome.
   const root = document.getElementById('codiware-root');
-  const layout = new LayoutManager(root, { i18n, state, bus });
+  const layout = new LayoutManager(root, { i18n, state, bus, settings });
   layout.build();
   ensureBottomLayoutCompatibility(layout);
   layout.setWorkspaceLabel(workspace.label || workspace.alias || workspace.path || '');

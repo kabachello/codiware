@@ -614,8 +614,8 @@ Per-user state stays in the browser because the Codiware package does not own us
 
 `SettingsStore` (`public/js/core/SettingsStore.js`) is the single abstraction for persistent per-user UI state. It is backed by `localStorage` and offers two scopes:
 
-- **global** – shared across all workspaces of one installation, e.g. the dark/light theme. Keys are `codiware:{basePath}:global:{name}`.
-- **repo** – scoped to a single workspace/repository, e.g. expanded folders in the file tree or panel widths. Keys are `codiware:{basePath}:repo:{workspaceId}:{name}`.
+- **global** – shared across all workspaces of one installation, e.g. the dark/light theme, the sidebar width (`layout.sidebarWidth`) and the bottom panel height (`layout.bottomHeight`). Keys are `codiware:{basePath}:global:{name}`.
+- **repo** – scoped to a single workspace/repository, e.g. expanded folders in the file tree. Keys are `codiware:{basePath}:repo:{workspaceId}:{name}`.
 
 The installation base path namespaces keys so multiple Codiware instances on the same origin do not collide. Values are JSON-encoded and every access is wrapped in try/catch, so the IDE keeps working when storage is unavailable (private mode, quota). The store is exposed as `window.Codiware.settings` for extensions.
 

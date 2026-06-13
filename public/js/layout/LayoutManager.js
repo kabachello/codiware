@@ -6,19 +6,36 @@ import { Icon } from '../core/Icon.js';
  * Exposes named slots for the rest of the app to mount into.
  */
 export class LayoutManager {
-  constructor(rootEl, { i18n, state, bus }) {
+  constructor(rootEl, { i18n, state, bus, settings } = {}) {
     this.root = rootEl;
     this.i18n = i18n;
     this.state = state;
     this.bus = bus;
+    this.settings = settings || null;
     this.slots = {};
-    this.sidebarWidth = 260;
+    this.sidebarWidth = this._restoreSize('layout.sidebarWidth', 260, 160, 600);
     this.sidebarCollapsed = false;
     this.sidebarStripWidth = 44;
-    this.bottomHeight = 220;
+    this.bottomHeight = this._restoreSize('layout.bottomHeight', 220, 72, 2000);
     this.bottomCollapsed = true;
     this.bottomStripHeight = 32;
   }
+
+  /**
+   * Read a globally persisted layout size, clamped to a sane range.
+   *
+   * @param {string} name     Setting name in the global SettingsStore.
+   * @param {number} fallback Default when nothing valid is stored.
+   * @param {number} min      Lower bound.
+   * @param {number} max      Upper bound.
+   * @returns {number}
+   */
+  _restoreSize(name, fallback, min, max) {
+    const saved = this.settings?.getGlobal(name);
+    if (typeof saved !== 'number' || !Number.isFinite(saved)) return fallback;
+    return Math.max(min, Math.min(max, saved));
+  }
+
 
   build() {
     this.root.innerHTML = '';
@@ -90,6 +107,7 @@ export class LayoutManager {
         apply: (px) => {
           this.sidebarWidth = Math.max(160, Math.min(600, px));
           this._applySidebarState();
+          this.settings?.setGlobal('layout.sidebarWidth', this.sidebarWidth);
         }
       }
     });
@@ -100,7 +118,10 @@ export class LayoutManager {
       onResize: {
         invert: true,
         getSize: () => this.bottomHeight,
-        apply: (px) => this.expandBottom(Math.max(this.bottomStripHeight + 40, Math.min(window.innerHeight - 200, px)))
+        apply: (px) => {
+          this.expandBottom(Math.max(this.bottomStripHeight + 40, Math.min(window.innerHeight - 200, px)));
+          this.settings?.setGlobal('layout.bottomHeight', this.bottomHeight);
+        }
       }
     });
   }
