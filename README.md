@@ -22,6 +22,8 @@ workbench) and operate on a configurable set of workspace folders.
 
 - PHP **8.2+**
 - Composer
+- Server Content-Security-Policies must include these:
+  - `font-src data: ; worker-src blob: ;`
 - Optional: a local `git` binary for the source-control panel
 
 ## Install
