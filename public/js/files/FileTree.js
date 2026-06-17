@@ -33,13 +33,14 @@ function cssEscape(value) {
  * download, upload to folder, etc.).
  */
 export class FileTree {
-  constructor({ host, api, i18n, toasts, bus, onOpen, fileIcons }) {
+  constructor({ host, api, i18n, toasts, bus, onOpen, fileIcons, settings }) {
     this.host = host;
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts || { error: (m) => console.error(m), success: () => {} };
     this.bus = bus;
     this.onOpen = onOpen;
+    this.settings = settings || null;
     this.fileIcons = {
       ...DEFAULT_FILE_ICONS,
       ...(fileIcons || {}),
@@ -48,8 +49,10 @@ export class FileTree {
     };
 
     // Paths of folders the user has expanded. Preserved across refreshes so
-    // file operations (create/rename/delete/upload) do not collapse the tree.
-    this.expanded = new Set();
+    // file operations (create/rename/delete/upload) do not collapse the tree,
+    // and persisted in the repo-scoped settings store so they are restored
+    // when the workspace is reopened in a new browser session.
+    this.expanded = new Set(this._loadExpanded());
     this.dragContext = null;
     this.activeDropRow = null;
 
@@ -66,6 +69,19 @@ export class FileTree {
     this.host.appendChild(this.rootUl);
 
     this._setupRootDropTarget();
+  }
+
+  /** Read the persisted set of expanded folder paths from the repo settings. */
+  _loadExpanded() {
+    if (!this.settings) return [];
+    const stored = this.settings.getRepo('tree.expanded', []);
+    return Array.isArray(stored) ? stored.filter((p) => typeof p === 'string') : [];
+  }
+
+  /** Persist the current set of expanded folder paths to the repo settings. */
+  _persistExpanded() {
+    if (!this.settings) return;
+    this.settings.setRepo('tree.expanded', Array.from(this.expanded));
   }
 
   _buildToolbar() {
@@ -103,16 +119,19 @@ export class FileTree {
   async _restoreExpansion() {
     if (this.expanded.size === 0) return;
     const paths = Array.from(this.expanded).sort((a, b) => a.split('/').length - b.split('/').length);
+    let changed = false;
     for (const path of paths) {
       const li = this.rootUl.querySelector(`li[data-path="${cssEscape(path)}"]`);
       if (!li || !li.classList.contains('dir') || typeof li._open !== 'function') {
         this.expanded.delete(path);
+        changed = true;
         continue;
       }
       if (!li.classList.contains('open')) {
         await li._open();
       }
     }
+    if (changed) this._persistExpanded();
   }
 
   async _renderInto(ul, path) {
@@ -180,6 +199,7 @@ export class FileTree {
           if (childUl) childUl.remove();
           this.expanded.delete(entry.path);
         }
+        this._persistExpanded();
       };
       li._open = () => setOpen(true);
       li._close = () => setOpen(false);
@@ -264,7 +284,10 @@ export class FileTree {
       this._clearDropHighlight(row);
       await this._performDrop(entry.path, e);
       // Keep folders open while moving items around inside them.
-      if (li.classList.contains('dir')) this.expanded.add(entry.path);
+      if (li.classList.contains('dir')) {
+        this.expanded.add(entry.path);
+        this._persistExpanded();
+      }
     });
   }
 

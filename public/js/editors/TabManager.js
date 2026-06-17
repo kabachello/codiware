@@ -8,7 +8,7 @@ import { Icon } from '../core/Icon.js';
  * the DOM. Editors keep their state in memory between switches.
  */
 export class TabManager {
-  constructor({ tabBar, host, api, registry, ctx, i18n, toasts, bus }) {
+  constructor({ tabBar, host, api, registry, ctx, i18n, toasts, bus, settings }) {
     this.tabBar = tabBar;
     this.host = host;
     this.api = api;
@@ -17,8 +17,52 @@ export class TabManager {
     this.i18n = i18n;
     this.toasts = toasts;
     this.bus = bus;
+    this.settings = settings || null;
     this.tabs = new Map();
     this.active = null;
+    // While restoring previously opened tabs we suppress persistence so the
+    // restore loop does not repeatedly rewrite the stored list.
+    this._restoring = false;
+  }
+
+  /**
+   * Persist the list of open file tabs and the active tab to the repo-scoped
+   * settings store. Diff tabs are intentionally excluded – they are derived
+   * from Git state and should not be reopened on the next session.
+   */
+  _persistOpenTabs() {
+    if (!this.settings || this._restoring) return;
+    const open = [];
+    for (const record of this.tabs.values()) {
+      if (record.isDiff) continue;
+      open.push({ path: record.entry.path, name: record.entry.name });
+    }
+    const activeRecord = this.active ? this.tabs.get(this.active) : null;
+    const active = activeRecord && !activeRecord.isDiff ? activeRecord.key : null;
+    this.settings.setRepo('openTabs', { open, active });
+  }
+
+  /**
+   * Reopen the file tabs persisted from a previous session. Files that no
+   * longer exist are skipped. Diff tabs are never restored.
+   */
+  async restore() {
+    if (!this.settings) return;
+    const saved = this.settings.getRepo('openTabs', null);
+    if (!saved || !Array.isArray(saved.open) || saved.open.length === 0) return;
+    this._restoring = true;
+    try {
+      for (const item of saved.open) {
+        if (!item || typeof item.path !== 'string') continue;
+        await this.open({ path: item.path, name: item.name || item.path.split('/').pop() });
+      }
+    } finally {
+      this._restoring = false;
+    }
+    if (saved.active && this.tabs.has(saved.active)) {
+      this.activate(saved.active);
+    }
+    this._persistOpenTabs();
   }
 
   async open(entry) {
@@ -110,6 +154,7 @@ export class TabManager {
     }
     this.active = key;
     this.bus.emit('tab:activated', record);
+    this._persistOpenTabs();
     // Move keyboard focus into the editor so shortcuts like Ctrl+S target the
     // active document instead of staying on the sidebar element that was
     // clicked last. The editor may still be initialising, so this is optional.
@@ -166,6 +211,7 @@ export class TabManager {
       this.active = null;
       if (!next.done) this.activate(next.value);
     }
+    this._persistOpenTabs();
   }
 
   /**
@@ -192,6 +238,7 @@ export class TabManager {
     if (this.active === null && this.tabs.size > 0) {
       this.activate(this.tabs.keys().next().value);
     }
+    this._persistOpenTabs();
   }
 
   /**

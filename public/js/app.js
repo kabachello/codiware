@@ -74,7 +74,7 @@ async function main() {
   const tabs = new TabManager({
     tabBar: layout.slots.editorTabs,
     host: layout.slots.editorHost,
-    api, registry, ctx, i18n, toasts, bus,
+    api, registry, ctx, i18n, toasts, bus, settings,
   });
 
   const panels = new PanelManager({
@@ -159,7 +159,7 @@ async function main() {
     label: i18n.t('files.title'), icon: 'fa fa-folder',
     mount: (host) => {
       fileTree = new FileTree({
-        host, api, i18n, toasts, bus,
+        host, api, i18n, toasts, bus, settings,
         fileIcons: boot.file_icons || {},
         onOpen: (entry) => tabs.open(entry),
       });
@@ -275,6 +275,10 @@ async function main() {
     openFile: (entry) => tabs.open(entry),
   };
   bus.emit('app:ready');
+
+  // Reopen the file tabs that were open in the previous session for this
+  // workspace. Diff tabs are intentionally not restored.
+  tabs.restore();
 }
 
 function applyTheme(theme) {
