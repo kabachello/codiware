@@ -92,7 +92,54 @@ export class MarkdownEditor {
     this.originalContent = '';
     this.listeners = { change: [], 'save-request': [] };
     this._themeObserver = null;
+    this._previewObserver = null;
+    // Directory of the currently loaded markdown file, used to resolve
+    // relative image sources in the preview pane. Set in load().
+    this._currentDir = '';
     this._initPromise = this._init();
+  }
+
+  /**
+   * Whether a src/href is relative to the markdown file (i.e. should be
+   * rewritten). Absolute URLs, data/blob URIs, fragments and root-relative
+   * paths are left untouched.
+   */
+  _isRelativeSrc(src) {
+    return !!src && !/^(https?:|data:|blob:|#|\/)/i.test(src);
+  }
+
+  /**
+   * Resolve a relative image source against the current markdown file's
+   * directory and turn it into an absolute URL served by the existing
+   * `/files/download` route (which is path-guarded server-side and auto
+   * appends the `?root=` of the active workspace).
+   */
+  _resolveSrc(src) {
+    if (!this._isRelativeSrc(src)) return src;
+    const parts = this._currentDir ? this._currentDir.split('/') : [];
+    for (const seg of src.split('/')) {
+      if (seg === '..') parts.pop();
+      else if (seg !== '.' && seg !== '') parts.push(seg);
+    }
+    const resolved = parts.join('/');
+    return this.ctx?.api?.url?.('/files/download', { path: resolved }) ?? src;
+  }
+
+  /**
+   * Rewrite relative `src` of every image in the preview pane. Covers raw
+   * `<img>` tags embedded in the markdown, which the customHTMLRenderer does
+   * not handle.
+   */
+  _rewritePreviewImages() {
+    if (!this.editorEl) return;
+    const preview = this.editorEl.querySelector('.toastui-editor-md-preview .toastui-editor-contents');
+    if (!preview) return;
+    preview.querySelectorAll('img[src]').forEach((img) => {
+      const raw = img.getAttribute('src') || '';
+      if (this._isRelativeSrc(raw)) {
+        img.src = this._resolveSrc(raw);
+      }
+    });
   }
 
   async _init() {
@@ -152,6 +199,24 @@ export class MarkdownEditor {
         ['table', 'link', 'image'],
         ['code', 'codeblock'],
       ],
+      // Rewrite relative image sources (markdown `![]()` syntax) so they
+      // resolve against the markdown file's directory instead of the page URL.
+      customHTMLRenderer: {
+        image: (node, context) => {
+          const { destination } = node;
+          const { getChildrenText, skipChildren } = context;
+          skipChildren();
+          return {
+            type: 'openTag',
+            tagName: 'img',
+            selfClose: true,
+            attributes: {
+              src: this._resolveSrc(destination),
+              alt: getChildrenText(node),
+            },
+          };
+        },
+      },
     };
 
     this.editor = typeof Editor.factory === 'function'
@@ -181,6 +246,14 @@ export class MarkdownEditor {
       attributes: true,
       attributeFilter: ['data-theme'],
     });
+
+    // Rewrite relative image sources in the preview pane whenever it updates.
+    // Covers raw <img> tags that the customHTMLRenderer does not handle.
+    const preview = this.editorEl.querySelector('.toastui-editor-md-preview .toastui-editor-contents');
+    if (preview) {
+      this._previewObserver = new MutationObserver(() => this._rewritePreviewImages());
+      this._previewObserver.observe(preview, { childList: true, subtree: true });
+    }
   }
 
   _applyTheme() {
@@ -194,8 +267,12 @@ export class MarkdownEditor {
 
   async load(content, meta) {
     await this._initPromise;
+    // Directory of the markdown file (without trailing slash), used to resolve
+    // relative image sources in the preview pane.
+    this._currentDir = (meta?.path || '').replace(/\/?[^/]*$/, '');
     this.originalContent = content || '';
     this.editor.setMarkdown(this.originalContent, false);
+    this._rewritePreviewImages();
   }
 
   getContent() {
@@ -238,6 +315,10 @@ export class MarkdownEditor {
     if (this._themeObserver) {
       this._themeObserver.disconnect();
       this._themeObserver = null;
+    }
+    if (this._previewObserver) {
+      this._previewObserver.disconnect();
+      this._previewObserver = null;
     }
     if (this.editor) {
       this.editor.destroy();
