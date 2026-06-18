@@ -40,14 +40,41 @@ function loadXterm() {
     document.head.appendChild(link);
   }
   xtermPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = npmBase + XTERM_JS + suffix;
-    s.async = true;
-    s.onload = () => (window.Terminal
-      ? resolve(window.Terminal)
-      : reject(new Error('xterm loaded but window.Terminal is undefined')));
-    s.onerror = () => reject(new Error('Failed to load xterm from ' + s.src));
-    document.head.appendChild(s);
+    const src = npmBase + XTERM_JS + suffix;
+
+    // Plain <script> fallback used only when the bundle cannot be fetched
+    // (e.g. a strict CSP blocks `new Function`/fetch). This only yields a usable
+    // `window.Terminal` when no AMD `define.amd` is on the page.
+    const viaScript = () => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = () => (window.Terminal
+        ? resolve(window.Terminal)
+        : reject(new Error('xterm loaded but window.Terminal is undefined')));
+      s.onerror = () => reject(new Error('Failed to load xterm from ' + s.src));
+      document.head.appendChild(s);
+    };
+
+    // xterm ships as a UMD bundle. When Monaco's AMD loader is present (its
+    // `define.amd` stays on `window` so Monaco can keep lazy-loading), the UMD
+    // wrapper registers xterm as an anonymous AMD module and never exposes
+    // `window.Terminal`. Rather than fight the global `define`, fetch the bundle
+    // and run it with a real CommonJS `module`/`exports` and `define` left
+    // undefined — this forces xterm's `module.exports = factory()` branch, from
+    // which we read `Terminal` directly. Deterministic regardless of Monaco.
+    fetch(src)
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then((code) => {
+        const mod = { exports: {} };
+        const factory = new Function('define', 'module', 'exports', code + '\n//# sourceURL=' + XTERM_JS);
+        factory.call(window, undefined, mod, mod.exports);
+        const Terminal = (mod.exports && mod.exports.Terminal) || window.Terminal;
+        if (!Terminal) throw new Error('xterm bundle did not export Terminal');
+        window.Terminal = Terminal;
+        resolve(Terminal);
+      })
+      .catch(() => viaScript()); // fetch/CSP failure: fall back to a plain tag
   });
   return xtermPromise;
 }
