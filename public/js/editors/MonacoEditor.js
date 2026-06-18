@@ -1,5 +1,6 @@
 import { EventBus } from '../core/EventBus.js';
 import { OutlinePanel } from './OutlinePanel.js';
+import { loadMonaco } from './monacoLoader.js';
 
 /**
  * Monaco-based code editor. Acts as the default editor for any non-binary
@@ -39,56 +40,6 @@ const LANGUAGE_MAP = {
   vue: 'html',
   txt: 'plaintext', log: 'plaintext',
 };
-
-let monacoPromise = null;
-
-/**
- * Load the Monaco AMD distribution once and resolve with the global `monaco`
- * namespace. Subsequent calls reuse the same promise.
- */
-function loadMonaco() {
-  if (monacoPromise) return monacoPromise;
-  monacoPromise = new Promise((resolve, reject) => {
-    const base = window.CODIWARE_BOOT.extensions['codiware.markdown']["INCLUDES.MONACO_JS_BASE"] || (window.CODIWARE_ASSET_BASE_APP || '') + '/monaco/node_modules/monaco-editor/min/vs';
-
-    // Monaco's AMD loader pollutes the global scope with `require`. Restore
-    // any existing one after Monaco initializes.
-    const previousRequire = window.require;
-    const previousDefine = window.define;
-
-    const loader = document.createElement('script');
-    loader.src = base + '/loader.js';
-    loader.async = true;
-    loader.onload = () => {
-      try {
-        window.require.config({ paths: { vs: base } });
-        // Workers need an absolute URL prefix to satisfy the same-origin rules.
-        window.MonacoEnvironment = window.MonacoEnvironment || {
-          getWorkerUrl: function (_moduleId, _label) {
-            const proxy = URL.createObjectURL(new Blob([
-              `self.MonacoEnvironment = { baseUrl: '${base}/' };`,
-              `importScripts('${base}/base/worker/workerMain.js');`,
-            ], { type: 'text/javascript' }));
-            return proxy;
-          },
-        };
-        window.require(['vs/editor/editor.main'], () => {
-          // Restore previous loader globals so other AMD modules (if any) keep working.
-          // Monaco keeps a reference to its loader internally.
-          const monaco = window.monaco;
-          if (previousDefine !== undefined) window.define = previousDefine;
-          if (previousRequire !== undefined) window.require = previousRequire;
-          resolve(monaco);
-        }, (err) => reject(err));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    loader.onerror = () => reject(new Error('Failed to load Monaco loader from ' + loader.src));
-    document.head.appendChild(loader);
-  });
-  return monacoPromise;
-}
 
 function detectLanguage(path) {
   if (!path) return 'plaintext';
