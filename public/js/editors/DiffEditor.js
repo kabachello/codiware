@@ -61,6 +61,9 @@ export class DiffEditor {
     this._path = null;
     this._revertWidgets = [];
     this._diffUpdateTimeout = null;
+    this._revealFirstDiffPending = false;
+    this._keyDownHandler = null;
+    this._diffUpdateHandler = null;
 
     host.innerHTML = '';
     host.style.position = 'relative';
@@ -110,6 +113,12 @@ export class DiffEditor {
     };
 
     this._editor = monaco.editor.createDiffEditor(this._container, editorOpts);
+
+    // Keep a single diff-update subscription for this editor instance.
+    this._diffUpdateHandler = this._editor.onDidUpdateDiff(() => {
+      this._updateRevertButtons();
+      this._revealFirstDiff();
+    });
 
     // Apply pending data if any
     if (this._pendingData) {
@@ -161,6 +170,7 @@ export class DiffEditor {
       original: this._originalModel,
       modified: this._modifiedModel,
     });
+    this._revealFirstDiffPending = true;
 
     // Listen for changes in the modified model
     this._modifiedModel.onDidChangeContent(() => {
@@ -171,17 +181,13 @@ export class DiffEditor {
       this._diffUpdateTimeout = setTimeout(() => this._updateRevertButtons(), 150);
     });
 
-    // Listen for diff computation to complete
-    this._editor.onDidUpdateDiff(() => {
-      this._updateRevertButtons();
-    });
-
     // Scope the save shortcut to this editor instance. `addCommand` registers
     // on Monaco's shared keybinding service, so with multiple open editors only
     // the last-registered command fires regardless of focus. `onKeyDown` is
     // per-instance and routes to the focused tab.
     const modifiedEditor = this._editor.getModifiedEditor();
-    modifiedEditor.onKeyDown((e) => {
+    this._keyDownHandler?.dispose();
+    this._keyDownHandler = modifiedEditor.onKeyDown((e) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.keyCode === this._monaco.KeyCode.KeyS) {
         e.preventDefault();
         e.stopPropagation();
@@ -190,6 +196,19 @@ export class DiffEditor {
     });
 
     this._dirty = false;
+  }
+
+  _revealFirstDiff() {
+    if (!this._revealFirstDiffPending || !this._editor) return;
+    const lineChanges = this._editor.getLineChanges();
+    this._revealFirstDiffPending = false;
+    if (!Array.isArray(lineChanges) || lineChanges.length === 0) return;
+
+    const firstChange = lineChanges[0];
+    const firstLine = Math.max(1, Number(firstChange?.modifiedStartLineNumber) || 1);
+    const modifiedEditor = this._editor.getModifiedEditor();
+    modifiedEditor.revealLineInCenter(firstLine);
+    modifiedEditor.setPosition({ lineNumber: firstLine, column: 1 });
   }
 
   _updateRevertButtons() {
@@ -352,6 +371,8 @@ export class DiffEditor {
   destroy() {
     try { this._themeObserver?.disconnect(); } catch {}
     try { this._glyphClickHandler?.dispose(); } catch {}
+    try { this._keyDownHandler?.dispose(); } catch {}
+    try { this._diffUpdateHandler?.dispose(); } catch {}
     // To avoid Monaco error, set model to null before disposing models
     try { this._editor?.setModel(null); } catch {}
     try { this._editor?.dispose(); } catch {}
