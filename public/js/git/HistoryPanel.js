@@ -18,6 +18,7 @@
  * Contents load lazily on first mount and refresh only via the toolbar button.
  */
 import { Icon } from '../core/Icon.js';
+import { attachSplitter } from '../layout/Splitter.js';
 
 // Lane geometry. Kept small so many branches fit, but large enough to click.
 const LANE_W = 14;
@@ -54,6 +55,7 @@ export class HistoryPanel {
     this.commits = [];
     this.selected = null;
     this._loaded = false;
+    this.graphWidth = 60; // percent of the split width taken by the graph pane
   }
 
   _t(key, fallback) {
@@ -76,13 +78,34 @@ export class HistoryPanel {
 
     this.graphPane = document.createElement('div');
     this.graphPane.className = 'history-graph-pane';
+    this.graphPane.style.flex = `0 0 ${this.graphWidth}%`;
+
+    this.splitter = document.createElement('div');
+    this.splitter.className = 'history-splitter';
 
     this.detailsPane = document.createElement('div');
     this.detailsPane.className = 'history-details-pane';
     this._renderEmptyDetails();
 
-    split.append(this.graphPane, this.detailsPane);
+    split.append(this.graphPane, this.splitter, this.detailsPane);
     host.append(split);
+    this.splitEl = split;
+
+    attachSplitter(this.splitter, {
+      orientation: 'vertical',
+      onResize: {
+        getSize: () => {
+          const total = this.splitEl?.clientWidth || 1;
+          return (this.graphWidth / 100) * total;
+        },
+        apply: (px) => {
+          const total = this.splitEl?.clientWidth || 1;
+          const pct = Math.max(15, Math.min(85, (px / total) * 100));
+          this.graphWidth = pct;
+          this.graphPane.style.flex = `0 0 ${pct}%`;
+        }
+      }
+    });
 
     if (!this._loaded) {
       this.refresh();

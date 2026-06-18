@@ -661,15 +661,21 @@ textarea { font-family: var(--ide-font-mono); }
   display: flex; flex: 1 1 auto; min-height: 0;
 }
 .history-graph-pane {
-  flex: 1 1 50%; min-width: 0; overflow: auto;
-  border-right: 1px solid var(--ide-border);
+  flex: 0 0 50%; min-width: 0; overflow: auto;
 }
 .history-graph-pane.is-empty {
   display: flex; align-items: center; justify-content: center;
   color: var(--ide-fg-muted);
 }
+.history-splitter {
+  flex: 0 0 var(--ide-splitter);
+  align-self: stretch;
+  background: var(--ide-border);
+  cursor: col-resize;
+  user-select: none;
+}
 .history-details-pane {
-  flex: 1 1 50%; min-width: 0; overflow: auto;
+  flex: 1 1 auto; min-width: 0; overflow: auto;
   padding: 8px 12px;
 }
 .history-table { display: flex; flex-direction: column; }
