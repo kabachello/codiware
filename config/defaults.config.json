@@ -124,7 +124,9 @@
     "codiware.markdown": {
       "INCLUDES.EDITOR_JS": "vendor/npm-asset/toast-ui--editor/dist/esm/index.js",
       "INCLUDES.EDITOR_CSS_LIGHT": "vendor/npm-asset/toast-ui--editor/dist/toastui-editor.css",
-      "INCLUDES.EDITOR_CSS_DARK": "vendor/npm-asset/toast-ui--editor/dist/theme/toastui-editor-dark.css"
+      "INCLUDES.EDITOR_CSS_DARK": "vendor/npm-asset/toast-ui--editor/dist/theme/toastui-editor-dark.css",
+      "INCLUDES.PREVIEW_CSS": [],
+      "CSS_CLASS_FOR_PREVIEW_CONTAINER": null
     },
     "codiware.monaco": {
       "INCLUDES.MONACO_JS_BASE": "vendor/npm-asset/monaco-editor/min/vs/base"

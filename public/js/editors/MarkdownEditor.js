@@ -5,6 +5,9 @@
 
 let toastUiEditorCtorPromise = null;
 const loadedClassicToastUiSources = new Set();
+// Tracks preview CSS hrefs already injected into the document head so multiple
+// markdown editor instances do not add duplicate <link> elements.
+const injectedPreviewCss = new Set();
 
 function resolveAssetUrl(path, fallbackBase) {
   if (!path) return path;
@@ -12,6 +15,45 @@ function resolveAssetUrl(path, fallbackBase) {
   const base = (window.CODIWARE_BOOT?.url_base || fallbackBase || '').replace(/\/$/, '');
   return `${base}/${path.replace(/^\//, '')}`;
 }
+
+/**
+ * Resolve a path that is defined relative to the Composer `vendor` folder
+ * (e.g. `npm-asset/github-markdown-css/github-markdown.css`) into an absolute
+ * URL. Absolute URLs and root-relative paths are returned unchanged.
+ *
+ * The vendor folder URL is derived from `url_to_npm` (default
+ * `/vendor/npm-asset`) by dropping its last segment (`/npm-asset`).
+ */
+function resolveVendorUrl(path) {
+  if (!path) return path;
+  if (/^(https?:)?\/\//i.test(path) || path.startsWith('/')) return path;
+  const boot = window.CODIWARE_BOOT || {};
+  const base = (boot.url_base || '').replace(/\/$/, '');
+  const npm = (boot.url_to_npm || '/vendor/npm-asset').replace(/\/$/, '');
+  const vendor = npm.replace(/\/[^/]+$/, '');
+  return `${base}${vendor}/${path.replace(/^\//, '')}`;
+}
+
+/**
+ * Inject one or more stylesheets configured via the markdown extension's
+ * `INCLUDES.PREVIEW_CSS` option. Paths are relative to the vendor folder.
+ * Injection happens once per resolved href, regardless of editor instances.
+ */
+function injectPreviewCss(paths) {
+  const list = Array.isArray(paths) ? paths : (paths ? [paths] : []);
+  const version = window.CODIWARE_BOOT?.cache_bust || '';
+  for (const path of list) {
+    const href = resolveVendorUrl(typeof path === 'string' ? path.trim() : '');
+    if (!href || injectedPreviewCss.has(href)) continue;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = version ? `${href}?v=${version}` : href;
+    link.dataset.codiwareMarkdownCss = '1';
+    document.head.appendChild(link);
+    injectedPreviewCss.add(href);
+  }
+}
+
 
 function extractEditorCtor(mod) {
   const candidates = [
@@ -151,6 +193,10 @@ export class MarkdownEditor {
     host.style.minHeight = '0';
     host.style.overflow = 'hidden';
 
+    // Inject any preview stylesheets configured for this extension. Paths are
+    // defined relative to the vendor folder (e.g. for github-markdown-css).
+    injectPreviewCss(window.CODIWARE_BOOT?.extensions?.['codiware.markdown']?.['INCLUDES.PREVIEW_CSS']);
+
     // Import map for Toast UI Editor's prosemirror dependencies (must be inline, before any module scripts)
     /* TODO this was moved from index, but does not work here. This was neccessary to use the asset-packagist
      * version of TUI Editor, which does not bundle the prosemirror dependencies.
@@ -251,6 +297,15 @@ export class MarkdownEditor {
     // Covers raw <img> tags that the customHTMLRenderer does not handle.
     const preview = this.editorEl.querySelector('.toastui-editor-md-preview .toastui-editor-contents');
     if (preview) {
+      // Add any configured class(es) so stylesheets scoped to them (e.g.
+      // `markdown-body` for github-markdown-css included via
+      // INCLUDES.PREVIEW_CSS) apply to the rendered preview.
+      const previewClass = window.CODIWARE_BOOT?.extensions?.['codiware.markdown']?.['CSS_CLASS_FOR_PREVIEW_CONTAINER'];
+      if (previewClass) {
+        for (const cls of String(previewClass).split(/\s+/)) {
+          if (cls) preview.classList.add(cls);
+        }
+      }
       this._previewObserver = new MutationObserver(() => this._rewritePreviewImages());
       this._previewObserver.observe(preview, { childList: true, subtree: true });
     }
