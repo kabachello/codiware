@@ -135,6 +135,9 @@ export class MarkdownEditor {
     this.listeners = { change: [], 'save-request': [] };
     this._themeObserver = null;
     this._previewObserver = null;
+    // True while content is being loaded programmatically, used to suppress
+    // the synthetic change event Toast UI fires during setMarkdown().
+    this._loading = false;
     // Directory of the currently loaded markdown file, used to resolve
     // relative image sources in the preview pane. Set in load().
     this._currentDir = '';
@@ -269,8 +272,11 @@ export class MarkdownEditor {
       ? Editor.factory(editorOptions)
       : new Editor(editorOptions);
 
-    // Wire up change events
+    // Wire up change events. Suppress the synthetic change Toast UI fires while
+    // content is being loaded programmatically, otherwise the owning tab would
+    // read isDirty() before the baseline is set and flag a false dirty state.
     this.editor.on('change', () => {
+      if (this._loading) return;
       this._emit('change');
     });
 
@@ -325,9 +331,18 @@ export class MarkdownEditor {
     // Directory of the markdown file (without trailing slash), used to resolve
     // relative image sources in the preview pane.
     this._currentDir = (meta?.path || '').replace(/\/?[^/]*$/, '');
-    this.originalContent = content || '';
-    this.editor.setMarkdown(this.originalContent, false);
+    this._loading = true;
+    this.editor.setMarkdown(content || '', false);
+    // Baseline against the editor's own serialization rather than the raw file
+    // string. Toast UI normalizes markdown on load (e.g. image/link syntax),
+    // so comparing getMarkdown() to the raw content would report a false
+    // "dirty" state even though the user has not edited anything.
+    this.originalContent = this.editor.getMarkdown();
+    this._loading = false;
     this._rewritePreviewImages();
+    // Let the owning tab re-evaluate isDirty() now that the baseline is set,
+    // clearing any dirty state from the programmatic load above.
+    this._emit('change');
   }
 
   getContent() {
