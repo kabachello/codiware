@@ -154,6 +154,22 @@ export class MarkdownEditor {
   }
 
   /**
+   * Resolve a relative path (image src or link href) against the current
+   * markdown file's directory, collapsing `.` and `..` segments. Returns the
+   * workspace-relative path (no URL, no query). Absolute/non-relative inputs
+   * are returned unchanged.
+   */
+  _resolvePath(src) {
+    if (!this._isRelativeSrc(src)) return src;
+    const parts = this._currentDir ? this._currentDir.split('/') : [];
+    for (const seg of src.split('/')) {
+      if (seg === '..') parts.pop();
+      else if (seg !== '.' && seg !== '') parts.push(seg);
+    }
+    return parts.join('/');
+  }
+
+  /**
    * Resolve a relative image source against the current markdown file's
    * directory and turn it into an absolute URL served by the existing
    * `/files/download` route (which is path-guarded server-side and auto
@@ -161,12 +177,7 @@ export class MarkdownEditor {
    */
   _resolveSrc(src) {
     if (!this._isRelativeSrc(src)) return src;
-    const parts = this._currentDir ? this._currentDir.split('/') : [];
-    for (const seg of src.split('/')) {
-      if (seg === '..') parts.pop();
-      else if (seg !== '.' && seg !== '') parts.push(seg);
-    }
-    const resolved = parts.join('/');
+    const resolved = this._resolvePath(src);
     return this.ctx?.api?.url?.('/files/download', { path: resolved }) ?? src;
   }
 
@@ -314,7 +325,27 @@ export class MarkdownEditor {
       }
       this._previewObserver = new MutationObserver(() => this._rewritePreviewImages());
       this._previewObserver.observe(preview, { childList: true, subtree: true });
+
+      // Open relative markdown links (`[](path)`) in an editor instead of
+      // navigating the page. Absolute URLs and in-page anchors are left alone.
+      preview.addEventListener('click', (e) => this._onPreviewClick(e));
     }
+  }
+
+  /**
+   * Intercept clicks on relative links in the preview and open the target file
+   * in an editor tab via the public Codiware API.
+   */
+  _onPreviewClick(e) {
+    const anchor = e.target.closest?.('a[href]');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href') || '';
+    if (!this._isRelativeSrc(href)) return;
+    e.preventDefault();
+    // Strip any in-page fragment before resolving to a file path.
+    const path = this._resolvePath(href.replace(/#.*$/, ''));
+    if (!path) return;
+    window.Codiware?.openFile?.({ path, name: path.split('/').pop() });
   }
 
   _applyTheme() {
