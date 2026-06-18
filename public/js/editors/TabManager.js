@@ -243,11 +243,11 @@ export class TabManager {
 
   /**
    * Open a diff view for a file. Used by the git panel to show changes.
-   * @param {Object} options - { path: string, staged: boolean, diffData: { old: string, new: string } }
+   * @param {Object} options - { path: string, staged: boolean, diffData: { old: string, new: string }, key?: string, label?: string, readOnly?: boolean }
    */
-  openDiff({ path, staged, diffData }) {
+  openDiff({ path, staged, diffData, key: customKey, label: customLabel, readOnly = false }) {
     // Use a unique key that distinguishes staged vs working-copy diffs
-    const key = `diff:${staged ? 'staged' : 'working'}:${path}`;
+    const key = customKey || `diff:${staged ? 'staged' : 'working'}:${path}`;
     if (this.tabs.has(key)) {
       this.activate(key);
       return;
@@ -264,7 +264,7 @@ export class TabManager {
     const tabEl = document.createElement('div');
     tabEl.className = 'ide-tab';
     const fileName = path.split('/').pop();
-    const label = staged ? `${fileName} (Staged)` : `${fileName} (Working)`;
+    const label = customLabel || (staged ? `${fileName} (Staged)` : `${fileName} (Working)`);
     tabEl.title = `Diff: ${path}`;
     const name = document.createElement('span');
     name.className = 'ide-tab-name';
@@ -315,6 +315,7 @@ export class TabManager {
       modified: diffData.new || '',
       path: path,
       staged: staged,
+      readOnly: readOnly,
     });
 
     this.activate(key);

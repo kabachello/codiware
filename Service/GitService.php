@@ -218,20 +218,36 @@ final class GitService
     }
 
     /**
-     * @return array<int,array{hash:string,parents:string[],author:string,email:string,date:int,subject:string}>
+     * Read the commit graph for the history panel.
+     *
+     * Fields are separated by the real ASCII unit-separator byte (0x1F), which
+     * git emits via its `%x1f` format escape, so subjects and author names can
+     * safely contain any printable character. The `refs` field is parsed from
+     * `%D` into typed branch/tag/remote entries so the client can label
+     * branches with text instead of relying on color alone.
+     *
+     * @return array<int,array{hash:string,parents:string[],author:string,email:string,date:int,committer:string,commit_date:int,subject:string,refs:array<int,array{type:string,name:string,current:bool}>}>
      */
     public function history(WorkspaceRoot $root, int $limit, int $skip = 0): array
     {
         $this->requireRepo($root);
-        $sep = '\x1f';
-        $format = '%H' . $sep . '%P' . $sep . '%an' . $sep . '%ae' . $sep . '%at' . $sep . '%s';
-        $args = ['log', '--max-count=' . $limit, '--skip=' . $skip, '--pretty=format:' . $format];
+        $us = "\x1f"; // field separator (git %x1f)
+        $format = '%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%s%x1f%D';
+        // `--all` walks every branch/tag (not just HEAD) so each branch tip is
+        // present and carries its `%D` decoration — without it only the current
+        // branch is decorated and other lanes get no name. `--date-order` keeps
+        // the listing chronological while still never showing a parent before
+        // its child, matching the date column in the panel.
+        $args = ['log', '--all', '--date-order', '--max-count=' . $limit, '--skip=' . $skip, '--pretty=format:' . $format];
         $out = $this->run($root, $args);
         $lines = $out === '' ? [] : explode("\n", $out);
         $rows = [];
         foreach ($lines as $line) {
-            $parts = explode("\x1f", $line);
-            if (count($parts) < 6) {
+            if ($line === '') {
+                continue;
+            }
+            $parts = explode($us, $line);
+            if (count($parts) < 9) {
                 continue;
             }
             $rows[] = [
@@ -240,16 +256,160 @@ final class GitService
                 'author' => $parts[2],
                 'email' => $parts[3],
                 'date' => (int)$parts[4],
-                'subject' => $parts[5],
+                'committer' => $parts[5],
+                'commit_date' => (int)$parts[6],
+                'subject' => $parts[7],
+                'refs' => $this->parseRefs($parts[8]),
             ];
         }
         return $rows;
+    }
+
+    /**
+     * Full metadata and changed-file list for a single commit, used by the
+     * details pane of the history panel.
+     *
+     * @return array{hash:string,parents:string[],author:string,email:string,date:int,committer:string,committer_email:string,commit_date:int,subject:string,body:string,refs:array<int,array{type:string,name:string,current:bool}>,branches:string[],files:array<int,array{status:string,path:string,old_path?:string}>}
+     */
+    public function commitDetails(WorkspaceRoot $root, string $commit): array
+    {
+        $this->requireRepo($root);
+        $us = "\x1f";
+        // Body (%b) is placed last because it may span multiple lines.
+        $format = '%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ce%x1f%ct%x1f%D%x1f%s%x1f%b';
+        $metaOut = $this->run($root, ['show', '-s', '--pretty=format:' . $format, $commit]);
+        $parts = explode($us, $metaOut);
+        if (count($parts) < 11) {
+            throw new CodiwareException('Commit not found: ' . $commit, 'not_found', 404);
+        }
+        return [
+            'hash' => $parts[0],
+            'parents' => $parts[1] === '' ? [] : explode(' ', $parts[1]),
+            'author' => $parts[2],
+            'email' => $parts[3],
+            'date' => (int)$parts[4],
+            'committer' => $parts[5],
+            'committer_email' => $parts[6],
+            'commit_date' => (int)$parts[7],
+            'refs' => $this->parseRefs($parts[8]),
+            'subject' => $parts[9],
+            'body' => rtrim($parts[10] ?? '', "\n"),
+            'branches' => $this->commitBranches($root, $commit),
+            'files' => $this->commitFiles($root, $commit),
+        ];
+    }
+
+    /**
+     * List the local branches that contain the given commit, i.e. branches from
+     * whose tip the commit is reachable (`git branch --contains`). Used by the
+     * details pane to show where a commit currently lives.
+     *
+     * @return string[]
+     */
+    public function commitBranches(WorkspaceRoot $root, string $commit): array
+    {
+        $out = $this->run($root, ['branch', '--contains', $commit, '--format=%(refname:short)']);
+        $branches = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            $name = trim($line);
+            if ($name !== '') {
+                $branches[] = $name;
+            }
+        }
+        return $branches;
+    }
+
+    /**
+     * List files changed by a commit relative to its first parent. The root
+     * commit is handled via `--root` so its initial files are reported too.
+     *
+     * @return array<int,array{status:string,path:string,old_path?:string}>
+     */
+    public function commitFiles(WorkspaceRoot $root, string $commit): array
+    {
+        $out = $this->run($root, ['diff-tree', '--no-commit-id', '--name-status', '-r', '-M', '--root', $commit]);
+        $files = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $cols = preg_split('/\t/', $line) ?: [];
+            $status = $cols[0] ?? '';
+            $code = $status === '' ? '' : $status[0];
+            if (($code === 'R' || $code === 'C') && isset($cols[2])) {
+                $files[] = ['status' => $code, 'old_path' => $cols[1], 'path' => $cols[2]];
+            } elseif (isset($cols[1])) {
+                $files[] = ['status' => $code, 'path' => $cols[1]];
+            }
+        }
+        return $files;
+    }
+
+    /**
+     * Build the two sides of a diff for a single file introduced by a commit:
+     * the parent version (`old`) and the committed version (`new`). Missing
+     * sides (added/deleted files, root commit) resolve to empty strings so the
+     * diff editor can render additions and deletions cleanly.
+     *
+     * @return array{path:string,old:string,new:string}
+     */
+    public function commitFileDiff(WorkspaceRoot $root, string $commit, string $path, ?string $oldPath = null): array
+    {
+        $this->requireRepo($root);
+        $parentPath = $oldPath !== null && $oldPath !== '' ? $oldPath : $path;
+        $new = '';
+        try {
+            $new = $this->run($root, ['show', $commit . ':' . $path]);
+        } catch (CodiwareException) {
+            $new = '';
+        }
+        $old = '';
+        try {
+            $old = $this->run($root, ['show', $commit . '^:' . $parentPath]);
+        } catch (CodiwareException) {
+            $old = '';
+        }
+        return ['path' => $path, 'old' => $old, 'new' => $new];
     }
 
     public function show(WorkspaceRoot $root, string $commit, string $path): string
     {
         $this->requireRepo($root);
         return $this->run($root, ['show', $commit . ':' . $path]);
+    }
+
+    /**
+     * Parse the `%D` ref decoration string (e.g. `HEAD -> main, origin/main,
+     * tag: v1.0`) into typed entries. Keeping the typing on the server lets the
+     * client render branch and tag labels without re-parsing git output.
+     *
+     * @return array<int,array{type:string,name:string,current:bool}>
+     */
+    private function parseRefs(string $decoration): array
+    {
+        $decoration = trim($decoration);
+        if ($decoration === '') {
+            return [];
+        }
+        $refs = [];
+        foreach (explode(',', $decoration) as $token) {
+            $token = trim($token);
+            if ($token === '') {
+                continue;
+            }
+            if (str_starts_with($token, 'HEAD -> ')) {
+                $refs[] = ['type' => 'branch', 'name' => trim(substr($token, 8)), 'current' => true];
+            } elseif ($token === 'HEAD') {
+                $refs[] = ['type' => 'head', 'name' => 'HEAD', 'current' => true];
+            } elseif (str_starts_with($token, 'tag: ')) {
+                $refs[] = ['type' => 'tag', 'name' => trim(substr($token, 5)), 'current' => false];
+            } elseif (str_contains($token, '/')) {
+                $refs[] = ['type' => 'remote', 'name' => $token, 'current' => false];
+            } else {
+                $refs[] = ['type' => 'branch', 'name' => $token, 'current' => false];
+            }
+        }
+        return $refs;
     }
 
     /**

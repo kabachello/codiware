@@ -15,6 +15,7 @@ import { diffEditorDescriptor } from './editors/DiffEditor.js';
 import { TabManager } from './editors/TabManager.js';
 import { FileTree } from './files/FileTree.js';
 import { GitPanel } from './git/GitPanel.js';
+import { HistoryPanel } from './git/HistoryPanel.js';
 import { SearchPanel } from './search/SearchPanel.js';
 import { ConsolePanel } from './console/ConsolePanel.js';
 import { Icon } from './core/Icon.js';
@@ -240,6 +241,24 @@ async function main() {
       label: consoleLabel && consoleLabel !== 'console.title' ? consoleLabel : 'Console',
       icon: 'fa fa-terminal',
       mount: (host) => consolePanel.mount(host),
+    });
+  }
+
+  // Git history bottom tab (after Console). Contents load lazily on first open.
+  if (boot.features?.git !== false && workspace.is_git) {
+    let historyPanel;
+    const historyLabel = i18n.t('history.title');
+    bottomPanels.register('history', {
+      label: historyLabel && historyLabel !== 'history.title' ? historyLabel : 'Git history',
+      icon: 'fa fa-history',
+      mount: (host) => {
+        historyPanel = new HistoryPanel({
+          api, i18n, toasts, bus,
+          onOpenDiff: (opts) => tabs.openDiff(opts),
+          onOpenFile: (entry) => tabs.open(entry),
+        });
+        historyPanel.mount(host);
+      },
     });
   }
 

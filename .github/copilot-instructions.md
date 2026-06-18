@@ -13,6 +13,7 @@ The technical architecture is described in [Architecture.md](../Docs/Architectur
 IMPORTANT: 
 - when planning changes, always read these files
 - if explicit requirement imply changes to these files, always update them after the change. Make sure to keep them up tp date!
+- Always follow the style guide when creating new UIs. If a new type of UX is necessary, add it to the style guide and make sure you use the same pattern next time you need something similar. UI patterns in different parts of the application MUST share the same CSS classes and not only "look" similar.
 
 ## Code
 
