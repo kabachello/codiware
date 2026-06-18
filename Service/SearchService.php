@@ -205,10 +205,14 @@ final class SearchService
             yield $base;
             return;
         }
-        $it = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::LEAVES_ONLY
+        $directory = new RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS);
+        // Prune hidden entries (e.g. ".git", ".vscode") so the iterator never
+        // descends into them and they are excluded from the results.
+        $filtered = new \RecursiveCallbackFilterIterator(
+            $directory,
+            static fn (\SplFileInfo $info): bool => !str_starts_with($info->getFilename(), '.')
         );
+        $it = new RecursiveIteratorIterator($filtered, RecursiveIteratorIterator::LEAVES_ONLY);
         foreach ($it as $info) {
             /** @var \SplFileInfo $info */
             if ($info->isFile()) {
