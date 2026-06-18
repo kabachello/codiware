@@ -56,7 +56,7 @@ export class PanelManager {
     if (this.active === null) this.activate(id, { expand: false });
   }
 
-  activate(id, { expand = true, width = 260 } = {}) {
+  activate(id, { expand = true, width } = {}) {
     const panel = this.panels.get(id);
     if (!panel) return;
     for (const p of this.panels.values()) {

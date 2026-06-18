@@ -61,7 +61,7 @@ export class BottomPanelManager {
     return this.panels.has(id);
   }
 
-  activate(id, { expand = true, height = 220 } = {}) {
+  activate(id, { expand = true, height } = {}) {
     const panel = this.panels.get(id);
     if (!panel) return;
 
@@ -85,7 +85,7 @@ export class BottomPanelManager {
     }
   }
 
-  toggle(id, defaultHeight = 220) {
+  toggle(id, defaultHeight) {
     if (!this.panels.has(id)) return;
     if (this.active === id && !this.layout.isBottomCollapsed()) {
       this.layout.collapseBottom();

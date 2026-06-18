@@ -108,7 +108,7 @@ async function main() {
 
   bottomCollapseBtn.addEventListener('click', (event) => {
     event.stopPropagation();
-    if (layout.isBottomCollapsed()) layout.expandBottom(220);
+    if (layout.isBottomCollapsed()) layout.expandBottom();
     else layout.collapseBottom();
     updateBottomToggleIcon();
   });
@@ -131,7 +131,7 @@ async function main() {
 
   sidebarCollapseBtn.addEventListener('click', (event) => {
     event.stopPropagation();
-    if (layout.isSidebarCollapsed()) layout.expandSidebar(260);
+    if (layout.isSidebarCollapsed()) layout.expandSidebar();
     else layout.collapseSidebar();
     updateSidebarToggleIcon();
   });

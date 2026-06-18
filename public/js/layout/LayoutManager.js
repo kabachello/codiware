@@ -13,7 +13,7 @@ export class LayoutManager {
     this.bus = bus;
     this.settings = settings || null;
     this.slots = {};
-    this.sidebarWidth = this._restoreSize('layout.sidebarWidth', 260, 160, 600);
+    this.sidebarWidth = this._restoreSize('layout.sidebarWidth', 260, 160, this._maxSidebarWidth());
     this.sidebarCollapsed = false;
     this.sidebarStripWidth = 44;
     this.bottomHeight = this._restoreSize('layout.bottomHeight', 220, 72, 2000);
@@ -34,6 +34,10 @@ export class LayoutManager {
     const saved = this.settings?.getGlobal(name);
     if (typeof saved !== 'number' || !Number.isFinite(saved)) return fallback;
     return Math.max(min, Math.min(max, saved));
+  }
+
+  _maxSidebarWidth() {
+    return Math.max(160, Math.round((window.innerWidth || 1024) * 0.7));
   }
 
 
@@ -105,7 +109,7 @@ export class LayoutManager {
       onResize: {
         getSize: () => this.sidebarWidth,
         apply: (px) => {
-          this.sidebarWidth = Math.max(160, Math.min(600, px));
+          this.sidebarWidth = Math.max(160, Math.min(this._maxSidebarWidth(), px));
           this._applySidebarState();
           this.settings?.setGlobal('layout.sidebarWidth', this.sidebarWidth);
         }
@@ -147,7 +151,7 @@ export class LayoutManager {
     this.expandSidebar(px);
   }
 
-  toggleSidebar(defaultWidth = 260) {
+  toggleSidebar(defaultWidth) {
     if (this.sidebarCollapsed) this.expandSidebar(defaultWidth);
     else this.collapseSidebar();
   }
@@ -161,9 +165,9 @@ export class LayoutManager {
     this._applySidebarState();
   }
 
-  expandSidebar(px = 260) {
+  expandSidebar(px) {
     this.sidebarCollapsed = false;
-    this.sidebarWidth = Math.max(160, Math.min(600, px || this.sidebarWidth || 260));
+    this.sidebarWidth = Math.max(160, Math.min(this._maxSidebarWidth(), px || this.sidebarWidth || 260));
     this._applySidebarState();
   }
 
@@ -175,7 +179,7 @@ export class LayoutManager {
     this.expandBottom(px);
   }
 
-  toggleBottom(defaultHeight = 220) {
+  toggleBottom(defaultHeight) {
     if (this.bottomCollapsed) this.expandBottom(defaultHeight);
     else this.collapseBottom();
   }
@@ -189,7 +193,7 @@ export class LayoutManager {
     this._applyBottomState();
   }
 
-  expandBottom(px = 220) {
+  expandBottom(px) {
     this.bottomCollapsed = false;
     this.bottomHeight = Math.max(this.bottomStripHeight + 40, px || this.bottomHeight || 220);
     this._applyBottomState();
