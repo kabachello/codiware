@@ -117,8 +117,9 @@ final class GitController
         $q = $request->getQueryParams();
         $limit = max(1, min(500, (int)($q['limit'] ?? 100)));
         $skip = max(0, (int)($q['skip'] ?? 0));
+        $search = trim((string)($q['search'] ?? ''));
         return $this->responses->ok([
-            'commits' => $this->git->history($root, $limit, $skip),
+            'commits' => $this->git->history($root, $limit, $skip, $search),
         ]);
     }
 

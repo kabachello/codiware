@@ -226,9 +226,17 @@ final class GitService
      * `%D` into typed branch/tag/remote entries so the client can label
      * branches with text instead of relying on color alone.
      *
+     * When `$search` is given, the commit list is filtered to rows that match
+     * the term (case-insensitive) in any displayed column — subject, author,
+     * committer, hash, refs or the formatted dates. The filtering is done in
+     * PHP rather than by shelling out to the system `grep`, which is not part
+     * of a default Windows installation, so the behaviour is identical on
+     * Windows and Linux. Because a filtered list no longer represents a
+     * contiguous commit graph, the client hides the branch lanes in this mode.
+     *
      * @return array<int,array{hash:string,parents:string[],author:string,email:string,date:int,committer:string,commit_date:int,subject:string,refs:array<int,array{type:string,name:string,current:bool}>}>
      */
-    public function history(WorkspaceRoot $root, int $limit, int $skip = 0): array
+    public function history(WorkspaceRoot $root, int $limit, int $skip = 0, string $search = ''): array
     {
         $this->requireRepo($root);
         $us = "\x1f"; // field separator (git %x1f)
@@ -242,6 +250,8 @@ final class GitService
         $out = $this->run($root, $args);
         $lines = $out === '' ? [] : explode("\n", $out);
         $rows = [];
+        $needle = trim($search);
+        $needle = $needle === '' ? '' : mb_strtolower($needle);
         foreach ($lines as $line) {
             if ($line === '') {
                 continue;
@@ -250,7 +260,8 @@ final class GitService
             if (count($parts) < 9) {
                 continue;
             }
-            $rows[] = [
+            $refs = $this->parseRefs($parts[8]);
+            $row = [
                 'hash' => $parts[0],
                 'parents' => $parts[1] === '' ? [] : explode(' ', $parts[1]),
                 'author' => $parts[2],
@@ -259,10 +270,37 @@ final class GitService
                 'committer' => $parts[5],
                 'commit_date' => (int)$parts[6],
                 'subject' => $parts[7],
-                'refs' => $this->parseRefs($parts[8]),
+                'refs' => $refs,
             ];
+            if ($needle !== '' && !$this->historyRowMatches($row, $needle)) {
+                continue;
+            }
+            $rows[] = $row;
         }
         return $rows;
+    }
+
+    /**
+     * Test whether a history row matches a (already lower-cased) search term in
+     * any of its displayed columns: subject, author, committer, hash, ref names
+     * and the formatted author/commit dates. Acts as a cross-platform,
+     * all-column substitute for piping the log through `grep`.
+     */
+    private function historyRowMatches(array $row, string $needle): bool
+    {
+        $haystack = [
+            (string)$row['hash'],
+            (string)$row['author'],
+            (string)$row['email'],
+            (string)$row['committer'],
+            (string)$row['subject'],
+            date('Y-m-d H:i', (int)$row['date']),
+            date('Y-m-d H:i', (int)$row['commit_date']),
+        ];
+        foreach ($row['refs'] as $ref) {
+            $haystack[] = (string)($ref['name'] ?? '');
+        }
+        return mb_strpos(mb_strtolower(implode("\n", $haystack)), $needle) !== false;
     }
 
     /**

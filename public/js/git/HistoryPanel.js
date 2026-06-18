@@ -55,6 +55,8 @@ export class HistoryPanel {
     this.commits = [];
     this.selected = null;
     this._loaded = false;
+    this.search = '';
+    this._searchTimer = null;
     this.graphWidth = 60; // percent of the split width taken by the graph pane
   }
 
@@ -70,6 +72,7 @@ export class HistoryPanel {
 
     const toolbar = document.createElement('div');
     toolbar.className = 'panel-toolbar';
+    toolbar.append(this._buildSearch());
     toolbar.append(this._tbBtn('fa fa-refresh', this._t('actions.refresh', 'Refresh'), () => this.refresh()));
     host.append(toolbar);
 
@@ -114,6 +117,41 @@ export class HistoryPanel {
     }
   }
 
+  /**
+   * Search box shown to the left of the refresh button. Typing filters the
+   * history server-side across all columns; while a filter is active the branch
+   * lanes are hidden because the result is no longer a contiguous graph.
+   */
+  _buildSearch() {
+    const wrap = document.createElement('div');
+    wrap.className = 'history-search';
+    wrap.append(Icon.render('fa fa-search'));
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.className = 'history-search-input';
+    input.placeholder = this._t('history.search_placeholder', 'Search history…');
+    input.value = this.search;
+    input.setAttribute('aria-label', this._t('history.search_placeholder', 'Search history…'));
+    input.addEventListener('input', () => {
+      clearTimeout(this._searchTimer);
+      this._searchTimer = setTimeout(() => this._applySearch(input.value), 250);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(this._searchTimer); this._applySearch(input.value); }
+      else if (e.key === 'Escape' && input.value !== '') { e.preventDefault(); input.value = ''; this._applySearch(''); }
+    });
+    this.searchInput = input;
+    wrap.append(input);
+    return wrap;
+  }
+
+  _applySearch(value) {
+    const v = (value || '').trim();
+    if (v === this.search) return;
+    this.search = v;
+    this.refresh();
+  }
+
   _tbBtn(icon, title, onClick) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -129,7 +167,9 @@ export class HistoryPanel {
     if (!this.graphPane) return;
     this.graphPane.textContent = '…';
     try {
-      const data = await this.api.get('/git/history', { limit: HISTORY_LIMIT });
+      const params = { limit: HISTORY_LIMIT };
+      if (this.search) params.search = this.search;
+      const data = await this.api.get('/git/history', params);
       this.commits = Array.isArray(data?.commits) ? data.commits : [];
       this._loaded = true;
       this._graph = computeGraph(this.commits);
@@ -144,13 +184,18 @@ export class HistoryPanel {
     pane.innerHTML = '';
     if (!this.commits.length) {
       pane.classList.add('is-empty');
-      pane.textContent = this._t('history.empty', 'No commits');
+      pane.textContent = this.search
+        ? this._t('history.no_matches', 'No matching commits')
+        : this._t('history.empty', 'No commits');
       return;
     }
     pane.classList.remove('is-empty');
 
     const graph = this._graph || computeGraph(this.commits);
     const graphWidth = Math.max(1, graph.cols) * LANE_W;
+    // While a search filter is active the result is no longer a contiguous
+    // graph, so the branch lanes are hidden and only the commit rows are shown.
+    const showLanes = !this.search;
 
     const table = document.createElement('div');
     table.className = 'history-table';
@@ -166,9 +211,13 @@ export class HistoryPanel {
 
       const graphCell = document.createElement('div');
       graphCell.className = 'history-graph-cell';
-      graphCell.style.width = graphWidth + 'px';
-      graphCell.style.minWidth = graphWidth + 'px';
-      graphCell.innerHTML = renderGraphSvg(row, graph.cols);
+      if (showLanes) {
+        graphCell.style.width = graphWidth + 'px';
+        graphCell.style.minWidth = graphWidth + 'px';
+        graphCell.innerHTML = renderGraphSvg(row, graph.cols);
+      } else {
+        graphCell.classList.add('is-hidden');
+      }
 
       const subjectCell = document.createElement('div');
       subjectCell.className = 'history-subject';
