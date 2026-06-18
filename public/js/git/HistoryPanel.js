@@ -183,8 +183,8 @@ export class HistoryPanel {
 
       const authorCell = document.createElement('div');
       authorCell.className = 'history-author';
-      authorCell.textContent = c.committer || c.author || '';
-      authorCell.title = c.committer || c.author || '';
+      authorCell.textContent = c.author || c.committer || '';
+      authorCell.title = c.author || c.committer || '';
 
       const dateCell = document.createElement('div');
       dateCell.className = 'history-date';
