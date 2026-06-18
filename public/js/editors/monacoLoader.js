@@ -24,6 +24,7 @@ export function loadMonaco() {
   window.__codiwareMonacoPromise = new Promise((resolve, reject) => {
     const base = window.CODIWARE_BOOT?.extensions?.['codiware.markdown']?.['INCLUDES.MONACO_JS_BASE']
       || (window.CODIWARE_ASSET_BASE_APP || '') + '/monaco/node_modules/monaco-editor/min/vs';
+    const cacheBust = window.CODIWARE_BOOT?.cache_bust || '';
 
     const hadRequire = 'require' in window;
     const hadDefine = 'define' in window;
@@ -39,17 +40,20 @@ export function loadMonaco() {
     };
 
     const loader = document.createElement('script');
-    loader.src = base + '/loader.js';
+    loader.src = base + '/loader.js' + (cacheBust ? ('?v=' + encodeURIComponent(cacheBust)) : '');
     loader.async = true;
     loader.onload = () => {
       try {
-        window.require.config({ paths: { vs: base } });
+        window.require.config({
+          paths: { vs: base },
+          ...(cacheBust ? { urlArgs: 'v=' + encodeURIComponent(cacheBust) } : {}),
+        });
         // Workers need an absolute URL prefix to satisfy same-origin rules.
         window.MonacoEnvironment = window.MonacoEnvironment || {
           getWorkerUrl: function (_moduleId, _label) {
             return URL.createObjectURL(new Blob([
               `self.MonacoEnvironment = { baseUrl: '${base}/' };`,
-              `importScripts('${base}/base/worker/workerMain.js');`,
+              `importScripts('${base}/base/worker/workerMain.js${cacheBust ? ('?v=' + encodeURIComponent(cacheBust)) : ''}');`,
             ], { type: 'text/javascript' }));
           },
         };

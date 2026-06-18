@@ -16,6 +16,14 @@ function resolveAssetUrl(path, fallbackBase) {
   return `${base}/${path.replace(/^\//, '')}`;
 }
 
+function withCacheBust(url) {
+  if (!url) return url;
+  const version = window.CODIWARE_BOOT?.cache_bust || '';
+  if (!version) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}v=${encodeURIComponent(version)}`;
+}
+
 /**
  * Resolve a path that is defined relative to the Composer `vendor` folder
  * (e.g. `npm-asset/github-markdown-css/github-markdown.css`) into an absolute
@@ -41,13 +49,13 @@ function resolveVendorUrl(path) {
  */
 function injectPreviewCss(paths) {
   const list = Array.isArray(paths) ? paths : (paths ? [paths] : []);
-  const version = window.CODIWARE_BOOT?.cache_bust || '';
   for (const path of list) {
-    const href = resolveVendorUrl(typeof path === 'string' ? path.trim() : '');
+    const hrefRaw = resolveVendorUrl(typeof path === 'string' ? path.trim() : '');
+    const href = withCacheBust(hrefRaw);
     if (!href || injectedPreviewCss.has(href)) continue;
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = version ? `${href}?v=${version}` : href;
+    link.href = href;
     link.dataset.codiwareMarkdownCss = '1';
     document.head.appendChild(link);
     injectedPreviewCss.add(href);
@@ -100,7 +108,7 @@ async function loadToastUiEditorCtor() {
   toastUiEditorCtorPromise = (async () => {
     const assetBase = window.CODIWARE_ASSET_BASE_NPM || '/codiware/assets';
     const includeRaw = window.CODIWARE_BOOT?.extensions?.['codiware.markdown']?.['INCLUDES.EDITOR_JS'] || assetBase + '/toast-ui--editor/dist/esm/index.js';
-    const include = resolveAssetUrl(includeRaw, assetBase);
+    const include = withCacheBust(resolveAssetUrl(includeRaw, assetBase));
 
     if (window.toastui?.Editor) return window.toastui.Editor;
 

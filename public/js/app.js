@@ -1,30 +1,114 @@
-import { EventBus } from './core/EventBus.js';
-import { StateStore } from './core/StateStore.js';
-import { SettingsStore } from './core/SettingsStore.js';
-import { ApiClient } from './core/ApiClient.js';
-import { I18n } from './core/I18n.js';
-import { Toasts } from './core/Toasts.js';
-import { LayoutManager } from './layout/LayoutManager.js';
-import { PanelManager } from './layout/PanelManager.js';
-import { BottomPanelManager } from './layout/BottomPanelManager.js';
-import { EditorRegistry } from './editors/EditorRegistry.js';
-import { monacoEditorDescriptor } from './editors/MonacoEditor.js';
-import { markdownEditorDescriptor } from './editors/MarkdownEditor.js';
-import { imageEditorDescriptor } from './editors/ImageEditor.js';
-import { diffEditorDescriptor } from './editors/DiffEditor.js';
-import { TabManager } from './editors/TabManager.js';
-import { FileTree } from './files/FileTree.js';
-import { GitPanel } from './git/GitPanel.js';
-import { HistoryPanel } from './git/HistoryPanel.js';
-import { SearchPanel } from './search/SearchPanel.js';
-import { ConsolePanel } from './console/ConsolePanel.js';
-import { Icon } from './core/Icon.js';
+let Icon = null;
+
+function withCacheBust(path) {
+  const v = window.CODIWARE_BOOT?.cache_bust || '';
+  if (!v) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}v=${encodeURIComponent(v)}`;
+}
+
+async function loadAppModules() {
+  const [
+    { EventBus },
+    { StateStore },
+    { SettingsStore },
+    { ApiClient },
+    { I18n },
+    { Toasts },
+    { LayoutManager },
+    { PanelManager },
+    { BottomPanelManager },
+    { EditorRegistry },
+    { monacoEditorDescriptor },
+    { markdownEditorDescriptor },
+    { imageEditorDescriptor },
+    { diffEditorDescriptor },
+    { TabManager },
+    { FileTree },
+    { GitPanel },
+    { HistoryPanel },
+    { SearchPanel },
+    { ConsolePanel },
+    { Icon: IconModule },
+  ] = await Promise.all([
+    import(withCacheBust('./core/EventBus.js')),
+    import(withCacheBust('./core/StateStore.js')),
+    import(withCacheBust('./core/SettingsStore.js')),
+    import(withCacheBust('./core/ApiClient.js')),
+    import(withCacheBust('./core/I18n.js')),
+    import(withCacheBust('./core/Toasts.js')),
+    import(withCacheBust('./layout/LayoutManager.js')),
+    import(withCacheBust('./layout/PanelManager.js')),
+    import(withCacheBust('./layout/BottomPanelManager.js')),
+    import(withCacheBust('./editors/EditorRegistry.js')),
+    import(withCacheBust('./editors/MonacoEditor.js')),
+    import(withCacheBust('./editors/MarkdownEditor.js')),
+    import(withCacheBust('./editors/ImageEditor.js')),
+    import(withCacheBust('./editors/DiffEditor.js')),
+    import(withCacheBust('./editors/TabManager.js')),
+    import(withCacheBust('./files/FileTree.js')),
+    import(withCacheBust('./git/GitPanel.js')),
+    import(withCacheBust('./git/HistoryPanel.js')),
+    import(withCacheBust('./search/SearchPanel.js')),
+    import(withCacheBust('./console/ConsolePanel.js')),
+    import(withCacheBust('./core/Icon.js')),
+  ]);
+
+  return {
+    EventBus,
+    StateStore,
+    SettingsStore,
+    ApiClient,
+    I18n,
+    Toasts,
+    LayoutManager,
+    PanelManager,
+    BottomPanelManager,
+    EditorRegistry,
+    monacoEditorDescriptor,
+    markdownEditorDescriptor,
+    imageEditorDescriptor,
+    diffEditorDescriptor,
+    TabManager,
+    FileTree,
+    GitPanel,
+    HistoryPanel,
+    SearchPanel,
+    ConsolePanel,
+    Icon: IconModule,
+  };
+}
 
 /**
  * Application bootstrap. The HTML shell sets `window.CODIWARE_BOOT` with
  * the per-request configuration before this module loads.
  */
 async function main() {
+  const {
+    EventBus,
+    StateStore,
+    SettingsStore,
+    ApiClient,
+    I18n,
+    Toasts,
+    LayoutManager,
+    PanelManager,
+    BottomPanelManager,
+    EditorRegistry,
+    monacoEditorDescriptor,
+    markdownEditorDescriptor,
+    imageEditorDescriptor,
+    diffEditorDescriptor,
+    TabManager,
+    FileTree,
+    GitPanel,
+    HistoryPanel,
+    SearchPanel,
+    ConsolePanel,
+    Icon: LoadedIcon,
+  } = await loadAppModules();
+  Icon = LoadedIcon;
+
   const boot = window.CODIWARE_BOOT || {};
   const basePath = (boot.url_to_api || '/codiware').replace(/\/$/, '');
   const workspace = boot.workspace || {};
