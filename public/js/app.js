@@ -192,6 +192,7 @@ async function main() {
           user: boot.user || {},
           hasGitIdentity,
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
+          onOpenHistory: () => bottomPanels.activate('history', { expand: true }),
         });
         gitPanel.mount(host);
       },

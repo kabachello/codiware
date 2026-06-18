@@ -2,12 +2,13 @@
 import { Icon } from '../core/Icon.js';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus, onOpenDiff, user = {}, hasGitIdentity = true }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, user = {}, hasGitIdentity = true }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
     this.bus = bus;
     this.onOpenDiff = onOpenDiff; // Callback: (path, staged, diffData) => void
+    this.onOpenHistory = typeof onOpenHistory === 'function' ? onOpenHistory : () => {};
     this.user = user || {};
     this.hasGitIdentity = Boolean(hasGitIdentity);
     bus.on('file:saved', () => this.refresh());
@@ -25,7 +26,8 @@ export class GitPanel {
     toolbar.append(
       tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
       this.pushBtn,
-      this.pullBtn
+      this.pullBtn,
+      tbBtn('fa fa-history', this.i18n.t('git.history'), () => this.onOpenHistory())
     );
 
     this.identityWarning = null;
