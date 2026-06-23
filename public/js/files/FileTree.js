@@ -30,7 +30,7 @@ function cssEscape(value) {
  * Each directory is loaded lazily through `api.get('/files/tree', {path})`.
  * Renders a panel toolbar (new file/folder, refresh) above the tree and an
  * inline three-dot menu on each row for per-item actions (rename, delete,
- * download, upload to folder, etc.).
+ * duplicate, download, upload to folder, etc.).
  */
 export class FileTree {
   constructor({ host, api, i18n, toasts, bus, onOpen, fileIcons, settings }) {
@@ -410,6 +410,7 @@ export class FileTree {
         { icon: 'fa fa-file-o', label: t('files.new_file_here'), onClick: () => this._createPrompt(entry.path, 'file') },
         { icon: 'fa fa-folder', label: t('files.new_folder_here'), onClick: () => this._createPrompt(entry.path, 'dir') },
         { sep: true },
+        { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
         { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
         { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
         { sep: true },
@@ -419,6 +420,7 @@ export class FileTree {
     }
 
     return [
+      { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
       { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
       { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
       { sep: true },
@@ -443,6 +445,20 @@ export class FileTree {
       if (type === 'file') {
         this.onOpen?.({ type: 'file', name: clean.split('/').pop(), path: res?.path || path });
       }
+    } catch (e) {
+      this.toasts.error(e.message);
+    }
+  }
+
+  async _duplicate(entry) {
+    try {
+      const res = await this.api.post('/files/duplicate', { path: entry.path });
+      await this.refresh();
+      this.bus?.emit?.('files:changed', {
+        action: 'duplicate',
+        from: entry.path,
+        to: res?.to || null,
+      });
     } catch (e) {
       this.toasts.error(e.message);
     }

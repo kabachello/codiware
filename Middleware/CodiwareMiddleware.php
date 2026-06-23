@@ -170,6 +170,7 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $this->router->post('/files/create', [$files, 'create']);
         $this->router->post('/files/move', [$files, 'move']);
         $this->router->post('/files/copy', [$files, 'copy']);
+        $this->router->post('/files/duplicate', [$files, 'duplicate']);
         $this->router->delete('/files/delete', [$files, 'delete']);
         $this->router->get('/files/download', [$files, 'download']);
         $this->router->post('/files/upload', [$files, 'upload']);

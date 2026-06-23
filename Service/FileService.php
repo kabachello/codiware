@@ -195,11 +195,45 @@ final class FileService
         if (is_dir($src)) {
             $this->rcopy($src, $dst);
         } else {
+            $parent = dirname($dst);
+            if (!is_dir($parent) && !@mkdir($parent, 0775, true)) {
+                throw new CodiwareException('Cannot create destination directory.', 'mkdir_failed', 500);
+            }
             if (!@copy($src, $dst)) {
                 throw new CodiwareException('Cannot copy file.', 'copy_failed', 500);
             }
         }
         return ['from' => $from, 'to' => $this->guard->relativize($root, $dst)];
+    }
+
+    /**
+     * Create a copy of a file or folder in the same parent directory using a
+     * human-friendly `(copy)` suffix. If the generated name already exists,
+     * numeric suffixes are added as `(copy 2)`, `(copy 3)`, etc.
+     *
+     * @return array{from:string,to:string}
+     */
+    public function duplicate(WorkspaceRoot $root, string $path): array
+    {
+        $path = trim($path, '/');
+        if ($path === '') {
+            throw new CodiwareException('path is required.', 'bad_request', 400);
+        }
+
+        $this->guard->resolveInside($root, $path);
+        $parent = str_contains($path, '/') ? dirname($path) : '';
+        if ($parent === '.') {
+            $parent = '';
+        }
+        $name = basename($path);
+        $targetName = $this->nextDuplicateName($name, function (string $candidate) use ($root, $parent): bool {
+            $candidateRel = $parent === '' ? $candidate : $parent . '/' . $candidate;
+            $candidateAbs = $this->guard->resolveInside($root, $candidateRel, mustExist: false);
+            return file_exists($candidateAbs);
+        });
+        $targetRel = $parent === '' ? $targetName : $parent . '/' . $targetName;
+
+        return $this->copy($root, $path, $targetRel);
     }
 
     /**
@@ -266,7 +300,7 @@ final class FileService
                         continue;
                     }
                     // Reject absolute paths and traversal in zip entries (zip-slip).
-                    if (preg_match('#^[/\\\\]|(^|[\\\\/])\.\.([\\\\/]|$)#', $entryName) === 1) {
+                    if (preg_match('#^[/\\]|(^|[\\/])\.\.([\\/]|$)#', $entryName) === 1) {
                         throw new CodiwareException('Zip entry rejected (traversal).', 'zip_unsafe', 400, ['entry' => $entryName]);
                     }
                     $entryRel = ($relTarget === '' ? '' : $relTarget . '/') . $entryName;
@@ -331,6 +365,31 @@ final class FileService
         $name = basename($name);
         $name = preg_replace('/[\x00-\x1F]/', '', $name) ?? '';
         return $name !== '' ? $name : 'upload';
+    }
+
+    private function nextDuplicateName(string $name, callable $exists): string
+    {
+        $extension = pathinfo($name, PATHINFO_EXTENSION);
+        $filename = pathinfo($name, PATHINFO_FILENAME);
+        $base = $extension === '' ? $name : $filename;
+
+        $candidate = $extension === ''
+            ? $base . ' (copy)'
+            : $base . ' (copy).' . $extension;
+        if (!$exists($candidate)) {
+            return $candidate;
+        }
+
+        $index = 2;
+        while (true) {
+            $candidate = $extension === ''
+                ? $base . ' (copy ' . $index . ')'
+                : $base . ' (copy ' . $index . ').' . $extension;
+            if (!$exists($candidate)) {
+                return $candidate;
+            }
+            $index++;
+        }
     }
 
     private function isLikelyText(string $abs): bool

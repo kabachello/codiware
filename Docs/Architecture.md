@@ -51,7 +51,7 @@ The Codiware Composer package provides:
 
 - PSR middleware entry point and internal routing.
 - Static HTML, CSS, JavaScript, skins, icons, and vendor browser assets.
-- File tree, file read/write, upload, download, move, copy, delete, and zip extraction APIs.
+- File tree, file read/write, upload, download, move, copy, duplicate, delete, and zip extraction APIs.
 - Git status, diff, staging, commit, amend, branch, push, discard, and history APIs.
 - Global search and replace APIs.
 - Configured command console APIs.
@@ -227,9 +227,12 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 | `POST` | `/files/create` | Creates file or directory. |
 | `POST` | `/files/move` | Moves or renames file/directory. |
 | `POST` | `/files/copy` | Copies file/directory, used by ctrl-drag in the tree. |
+| `POST` | `/files/duplicate` | Duplicates a file or directory in place using a `(copy)` suffix and collision-safe numbering. |
 | `DELETE` | `/files/delete?root=&path=` | Deletes file or directory. |
 | `GET` | `/files/download?root=&path=` | Downloads a file or streams a folder as zip. |
 | `POST` | `/files/upload?root=&path=` | Uploads one or more files. Zip uploads can be extracted with subfolders. |
+
+The explorer panel exposes duplicate for both files and folders via the row action menu and right-click context menu. Duplicate is an explicit in-place action distinct from drag-copy: it always creates a sibling copy named with a `(copy)` suffix, preserving the original selection and folder structure semantics.
 
 ### Git
 
@@ -511,9 +514,10 @@ The file tree supports:
 - Lazy loading.
 - Clear indication of opened files.
 - Persisted expanded/collapsed branches per workspace.
-- Right-click context menu for create, rename, delete, copy, move, upload, download, and reveal actions.
+- Right-click context menu for create, rename, duplicate, delete, copy, move, upload, download, and reveal actions.
 - Drag-to-move and ctrl-drag-to-copy.
 - Drag-and-drop upload for files and zip archives with subfolders.
+- Explicit duplicate actions for files and folders that create sibling copies named with a `(copy)` suffix.
 
 ### Responsiveness
 
@@ -734,7 +738,7 @@ Because the shipped package has no build step, browser tests should run against 
 - Implement file tree, file APIs, text read/write, tab management, tab restoration, and opened-file indicators. Complexity: Large.
 - Add `EditorRegistry`, editor lifecycle contract, Monaco code editor, Markdown editor with Mermaid, and image preview. Complexity: Large.
 - Add adapter hooks for front-end library plugins, starting with Toast UI Editor plugins and Monaco language/completion providers. Complexity: Medium.
-- Add upload, download, zip handling, drag move/copy, and context menus. Complexity: Large.
+- Add upload, download, zip handling, drag move/copy, context menus, and in-place duplicate actions. Complexity: Large.
 
 **Phase 3: Git, Search, and Console**
 
@@ -747,7 +751,7 @@ Because the shipped package has no build step, browser tests should run against 
 - Add skins for light, dark, jEasyUI-like, and OpenUI5 Horizon-like appearances. Complexity: Medium.
 - Add ExFace integration documentation for `axenox/ide`. Complexity: Small.
 - Add automated back-end and Playwright coverage for the critical workflows. Complexity: Large.
-- Verify Windows and Linux behavior for filesystem paths, Git commands, zip handling, and process execution. Complexity: Medium.
+- Verify Windows and Linux behavior for filesystem paths, Git commands, zip handling, process execution, and duplicate-name collision handling. Complexity: Medium.
 
 ## Considerations
 
