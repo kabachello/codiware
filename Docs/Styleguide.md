@@ -79,6 +79,19 @@ The Inline toolbar can show up to 2 most important buttons and the three-dot men
 
 List items in sidebar trees also support a right-click context menu. This context menu must expose the same item-level actions as the inline toolbar/menu for that item.
 
+### Console output blocks
+
+Console commands and their output must be visually separated into distinct blocks, so multiple runs stay readable in one long terminal scrollback.
+
+Each block should:
+
+* begin with a visible separator line
+* show the executed command directly below that separator
+* contain the command output unchanged
+* end with a visible closing separator or spacing before the next prompt
+
+Separators may use terminal box-drawing characters or similar text-based markers because the console itself is terminal-rendered. The separation must not rely on color only.
+
 ## Editor tabs
 
 The main editor area has tabs for opened files.

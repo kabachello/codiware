@@ -106,6 +106,7 @@ export class ConsolePanel {
     this.term = null;
     this.ready = false;
     this.queue = [];
+    this.commandBlockIndex = 0;
 
     // Subscribe immediately (before first mount) so UI-triggered output is
     // never missed. Actions received before the terminal is ready are queued
@@ -270,7 +271,7 @@ export class ConsolePanel {
       case '\x1b[A': this._historyPrev(); return;            // Up
       case '\x1b[B': this._historyNext(); return;            // Down
       case '\x1b[C': this._cursorRight(); return;            // Right
-      case '\x1b[D': this._cursorLeft(); return;             // Left
+      case '\x1b[D': this._cursorLeft(); return;            // Left
       case '\x1b[H': case '\x1bOH': case '\x1b[1~': case '\x01': // Home / Ctrl+A
         this._cursorHome(); return;
       case '\x1b[F': case '\x1bOF': case '\x1b[4~': case '\x05': // End / Ctrl+E
@@ -458,6 +459,27 @@ export class ConsolePanel {
     return this.lastFailed ? '\x1b[1;31m$\x1b[0m ' : '\x1b[1;32m$\x1b[0m ';
   }
 
+  _writeCommandSeparator(command = '') {
+    if (!this.term) return;
+    this.commandBlockIndex += 1;
+    const label = command ? ' ' + command + ' ' : ' command ';
+    const cols = Math.max(24, this.term.cols || 80);
+    const innerWidth = Math.max(0, cols - 4);
+    const title = '[' + this.commandBlockIndex + ']' + label;
+    const fill = Math.max(0, innerWidth - title.length);
+    const left = '─'.repeat(Math.floor(fill / 2));
+    const right = '─'.repeat(Math.ceil(fill / 2));
+    this.term.write('\x1b[90m');
+    this.term.write('┌' + left + title + right + '┐\r\n');
+    this.term.write('\x1b[0m');
+  }
+
+  _writeCommandFooter() {
+    if (!this.term) return;
+    const cols = Math.max(24, this.term.cols || 80);
+    this.term.write('\x1b[90m' + '└' + '─'.repeat(Math.max(0, cols - 2)) + '┘' + '\x1b[0m\r\n\r\n');
+  }
+
   // --- Public entry points ------------------------------------------------
 
   /**
@@ -485,6 +507,7 @@ export class ConsolePanel {
   }
 
   async _doRun(command, opts) {
+    this._writeCommandSeparator(command);
     if (!opts.fromInput) {
       // Programmatic run: echo the command so users see what executed.
       if (this.promptActive) { this.term.write('\r\n'); this.promptActive = false; }
@@ -509,6 +532,7 @@ export class ConsolePanel {
       this.abort = null;
       this.lastFailed = failed;
       this._setRunning(false);
+      this._writeCommandFooter();
       if (failed) this.open();
       this._writePrompt();
       this._drainQueue();
@@ -516,13 +540,15 @@ export class ConsolePanel {
   }
 
   _doInject(block) {
-    if (this.promptActive) { this.term.write('\r\n'); this.promptActive = false; }
     const command = block.command || '';
+    this._writeCommandSeparator(command);
+    if (this.promptActive) { this.term.write('\r\n'); this.promptActive = false; }
     if (command) this.term.write(this._prompt() + command + '\r\n');
     let output = block.output != null ? String(block.output) : '';
     if (output && !output.endsWith('\n')) output += '\n';
     if (output) this.term.write(output.replace(/\r?\n/g, '\r\n'));
     this.lastFailed = block.ok === false;
+    this._writeCommandFooter();
     this._writePrompt();
   }
 
@@ -590,4 +616,3 @@ export class ConsolePanel {
     return v && v !== key ? v : fallback;
   }
 }
-
