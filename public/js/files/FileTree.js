@@ -410,6 +410,7 @@ export class FileTree {
         { icon: 'fa fa-file-o', label: t('files.new_file_here'), onClick: () => this._createPrompt(entry.path, 'file') },
         { icon: 'fa fa-folder', label: t('files.new_folder_here'), onClick: () => this._createPrompt(entry.path, 'dir') },
         { sep: true },
+        { icon: 'fa fa-clipboard', label: t('files.copy_relative_path'), onClick: () => this._copyPathToClipboard(entry.path) },
         { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
         { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
         { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
@@ -420,6 +421,7 @@ export class FileTree {
     }
 
     return [
+      { icon: 'fa fa-clipboard', label: t('files.copy_relative_path'), onClick: () => this._copyPathToClipboard(entry.path) },
       { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
       { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
       { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
@@ -489,6 +491,41 @@ export class FileTree {
       this.bus?.emit?.('files:changed', { action: 'delete', path: entry.path });
     } catch (e) {
       this.toasts.error(e.message);
+    }
+  }
+
+  async _copyPathToClipboard(path) {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(path);
+      } else {
+        this._copyTextFallback(path);
+      }
+      this.toasts.success?.(this.i18n.t('files.path_copied'));
+    } catch (e) {
+      try {
+        this._copyTextFallback(path);
+        this.toasts.success?.(this.i18n.t('files.path_copied'));
+      } catch (fallbackError) {
+        this.toasts.error(this.i18n.t('files.path_copy_failed'));
+      }
+    }
+  }
+
+  _copyTextFallback(text) {
+    const input = document.createElement('textarea');
+    input.value = text;
+    input.setAttribute('readonly', 'readonly');
+    input.style.position = 'fixed';
+    input.style.top = '-9999px';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(input);
+    if (!ok) {
+      throw new Error('Copy command rejected');
     }
   }
 
