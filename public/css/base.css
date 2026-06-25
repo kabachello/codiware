@@ -1,8 +1,8 @@
 :root {
   --ide-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --ide-font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
-  --ide-fs: 13px;
-  --ide-fs-sm: 12px;
+  --ide-fs: 14px;
+  --ide-fs-sm: 13px;
   --ide-radius: 4px;
   --ide-gap: 8px;
   --ide-panel-h: 32px;
