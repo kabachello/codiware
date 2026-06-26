@@ -11,6 +11,8 @@ export class GitPanel {
     this.onOpenHistory = typeof onOpenHistory === 'function' ? onOpenHistory : () => {};
     this.user = user || {};
     this.hasGitIdentity = Boolean(hasGitIdentity);
+    this.filterText = '';
+    this._lastStatus = null;
     bus.on('file:saved', () => this.refresh());
   }
 
@@ -51,6 +53,8 @@ export class GitPanel {
     commitRow.append(this.commitBtn, amendBtn);
 
     this.body = el('div');
+    this.filterWrap = null;
+    this.filterInput = null;
 
     host.append(toolbar);
     if (this.identityWarning) host.append(this.identityWarning);
@@ -75,6 +79,7 @@ export class GitPanel {
     this.body.textContent = '…';
     try {
       const data = await this.api.get('/git/status');
+      this._lastStatus = data;
       this.bus?.emit?.('git:status-updated', data);
       this._updatePushButton(data);
       this._updatePullButton(data);
@@ -131,16 +136,23 @@ export class GitPanel {
   }
 
   render(s) {
+    const hadFilterFocus = document.activeElement === this.filterInput;
+    const filterSelectionStart = hadFilterFocus ? this.filterInput.selectionStart : null;
+    const filterSelectionEnd = hadFilterFocus ? this.filterInput.selectionEnd : null;
+
     this.body.innerHTML = '';
     const header = el('div');
     header.textContent = `${this.i18n.t('git.branch')}: ${s.branch || '(detached)'}  ↑${s.ahead} ↓${s.behind}`;
     header.style.margin = '6px 0';
     this.body.appendChild(header);
 
+    this.body.appendChild(this._buildFilter());
+
     if (s.clean) {
       const c = el('div'); c.textContent = this.i18n.t('git.no_changes');
       c.style.color = 'var(--ide-fg-muted)';
       this.body.appendChild(c);
+      this._restoreFilterFocus(hadFilterFocus, filterSelectionStart, filterSelectionEnd);
       return;
     }
 
@@ -154,9 +166,14 @@ export class GitPanel {
       else if (f.staged) groups.staged.items.push(f);
       else groups.changed.items.push(f);
     }
+
+    const filter = this._normalizeFilter(this.filterText);
+    let visibleItemCount = 0;
     for (const key of ['staged', 'changed', 'untracked']) {
       const g = groups[key];
-      if (g.items.length === 0) continue;
+      const items = filter ? g.items.filter((f) => this._matchesFilter(f, filter)) : g.items;
+      if (items.length === 0) continue;
+      visibleItemCount += items.length;
       const header = el('div', 'git-group-header');
       header.style.display = 'flex';
       header.style.alignItems = 'center';
@@ -174,7 +191,7 @@ export class GitPanel {
       });
       header.appendChild(arrow);
       const h = document.createElement('h4');
-      h.textContent = `${g.label} (${g.items.length})`;
+      h.textContent = `${g.label} (${items.length})`;
       h.style.flex = '1';
       h.style.margin = '0';
       h.style.cursor = 'pointer';
@@ -183,7 +200,7 @@ export class GitPanel {
         this.render(s);
       });
       header.appendChild(h);
-      const paths = g.items.map(f => f.path);
+      const paths = items.map(f => f.path);
       if (key === 'staged') {
         header.appendChild(iconBtn(
           'fa fa-minus',
@@ -206,9 +223,73 @@ export class GitPanel {
       }
       this.body.appendChild(header);
       if (!this._collapsed[key]) {
-        for (const f of g.items) this.body.appendChild(this._renderFile(f, key));
+        for (const f of items) this.body.appendChild(this._renderFile(f, key));
       }
     }
+
+    if (filter && visibleItemCount === 0) {
+      const empty = el('div', 'git-filter-empty', this.i18n.t('git.no_matching_changes') || 'No matching changed files');
+      empty.style.color = 'var(--ide-fg-muted)';
+      empty.style.marginTop = '8px';
+      this.body.appendChild(empty);
+    }
+
+    this._restoreFilterFocus(hadFilterFocus, filterSelectionStart, filterSelectionEnd);
+  }
+
+  _buildFilter() {
+    if (this.filterWrap && this.filterInput) {
+      this.filterInput.value = this.filterText;
+      return this.filterWrap;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'git-filter history-search';
+    wrap.append(Icon.render('fa fa-search'));
+
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.className = 'git-filter-input history-search-input';
+    input.placeholder = this.i18n.t('git.filter_placeholder') || 'Filter changed files…';
+    input.value = this.filterText;
+    input.setAttribute('aria-label', this.i18n.t('git.filter_placeholder') || 'Filter changed files…');
+    input.addEventListener('input', () => {
+      this.filterText = input.value || '';
+      this.render(this._lastStatus || { branch: '', ahead: 0, behind: 0, clean: true, files: [] });
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && input.value !== '') {
+        e.preventDefault();
+        input.value = '';
+        this.filterText = '';
+        this.render(this._lastStatus || { branch: '', ahead: 0, behind: 0, clean: true, files: [] });
+      }
+    });
+    this.filterWrap = wrap;
+    this.filterInput = input;
+    wrap.append(input);
+    return wrap;
+  }
+
+  _restoreFilterFocus(hadFocus, selectionStart, selectionEnd) {
+    if (!hadFocus || !this.filterInput) return;
+    this.filterInput.focus({ preventScroll: true });
+    if (selectionStart !== null && selectionEnd !== null) {
+      try {
+        this.filterInput.setSelectionRange(selectionStart, selectionEnd);
+      } catch (e) {
+        // Ignore unsupported input selection errors.
+      }
+    }
+  }
+
+  _normalizeFilter(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  _matchesFilter(file, filter) {
+    if (!filter) return true;
+    return String(file?.path || '').toLowerCase().includes(filter);
   }
 
   _renderFile(f, group) {

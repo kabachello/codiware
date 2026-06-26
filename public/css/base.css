@@ -505,9 +505,12 @@ textarea { font-family: var(--ide-font-mono); }
   background: color-mix(in srgb, var(--ide-accent) 88%, black);
 }
 
-/* Search box in the history toolbar, sits left of the refresh button and
-   grows to fill the available width. */
-.panel-toolbar .history-search {
+/* Search boxes in panel toolbars use one shared visual language so filters in
+   git/history/search feel identical. */
+.panel-toolbar .history-search,
+.git-filter,
+.history-search,
+.git-filter.history-search {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -519,10 +522,16 @@ textarea { font-family: var(--ide-font-mono); }
   background: var(--ide-input-bg, var(--ide-bg));
   color: var(--ide-fg-muted);
 }
-.panel-toolbar .history-search:focus-within {
+.panel-toolbar .history-search:focus-within,
+.git-filter:focus-within,
+.history-search:focus-within,
+.git-filter.history-search:focus-within {
   border-color: var(--ide-accent);
 }
-.panel-toolbar .history-search-input {
+.panel-toolbar .history-search-input,
+.git-filter-input,
+.history-search-input,
+.git-filter-input.history-search-input {
   flex: 1 1 auto;
   min-width: 0;
   border: 0;
@@ -530,6 +539,8 @@ textarea { font-family: var(--ide-font-mono); }
   color: inherit;
   font: inherit;
   outline: none;
+  padding: 0;
+  box-shadow: none;
 }
 .history-graph-cell.is-hidden {
   width: 0;
@@ -589,6 +600,10 @@ textarea { font-family: var(--ide-font-mono); }
 
 .git-identity-warning[hidden] {
   display: none;
+}
+
+.git-filter {
+  margin: 6px 0 2px;
 }
 
 .git-group-header button,

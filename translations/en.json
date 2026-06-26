@@ -61,6 +61,8 @@
   "git.files_label": "files",
   "git.view_diff": "View diff",
   "git.identity_missing_warning": "Git user name or email is missing. Commits may fail.",
+  "git.filter_placeholder": "Filter changed files…",
+  "git.no_matching_changes": "No matching changed files",
 
   "diff.revert_block": "Revert this block",
 
