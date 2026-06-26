@@ -102,6 +102,7 @@
   "history.diff_current": "Diff with current version",
 
   "editor.unsaved": "Unsaved changes",
+  "editor.discard_changes_confirm": "Do you want to discard your changes?\n{path}",
   "editor.binary": "Cannot edit binary file",
   "editor.not_found": "File not found",
   "editor.loading": "Loading editor…",

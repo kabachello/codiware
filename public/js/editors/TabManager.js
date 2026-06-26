@@ -199,7 +199,8 @@ export class TabManager {
     const record = this.tabs.get(key);
     if (!record) return;
     if (record.dirty) {
-      const ok = window.confirm(this.i18n.t('editor.unsaved') + ' — ' + record.entry.path);
+      const message = this.i18n.t('editor.discard_changes_confirm', { path: record.entry.path });
+      const ok = window.confirm(message);
       if (!ok) return;
     }
     try { record.editor.destroy?.(); } catch {}
