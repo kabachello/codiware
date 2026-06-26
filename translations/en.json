@@ -54,6 +54,11 @@
   "git.discard": "Discard",
   "git.stage_all": "Stage all",
   "git.unstage_all": "Unstage all",
+  "git.discard_all": "Discard all changes",
+  "git.discard_all_untracked": "Discard all untracked files",
+  "git.confirm_discard_single": "Discard local changes to",
+  "git.confirm_discard_multiple": "Discard local changes to",
+  "git.files_label": "files",
   "git.view_diff": "View diff",
   "git.identity_missing_warning": "Git user name or email is missing. Commits may fail.",
 

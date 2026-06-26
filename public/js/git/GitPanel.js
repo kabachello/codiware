@@ -196,6 +196,13 @@ export class GitPanel {
           this.i18n.t('git.stage_all') || 'Stage all',
           () => this._stage(paths)
         ));
+        header.appendChild(iconBtn(
+          'fa fa-undo',
+          key === 'untracked'
+            ? (this.i18n.t('git.discard_all_untracked') || 'Discard all untracked files')
+            : (this.i18n.t('git.discard_all') || 'Discard all changes'),
+          () => this._discard(paths)
+        ));
       }
       this.body.appendChild(header);
       if (!this._collapsed[key]) {
@@ -228,9 +235,7 @@ export class GitPanel {
       row.appendChild(iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
     } else {
       row.appendChild(iconBtn('fa fa-plus', this.i18n.t('git.stage') || 'Stage', () => this._stage([f.path])));
-      if (group !== 'untracked') {
-        row.appendChild(iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
-      }
+      row.appendChild(iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
     }
     return row;
   }
@@ -249,7 +254,10 @@ export class GitPanel {
   async _stage(paths) { try { await this.api.post('/git/stage', { paths }); this.refresh(); } catch (e) { this.toasts.error(e.message); } }
   async _unstage(paths) { try { await this.api.post('/git/unstage', { paths }); this.refresh(); } catch (e) { this.toasts.error(e.message); } }
   async _discard(paths) {
-    if (!window.confirm('Discard local changes to ' + paths.join(', ') + '?')) return;
+    const message = paths.length === 1
+      ? `${this.i18n.t('git.confirm_discard_single') || 'Discard local changes to'} ${paths[0]}?`
+      : `${this.i18n.t('git.confirm_discard_multiple') || 'Discard local changes to'} ${paths.length} ${this.i18n.t('git.files_label') || 'files'}?`;
+    if (!window.confirm(message)) return;
     try { await this.api.post('/git/discard', { paths }); this.refresh(); }
     catch (e) { this.toasts.error(e.message); }
   }
