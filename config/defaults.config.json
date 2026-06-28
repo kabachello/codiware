@@ -13,6 +13,7 @@
     "*.pfx"
   ],
   "MAX_UPLOAD_BYTES": 52428800,
+  "FILES.FILTER_MIN_CHARS": 3,
   "THEME.DEFAULT": "light",
   "THEME.ALLOW_USER_OVERRIDE": true,
   "THEME.SKIN": null,

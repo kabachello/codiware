@@ -165,6 +165,7 @@ final class CodiwareMiddleware implements MiddlewareInterface
 
         // Files
         $this->router->get('/files/tree', [$files, 'tree']);
+        $this->router->get('/files/find', [$files, 'find']);
         $this->router->get('/files/read', [$files, 'read']);
         $this->router->put('/files/write', [$files, 'write']);
         $this->router->post('/files/create', [$files, 'create']);

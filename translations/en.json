@@ -35,7 +35,9 @@
   "files.more_actions": "More actions",
   "files.uploaded": "Uploaded {count} file(s)",
   "files.upload_failed": "Upload failed",
-
+  "files.filter_placeholder": "Filter files by name…",
+  "files.no_matches": "(no matching files)",
+  "files.too_many_matches": "(more matches not shown)",
   "git.title": "Source control",
   "git.staged": "Staged",
   "git.changes": "Changes",

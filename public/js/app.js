@@ -246,6 +246,7 @@ async function main() {
       fileTree = new FileTree({
         host, api, i18n, toasts, bus, settings,
         fileIcons: boot.file_icons || {},
+        filterMinChars: boot.files?.filter_min_chars,
         onOpen: (entry) => tabs.open(entry),
       });
       fileTree.refresh();

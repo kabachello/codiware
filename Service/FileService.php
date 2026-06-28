@@ -74,6 +74,77 @@ final class FileService
     }
 
     /**
+     * Recursively search for files whose name contains the given query.
+     *
+     * Matching is case-insensitive and limited to the file name (not the
+     * whole path). Hidden entries (e.g. ".git") and paths matching the
+     * configured deny patterns are skipped. Each match carries its full
+     * workspace-relative path so the client can rebuild the folder hierarchy.
+     *
+     * @return array{matches:array<int,array{name:string,type:string,path:string,size:int,mtime:int,is_text:bool}>,truncated:bool}
+     */
+    public function find(WorkspaceRoot $root, string $query, int $maxResults = 1000): array
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return ['matches' => [], 'truncated' => false];
+        }
+
+        $base = $this->guard->resolveInside($root, '');
+        if (!is_dir($base)) {
+            return ['matches' => [], 'truncated' => false];
+        }
+        $needle = mb_strtolower($query);
+
+        $directory = new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS);
+        // Skip only the Git metadata directory: it holds thousands of internal
+        // files that are never useful in a name filter and would slow the walk
+        // down. Other dot-folders (e.g. ".github") stay searchable so their
+        // files remain findable, matching what the file tree displays.
+        $filtered = new \RecursiveCallbackFilterIterator(
+            $directory,
+            static fn (\SplFileInfo $info): bool => !($info->isDir() && $info->getFilename() === '.git')
+        );
+        $it = new \RecursiveIteratorIterator($filtered, \RecursiveIteratorIterator::LEAVES_ONLY);
+
+        $matches = [];
+        $truncated = false;
+        foreach ($it as $info) {
+            /** @var \SplFileInfo $info */
+            if (!$info->isFile()) {
+                continue;
+            }
+            $name = $info->getFilename();
+            if (!str_contains(mb_strtolower($name), $needle)) {
+                continue;
+            }
+            $abs = $info->getPathname();
+            $rel = $this->guard->relativize($root, $abs);
+            try {
+                // Ensure deny patterns still apply for each candidate.
+                $this->guard->resolveInside($root, $rel);
+            } catch (CodiwareException) {
+                continue;
+            }
+            if (count($matches) >= $maxResults) {
+                $truncated = true;
+                break;
+            }
+            $matches[] = [
+                'name' => $name,
+                'type' => 'file',
+                'path' => $rel,
+                'size' => (int)(@filesize($abs) ?: 0),
+                'mtime' => (int)(@filemtime($abs) ?: 0),
+                'is_text' => $this->isLikelyText($abs),
+            ];
+        }
+
+        usort($matches, static fn (array $a, array $b): int => strcasecmp($a['path'], $b['path']));
+        return ['matches' => $matches, 'truncated' => $truncated];
+    }
+
+    /**
      * @return array{path:string,content:string,size:int,mtime:int,encoding:string}
      */
     public function readText(WorkspaceRoot $root, string $relative): array
