@@ -77,6 +77,54 @@ function extractEditorCtor(mod) {
   return null;
 }
 
+// Caches the promise that loads the Mermaid diagram library so it is fetched
+// at most once, regardless of how many markdown editor instances exist.
+let mermaidPromise = null;
+
+/**
+ * Load a global (IIFE) script by appending a <script> tag, resolving once it
+ * has executed. Deduplicates by src so the same file is never added twice.
+ */
+function loadScriptTag(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-codiware-script="${src}"]`);
+    if (existing) {
+      if (existing.dataset.loaded === '1') resolve();
+      else existing.addEventListener('load', () => resolve());
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = src;
+    s.dataset.codiwareScript = src;
+    s.onload = () => { s.dataset.loaded = '1'; resolve(); };
+    s.onerror = () => reject(new Error('Failed to load script: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+/**
+ * Load the Mermaid diagram library from the path configured via the markdown
+ * extension's `INCLUDES.MERMAID_JS` option and resolve to the global `mermaid`
+ * object. Resolves to `null` when no path is configured or the global is not
+ * exposed, so callers can silently skip diagram rendering.
+ */
+function loadMermaid() {
+  if (mermaidPromise) return mermaidPromise;
+  const configured = window.CODIWARE_BOOT?.extensions?.['codiware.markdown']?.['INCLUDES.MERMAID_JS'];
+  if (!configured) return Promise.resolve(null);
+  const assetBase = window.CODIWARE_ASSET_BASE_NPM || '/codiware/assets';
+  const src = withCacheBust(resolveAssetUrl(configured, assetBase));
+  mermaidPromise = (async () => {
+    if (window.mermaid) return window.mermaid;
+    await loadScriptTag(src);
+    return window.mermaid || null;
+  })().catch((e) => {
+    console.warn('Codiware: failed to load Mermaid library', e);
+    return null;
+  });
+  return mermaidPromise;
+}
+
 function loadClassicScript(src) {
   if (window.toastui?.Editor) return Promise.resolve();
   if (loadedClassicToastUiSources.has(src)) return Promise.resolve();
@@ -206,6 +254,29 @@ export class MarkdownEditor {
     });
   }
 
+  /**
+   * Render Mermaid diagrams found in the preview pane. Toast UI outputs fenced
+   * ```mermaid code blocks as `<code data-language="mermaid">` elements; those
+   * that have not been processed yet are turned into SVG diagrams. No-op when
+   * the Mermaid library is not loaded (i.e. no `INCLUDES.MERMAID_JS` path is
+   * configured).
+   */
+  _refreshMermaid() {
+    const mermaid = window.mermaid;
+    if (!mermaid || !this.editorEl) return;
+    const nodes = this.editorEl.querySelectorAll(
+      '.toastui-editor-md-preview code[data-language="mermaid"]:not([data-processed])'
+    );
+    if (nodes.length === 0) return;
+    try {
+      const isDark = document.documentElement.dataset.theme === 'dark';
+      mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default' });
+      mermaid.run({ nodes: Array.from(nodes) });
+    } catch (e) {
+      console.warn('Codiware: failed to render Mermaid diagram', e);
+    }
+  }
+
   async _init() {
     const host = this.host;
     host.innerHTML = '';
@@ -331,13 +402,20 @@ export class MarkdownEditor {
           if (cls) preview.classList.add(cls);
         }
       }
-      this._previewObserver = new MutationObserver(() => this._rewritePreviewImages());
+      this._previewObserver = new MutationObserver(() => {
+        this._rewritePreviewImages();
+        this._refreshMermaid();
+      });
       this._previewObserver.observe(preview, { childList: true, subtree: true });
 
       // Open relative markdown links (`[](path)`) in an editor instead of
       // navigating the page. Absolute URLs and in-page anchors are left alone.
       preview.addEventListener('click', (e) => this._onPreviewClick(e));
     }
+
+    // Load the Mermaid library (if configured) and render any diagrams already
+    // present in the initial preview.
+    loadMermaid().then(() => this._refreshMermaid());
   }
 
   /**
@@ -379,6 +457,7 @@ export class MarkdownEditor {
     this.originalContent = this.editor.getMarkdown();
     this._loading = false;
     this._rewritePreviewImages();
+    this._refreshMermaid();
     // Let the owning tab re-evaluate isDirty() now that the baseline is set,
     // clearing any dirty state from the programmatic load above.
     this._emit('change');
