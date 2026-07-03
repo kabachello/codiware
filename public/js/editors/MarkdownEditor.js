@@ -277,6 +277,21 @@ export class MarkdownEditor {
     }
   }
 
+  _scrollToTop() {
+    if (!this.editorEl) return;
+    const selectors = [
+      '.toastui-editor-md-container',
+      '.toastui-editor-md-preview',
+      '.toastui-editor-contents',
+      '.ProseMirror',
+    ];
+    selectors.forEach((selector) => {
+      this.editorEl.querySelectorAll(selector).forEach((el) => {
+        el.scrollTop = 0;
+      });
+    });
+  }
+
   async _init() {
     const host = this.host;
     host.innerHTML = '';
@@ -450,6 +465,8 @@ export class MarkdownEditor {
     this._currentDir = (meta?.path || '').replace(/\/?[^/]*$/, '');
     this._loading = true;
     this.editor.setMarkdown(content || '', false);
+    this._scrollToTop();
+    requestAnimationFrame(() => this._scrollToTop());
     // Baseline against the editor's own serialization rather than the raw file
     // string. Toast UI normalizes markdown on load (e.g. image/link syntax),
     // so comparing getMarkdown() to the raw content would report a false
