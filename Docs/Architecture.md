@@ -255,6 +255,8 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 
 For future multi-root workspaces, the Git panel should show one repository selector per Git-enabled root. The primary workspace root is selected by default; roots outside Git repositories are omitted from the selector.
 
+After a successful discard, the Git panel emits a `git:file-discarded` event for every restored path. `TabManager` listens to this event and closes all open diff tabs for that repository path, regardless of whether they show staged or working-tree diffs. Regular file tabs remain open because the file itself still exists.
+
 ### Search
 
 | Method | Path | Description |

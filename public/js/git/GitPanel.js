@@ -339,7 +339,13 @@ export class GitPanel {
       ? `${this.i18n.t('git.confirm_discard_single') || 'Discard local changes to'} ${paths[0]}?`
       : `${this.i18n.t('git.confirm_discard_multiple') || 'Discard local changes to'} ${paths.length} ${this.i18n.t('git.files_label') || 'files'}?`;
     if (!window.confirm(message)) return;
-    try { await this.api.post('/git/discard', { paths }); this.refresh(); }
+    try {
+      await this.api.post('/git/discard', { paths });
+      for (const path of paths) {
+        this.bus?.emit?.('git:file-discarded', { path });
+      }
+      this.refresh();
+    }
     catch (e) { this.toasts.error(e.message); }
   }
 

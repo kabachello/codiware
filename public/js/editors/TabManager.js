@@ -243,6 +243,32 @@ export class TabManager {
   }
 
   /**
+   * Close all open diff tabs for the given repository path. This is used when
+   * Git operations remove the underlying change, e.g. after discarding a file.
+   */
+  closeDiffsForPath(path) {
+    if (!path && path !== '') return;
+    const toClose = [];
+    for (const [key, record] of this.tabs.entries()) {
+      if (!record?.isDiff) continue;
+      if (record.entry?.path === path) toClose.push(key);
+    }
+    for (const key of toClose) {
+      const record = this.tabs.get(key);
+      if (!record) continue;
+      try { record.editor.destroy?.(); } catch {}
+      record.tabEl.remove();
+      record.editorHost.remove();
+      this.tabs.delete(key);
+      if (this.active === key) this.active = null;
+    }
+    if (this.active === null && this.tabs.size > 0) {
+      this.activate(this.tabs.keys().next().value);
+    }
+    this._persistOpenTabs();
+  }
+
+  /**
    * Open a diff view for a file. Used by the git panel to show changes.
    * @param {Object} options - { path: string, staged: boolean, diffData: { old: string, new: string }, key?: string, label?: string, readOnly?: boolean }
    */

@@ -263,6 +263,11 @@ async function main() {
       tabs.closePath(payload.from);
     }
   });
+  bus.on('git:file-discarded', (payload) => {
+    if (payload?.path !== undefined) {
+      tabs.closeDiffsForPath(payload.path);
+    }
+  });
 
   if (boot.features?.git !== false && workspace.is_git) {
     let gitPanel;
