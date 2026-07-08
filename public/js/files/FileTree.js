@@ -689,17 +689,38 @@ export class FileTree {
   }
 
   async _duplicate(entry) {
+    const suggestion = this._suggestDuplicateName(entry.name, entry.type);
+    const nextName = window.prompt(this.i18n.t('files.prompt_duplicate', { name: entry.name }), suggestion);
+    if (nextName === null) return;
+    const cleanName = String(nextName).trim().replace(/^\/+/, '').replace(/\/+$/, '');
+    if (cleanName === '') return;
+
+    const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+    const targetPath = parent === '' ? cleanName : `${parent}/${cleanName}`;
+    if (targetPath === entry.path) return;
+
     try {
-      const res = await this.api.post('/files/duplicate', { path: entry.path });
+      const res = await this.api.post('/files/copy', { from: entry.path, to: targetPath });
       await this.refresh();
       this.bus?.emit?.('files:changed', {
         action: 'duplicate',
         from: entry.path,
-        to: res?.to || null,
+        to: res?.to || targetPath,
       });
     } catch (e) {
       this.toasts.error(e.message);
     }
+  }
+
+  _suggestDuplicateName(name, type) {
+    if (type === 'dir') {
+      return `${name}_copy`;
+    }
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot === name.length - 1) {
+      return `${name}_copy`;
+    }
+    return `${name.slice(0, dot)}_copy${name.slice(dot)}`;
   }
 
   async _renamePrompt(entry) {

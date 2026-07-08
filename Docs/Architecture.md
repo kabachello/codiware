@@ -226,13 +226,13 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 | `PUT` | `/files/write` | Writes text content and returns updated metadata. |
 | `POST` | `/files/create` | Creates file or directory. |
 | `POST` | `/files/move` | Moves or renames file/directory. |
-| `POST` | `/files/copy` | Copies file/directory, used by ctrl-drag in the tree. |
+| `POST` | `/files/copy` | Copies file/directory, used by ctrl-drag in the tree and by duplicate after the user confirms the target name. |
 | `POST` | `/files/duplicate` | Duplicates a file or directory in place using a `(copy)` suffix and collision-safe numbering. |
 | `DELETE` | `/files/delete?root=&path=` | Deletes file or directory. |
 | `GET` | `/files/download?root=&path=` | Downloads a file or streams a folder as zip. |
 | `POST` | `/files/upload?root=&path=` | Uploads one or more files. Zip uploads can be extracted with subfolders. |
 
-The explorer panel exposes duplicate for both files and folders via the row action menu and right-click context menu. Duplicate is an explicit in-place action distinct from drag-copy: it always creates a sibling copy named with a `(copy)` suffix, preserving the original selection and folder structure semantics.
+The explorer panel exposes duplicate for both files and folders via the row action menu and right-click context menu. The UI asks for the new sibling name first and pre-fills it with an `_copy` style suggestion for familiarity with the legacy IDE. After confirmation, the front-end performs a regular `/files/copy` call to that explicit target path. The `/files/duplicate` endpoint remains available for future non-interactive duplication flows and for consumers that prefer automatic `(copy)` naming.
 
 ### Git
 
@@ -417,7 +417,7 @@ The back-end exposes enabled manifests through `/config`. The asset controller s
 
 Built-in editors expose adapter-specific plugin hooks instead of leaking their implementation details across the app. This makes it easy to install existing plugins for libraries like Toast UI Editor while keeping the rest of Codiware independent from those libraries.
 
-- `MarkdownEditor` accepts configured Toast UI plugins, toolbar extensions, custom renderers, syntax highlighters, and preview hooks. Its `INCLUDES.PREVIEW_CSS` option (an array of paths relative to the `vendor` folder, e.g. `npm-asset/github-markdown-css/github-markdown.css`) injects extra stylesheets used to style the rendered markdown preview. The optional `CSS_CLASS_FOR_PREVIEW_CONTAINER` option adds one or more CSS classes (space-separated) to the preview container so stylesheets scoped to a wrapper class (e.g. `markdown-body` for github-markdown-css) take effect. The optional `INCLUDES.MERMAID_JS` option points to a Mermaid library build (a global/IIFE script that exposes `window.mermaid`); when set, fenced ```mermaid code blocks in the preview are rendered as diagrams. It is unset by default so standalone installs skip diagram rendering; the ExFace integration (`axenox.IDE`) points it at the Mermaid build bundled with the core.
+- `MarkdownEditor` accepts configured Toast UI plugins, toolbar extensions, custom renderers, syntax highlighters, and preview hooks. Its `INCLUDES.PREVIEW_CSS` option (an array of paths relative to the `vendor` folder, e.g. `npm-asset/github-markdown-css/github-markdown.css`) injects extra stylesheets used to style the rendered markdown preview. The optional `CSS_CLASS_FOR_PREVIEW_CONTAINER` option adds one or more CSS classes (space-separated) to the preview container so stylesheets scoped to a wrapper class (e.g. `markdown-body` for github-markdown-css) take effect. The optional `INCLUDES.MERMAID_JS` option points it at a Mermaid library build (a global/IIFE script that exposes `window.mermaid`); when set, fenced ```mermaid code blocks in the preview are rendered as diagrams. It is unset by default so standalone installs skip diagram rendering; the ExFace integration (`axenox.IDE`) points it at the Mermaid build bundled with the core.
 - `CodeEditor` accepts Monaco language registrations, completion providers, hover providers, themes, actions, and keybindings.
 - `ImageEditor` accepts toolbar actions, metadata panels, transformations, and alternate renderers.
 - `GitHistory` and `DiffEditor` can accept render or action plugins later, but they should remain internal until a real extension need appears.
@@ -519,7 +519,7 @@ The file tree supports:
 - Right-click context menu for create, rename, duplicate, delete, copy, move, upload, download, and reveal actions.
 - Drag-to-move and ctrl-drag-to-copy.
 - Drag-and-drop upload for files and zip archives with subfolders.
-- Explicit duplicate actions for files and folders that create sibling copies named with a `(copy)` suffix.
+- Explicit duplicate actions for files and folders that first ask for the target sibling name, prefilled with an `_copy` suggestion, and then perform a regular copy.
 
 ### Responsiveness
 
