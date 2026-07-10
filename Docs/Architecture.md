@@ -376,6 +376,8 @@ Panel sizes, collapsed state, active bottom tab, and active side-panel tabs are 
 
 All editor tabs show unsaved state, restore from the previous browser session, and expose the absolute resolved path in a hover tooltip over the tab title. Text editors support search/replace within the file and word-wrap toggle. Code editors show line numbers and support go-to-line shortcuts.
 
+In addition to single-tab closing via the close icon or middle click, `TabManager` provides a right-click context menu on tab headers with bulk actions for closing all tabs, tabs to the left, tabs to the right, or all other tabs. Bulk close actions reuse the normal dirty-check flow for each affected tab so users still get a confirmation before unsaved changes are discarded.
+
 ### Extensibility Model
 
 Codiware should be extensible at two levels: library-level plugins for existing editor components and full editor modules for new file types. Both extension types are loaded from configuration and registered during SPA bootstrap, before files are opened.

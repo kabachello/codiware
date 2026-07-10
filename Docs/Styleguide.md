@@ -104,6 +104,10 @@ Tab headers show:
 
 The tab of the currently visible file must be clearly highlighted by using a distinct background color.
 
+Tabs can be reordered via drag and drop. During dragging, text selection inside the tab header should not be triggered. The drop target must be shown with a clear visual insertion marker that does not rely on color only.
+
+Right-clicking a tab header opens a context menu with bulk close actions for all tabs, tabs to the left, tabs to the right, and all other tabs. Disabled actions should stay visible when they are not applicable so the menu remains predictable.
+
 If there is not enough space for all tabs, the right-most tabs "overflow" into a menu, accessible via three-dot button on the right end of the tab bar.
 
 When the screen width changes, the tab bar recalculate overflowing items.

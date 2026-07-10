@@ -314,8 +314,30 @@ textarea { font-family: var(--ide-font-mono); }
   border-right: 1px solid var(--ide-border);
   cursor: pointer;
   white-space: nowrap;
+  user-select: none;
+  position: relative;
 }
 .ide-tab.active { background: var(--ide-bg); }
+.ide-tab.is-dragging {
+  opacity: 0.55;
+}
+.ide-tab.drop-before::before,
+.ide-tab.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--ide-accent);
+  pointer-events: none;
+}
+.ide-tab.drop-before::before { left: -1px; }
+.ide-tab.drop-after::after { right: -1px; }
+.ide-tab-name {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .ide-tab-dirty { color: var(--ide-accent); cursor: pointer; opacity: 0.85; }
 .ide-tab-dirty:hover { opacity: 1; }
 .ide-tab-close { opacity: 0.7; cursor: pointer; }

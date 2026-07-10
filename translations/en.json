@@ -113,6 +113,11 @@
   "outline.title": "Outline",
   "outline.no_symbols": "No symbols found",
 
+  "tabs.close_all": "Close all tabs",
+  "tabs.close_left": "Close tabs to the left",
+  "tabs.close_right": "Close tabs to the right",
+  "tabs.close_others": "Close other tabs",
+
   "errors.generic": "Something went wrong.",
   "errors.unauthorized": "Not authorised."
 }

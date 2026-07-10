@@ -23,6 +23,9 @@ export class TabManager {
     // While restoring previously opened tabs we suppress persistence so the
     // restore loop does not repeatedly rewrite the stored list.
     this._restoring = false;
+    this._draggedTabKey = null;
+    this._tabContextMenuEl = null;
+    this._tabContextMenuCleanup = null;
   }
 
   /**
@@ -81,6 +84,7 @@ export class TabManager {
     const tabEl = document.createElement('div');
     tabEl.className = 'ide-tab';
     tabEl.title = entry.path;
+    tabEl.draggable = true;
     const name = document.createElement('span');
     name.className = 'ide-tab-name';
     name.textContent = entry.name || entry.path.split('/').pop();
@@ -173,7 +177,7 @@ export class TabManager {
       record.dirty = false;
       record.tabEl.classList.remove('dirty');
       if (record.dirtyBtn) record.dirtyBtn.style.display = 'none';
-      this.toasts.success(this.i18n.t('actions.save') + ' \u2713');
+      this.toasts.success(this.i18n.t('actions.save') + ' ✓');
       this.bus.emit('file:saved', record);
     } catch (e) {
       this.toasts.error(e.message);
@@ -182,6 +186,11 @@ export class TabManager {
 
   _bindTabInteractions(tabEl, key) {
     tabEl.addEventListener('click', () => this.activate(key));
+    tabEl.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.activate(key);
+      this._openTabContextMenu(key, e.clientX, e.clientY);
+    });
     tabEl.addEventListener('mousedown', (e) => {
       // Prevent browser autoscroll indicator on middle click.
       if (e.button === 1) e.preventDefault();
@@ -191,28 +200,251 @@ export class TabManager {
       e.preventDefault();
       this.close(key);
     });
+    tabEl.addEventListener('dragstart', (e) => {
+      this._closeTabContextMenu();
+      this._draggedTabKey = key;
+      tabEl.classList.add('is-dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', key);
+      }
+    });
+    tabEl.addEventListener('dragend', () => {
+      tabEl.classList.remove('is-dragging');
+      this._draggedTabKey = null;
+      this._clearTabDropMarkers();
+    });
+    tabEl.addEventListener('dragover', (e) => {
+      if (!this._draggedTabKey || this._draggedTabKey === key) return;
+      e.preventDefault();
+      const position = this._getDropPosition(tabEl, e.clientX);
+      this._markTabDropTarget(tabEl, position);
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    });
+    tabEl.addEventListener('dragleave', (e) => {
+      if (!tabEl.contains(e.relatedTarget)) this._clearTabDropMarkers();
+    });
+    tabEl.addEventListener('drop', (e) => {
+      if (!this._draggedTabKey || this._draggedTabKey === key) return;
+      e.preventDefault();
+      const position = this._getDropPosition(tabEl, e.clientX);
+      this._moveTab(this._draggedTabKey, key, position);
+      this._clearTabDropMarkers();
+    });
+  }
+
+  _getDropPosition(tabEl, clientX) {
+    const rect = tabEl.getBoundingClientRect();
+    return clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+  }
+
+  _markTabDropTarget(tabEl, position) {
+    this._clearTabDropMarkers();
+    tabEl.classList.add(position === 'before' ? 'drop-before' : 'drop-after');
+  }
+
+  _clearTabDropMarkers() {
+    for (const record of this.tabs.values()) {
+      record.tabEl.classList.remove('drop-before', 'drop-after');
+    }
+  }
+
+  _moveTab(sourceKey, targetKey, position) {
+    const source = this.tabs.get(sourceKey);
+    const target = this.tabs.get(targetKey);
+    if (!source || !target || sourceKey === targetKey) return;
+
+    const targetEl = target.tabEl;
+    if (position === 'before') {
+      this.tabBar.insertBefore(source.tabEl, targetEl);
+    } else {
+      this.tabBar.insertBefore(source.tabEl, targetEl.nextSibling);
+    }
+
+    const reordered = new Map();
+    for (const node of this.tabBar.children) {
+      const key = Array.from(this.tabs.entries()).find(([, record]) => record.tabEl === node)?.[0];
+      if (!key) continue;
+      reordered.set(key, this.tabs.get(key));
+    }
+    this.tabs = reordered;
+    this._persistOpenTabs();
+  }
+
+  _openTabContextMenu(key, clientX, clientY) {
+    const record = this.tabs.get(key);
+    if (!record) return;
+    this._closeTabContextMenu();
+
+    const orderedKeys = Array.from(this.tabs.keys());
+    const index = orderedKeys.indexOf(key);
+    if (index === -1) return;
+
+    const counts = {
+      left: index,
+      right: orderedKeys.length - index - 1,
+      others: orderedKeys.length - 1,
+      all: orderedKeys.length,
+    };
+
+    const menu = document.createElement('div');
+    menu.className = 'codiware-popup-menu codiware-tab-context-menu';
+    menu.setAttribute('role', 'menu');
+
+    const addItem = ({ label, icon, onClick, disabled = false }) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'menu-item';
+      btn.setAttribute('role', 'menuitem');
+      if (disabled) btn.disabled = true;
+      btn.append(Icon.render(icon));
+      const text = document.createElement('span');
+      text.textContent = label;
+      btn.append(text);
+      btn.addEventListener('click', () => {
+        if (disabled) return;
+        this._closeTabContextMenu();
+        onClick();
+      });
+      menu.append(btn);
+    };
+
+    addItem({
+      label: this.i18n.t('tabs.close_all'),
+      icon: 'fa fa-times-circle',
+      onClick: () => this.closeAllTabs(),
+      disabled: counts.all === 0,
+    });
+    addItem({
+      label: this.i18n.t('tabs.close_left'),
+      icon: 'fa fa-angle-double-left',
+      onClick: () => this.closeTabsToLeft(key),
+      disabled: counts.left === 0,
+    });
+    addItem({
+      label: this.i18n.t('tabs.close_right'),
+      icon: 'fa fa-angle-double-right',
+      onClick: () => this.closeTabsToRight(key),
+      disabled: counts.right === 0,
+    });
+    addItem({
+      label: this.i18n.t('tabs.close_others'),
+      icon: 'fa fa-window-close-o',
+      onClick: () => this.closeOtherTabs(key),
+      disabled: counts.others === 0,
+    });
+
+    document.body.appendChild(menu);
+    const { innerWidth, innerHeight } = window;
+    const rect = menu.getBoundingClientRect();
+    const left = Math.max(4, Math.min(clientX, innerWidth - rect.width - 4));
+    const top = Math.max(4, Math.min(clientY, innerHeight - rect.height - 4));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+
+    const closeOnPointer = (event) => {
+      if (menu.contains(event.target)) return;
+      this._closeTabContextMenu();
+    };
+    const closeOnKey = (event) => {
+      if (event.key === 'Escape') this._closeTabContextMenu();
+    };
+
+    document.addEventListener('mousedown', closeOnPointer, true);
+    document.addEventListener('contextmenu', closeOnPointer, true);
+    document.addEventListener('keydown', closeOnKey, true);
+
+    this._tabContextMenuEl = menu;
+    this._tabContextMenuCleanup = () => {
+      document.removeEventListener('mousedown', closeOnPointer, true);
+      document.removeEventListener('contextmenu', closeOnPointer, true);
+      document.removeEventListener('keydown', closeOnKey, true);
+    };
+  }
+
+  _closeTabContextMenu() {
+    if (typeof this._tabContextMenuCleanup === 'function') {
+      try { this._tabContextMenuCleanup(); } catch {}
+    }
+    this._tabContextMenuCleanup = null;
+    if (this._tabContextMenuEl) {
+      this._tabContextMenuEl.remove();
+      this._tabContextMenuEl = null;
+    }
+  }
+
+  _orderedTabKeys() {
+    return Array.from(this.tabs.keys());
+  }
+
+  closeTabs(keys, { keepActiveFallback = true } = {}) {
+    const unique = Array.from(new Set((keys || []).filter((key) => this.tabs.has(key))));
+    if (unique.length === 0) return;
+
+    const activeWasClosed = unique.includes(this.active);
+    for (const key of unique) {
+      this._closeRecord(key, { skipPrompt: false, persist: false, activateFallback: false });
+    }
+
+    if (keepActiveFallback && activeWasClosed && this.tabs.size > 0) {
+      this.activate(this.tabs.keys().next().value);
+    } else {
+      this._persistOpenTabs();
+    }
+  }
+
+  closeAllTabs() {
+    this.closeTabs(this._orderedTabKeys());
+  }
+
+  closeTabsToLeft(key) {
+    const ordered = this._orderedTabKeys();
+    const index = ordered.indexOf(key);
+    if (index <= 0) return;
+    this.closeTabs(ordered.slice(0, index));
+  }
+
+  closeTabsToRight(key) {
+    const ordered = this._orderedTabKeys();
+    const index = ordered.indexOf(key);
+    if (index === -1 || index >= ordered.length - 1) return;
+    this.closeTabs(ordered.slice(index + 1));
+  }
+
+  closeOtherTabs(key) {
+    const ordered = this._orderedTabKeys();
+    if (!this.tabs.has(key)) return;
+    this.closeTabs(ordered.filter((tabKey) => tabKey !== key));
   }
 
   saveActive() { if (this.active) return this.save(this.active); }
 
-  close(key) {
+  _closeRecord(key, { skipPrompt = false, persist = true, activateFallback = true } = {}) {
     const record = this.tabs.get(key);
-    if (!record) return;
-    if (record.dirty) {
+    if (!record) return false;
+    if (!skipPrompt && record.dirty) {
       const message = this.i18n.t('editor.discard_changes_confirm', { path: record.entry.path });
       const ok = window.confirm(message);
-      if (!ok) return;
+      if (!ok) return false;
     }
+    this._closeTabContextMenu();
     try { record.editor.destroy?.(); } catch {}
     record.tabEl.remove();
     record.editorHost.remove();
     this.tabs.delete(key);
     if (this.active === key) {
-      const next = this.tabs.keys().next();
       this.active = null;
-      if (!next.done) this.activate(next.value);
+      if (activateFallback && this.tabs.size > 0) {
+        this.activate(this.tabs.keys().next().value);
+        return true;
+      }
     }
-    this._persistOpenTabs();
+    if (persist) this._persistOpenTabs();
+    return true;
+  }
+
+  close(key) {
+    this._closeRecord(key);
   }
 
   /**
@@ -228,18 +460,13 @@ export class TabManager {
       if (key === path || key.startsWith(prefix)) toClose.push(key);
     }
     for (const key of toClose) {
-      const record = this.tabs.get(key);
-      if (!record) continue;
-      try { record.editor.destroy?.(); } catch {}
-      record.tabEl.remove();
-      record.editorHost.remove();
-      this.tabs.delete(key);
-      if (this.active === key) this.active = null;
+      this._closeRecord(key, { skipPrompt: true, persist: false, activateFallback: false });
     }
     if (this.active === null && this.tabs.size > 0) {
       this.activate(this.tabs.keys().next().value);
+    } else {
+      this._persistOpenTabs();
     }
-    this._persistOpenTabs();
   }
 
   /**
@@ -254,18 +481,13 @@ export class TabManager {
       if (record.entry?.path === path) toClose.push(key);
     }
     for (const key of toClose) {
-      const record = this.tabs.get(key);
-      if (!record) continue;
-      try { record.editor.destroy?.(); } catch {}
-      record.tabEl.remove();
-      record.editorHost.remove();
-      this.tabs.delete(key);
-      if (this.active === key) this.active = null;
+      this._closeRecord(key, { skipPrompt: true, persist: false, activateFallback: false });
     }
     if (this.active === null && this.tabs.size > 0) {
       this.activate(this.tabs.keys().next().value);
+    } else {
+      this._persistOpenTabs();
     }
-    this._persistOpenTabs();
   }
 
   /**
@@ -290,6 +512,7 @@ export class TabManager {
     // Build tab UI
     const tabEl = document.createElement('div');
     tabEl.className = 'ide-tab';
+    tabEl.draggable = true;
     const fileName = path.split('/').pop();
     const label = customLabel || (staged ? `${fileName} (Staged)` : `${fileName} (Working)`);
     tabEl.title = `Diff: ${path}`;
