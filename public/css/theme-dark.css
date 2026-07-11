@@ -14,6 +14,7 @@ html[data-theme="dark"] {
   --ide-panel-bg: #1a1c20;
   --ide-btn-bg: #25282d;
   --ide-btn-hover: #2e3239;
+  --ide-tab-hover: #2e3239;
   --ide-input-bg: #15171a;
   --ide-row-hover: #25282d;
   --ide-row-selected: #2d4060;

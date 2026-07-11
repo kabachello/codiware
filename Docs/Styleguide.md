@@ -35,6 +35,8 @@ The layout is similar to Visual Studio Code:
 
 All sidebar and bottom panels should look and feel similar. 
 
+Tabs across all panels (sidebar tabs, bottom panel tabs and editor tabs) give hover feedback by changing their background, so it is always clear that a tab can be pressed. Use the `--ide-tab-hover` token for inactive tabs; the token is defined per theme and must stay clearly distinct from `--ide-tabbar-bg` so the effect is visible in both light and dark themes. The currently active tab keeps its distinct background but still brightens slightly on hover so even single-tab panels (like the Monaco outline) react to the pointer.
+
 Bottom panel behavior:
 
 * supports multiple tabs, similar to the left sidebar
