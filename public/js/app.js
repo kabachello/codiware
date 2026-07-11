@@ -285,6 +285,7 @@ async function main() {
           hasGitIdentity,
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
           onOpenHistory: () => bottomPanels.activate('history', { expand: true }),
+          onOpenFile: (entry) => tabs.open(entry),
         });
         gitPanel.mount(host);
       },

@@ -2,17 +2,19 @@
 import { Icon } from '../core/Icon.js';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, user = {}, hasGitIdentity = true }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, user = {}, hasGitIdentity = true }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
     this.bus = bus;
     this.onOpenDiff = onOpenDiff; // Callback: (path, staged, diffData) => void
     this.onOpenHistory = typeof onOpenHistory === 'function' ? onOpenHistory : () => {};
+    this.onOpenFile = typeof onOpenFile === 'function' ? onOpenFile : () => {};
     this.user = user || {};
     this.hasGitIdentity = Boolean(hasGitIdentity);
     this.filterText = '';
     this._lastStatus = null;
+    this._contextEntry = null;
     bus.on('file:saved', () => this.refresh());
   }
 
@@ -53,6 +55,7 @@ export class GitPanel {
     commitRow.append(this.commitBtn, amendBtn);
 
     this.body = el('div');
+    this.body.className = 'git-status-list';
     this.filterWrap = null;
     this.filterInput = null;
 
@@ -223,7 +226,9 @@ export class GitPanel {
       }
       this.body.appendChild(header);
       if (!this._collapsed[key]) {
-        for (const f of items) this.body.appendChild(this._renderFile(f, key));
+        const list = el('div', 'history-detail-files git-detail-files');
+        for (const f of items) list.appendChild(this._renderFile(f, key));
+        this.body.appendChild(list);
       }
     }
 
@@ -293,32 +298,129 @@ export class GitPanel {
   }
 
   _renderFile(f, group) {
-    const row = el('div');
-    row.style.display = 'flex'; row.style.gap = '4px'; row.style.alignItems = 'center';
-    row.style.padding = '2px 0';
-    const label = el('span');
-    label.className = 'git-file-label';
-    label.textContent = `${f.index}${f.worktree}  ${f.path}`;
-    label.style.fontFamily = 'var(--ide-font-mono)';
-    label.style.fontSize = 'var(--ide-fs-sm)';
-    label.style.flex = '1';
-    label.style.overflow = 'hidden';
-    label.style.textOverflow = 'ellipsis';
-    label.style.cursor = 'pointer';
-    label.title = this.i18n.t('git.view_diff') || 'View diff';
-    row.appendChild(label);
+    const row = el('div', 'history-file-row git-file-row');
+    const status = this._buildStatusDescriptor(f, group);
 
-    // Click on the filename to open the diff view
-    const staged = group === 'staged';
-    label.addEventListener('click', () => this._openDiff(f.path, staged));
+    const badge = document.createElement('span');
+    badge.className = `history-file-status git-file-status history-file-status-${status.kind}`;
+    badge.title = status.label;
+    badge.setAttribute('aria-label', status.label);
+    badge.append(Icon.render(status.icon));
+    row.append(badge);
+
+    const link = document.createElement('span');
+    link.className = 'history-file-name git-file-name';
+    link.textContent = f.path;
+    link.title = this.i18n.t('git.view_diff') || 'View diff';
+    link.addEventListener('click', () => this._openDiff(f.path, group === 'staged'));
+    row.append(link);
+
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this._openMenuAt(e.clientX, e.clientY, f, group);
+    });
+
+    const actions = document.createElement('span');
+    actions.className = 'history-file-actions git-file-actions';
 
     if (group === 'staged') {
-      row.appendChild(iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
+      actions.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
     } else {
-      row.appendChild(iconBtn('fa fa-plus', this.i18n.t('git.stage') || 'Stage', () => this._stage([f.path])));
-      row.appendChild(iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
+      actions.append(this._iconBtn('fa fa-plus', this.i18n.t('git.stage') || 'Stage', () => this._stage([f.path])));
+      actions.append(this._iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
     }
+
+    actions.append(this._menuBtn(f, group));
+    row.append(actions);
     return row;
+  }
+
+  _buildStatusDescriptor(file, group) {
+    if (group === 'untracked' || file?.untracked) {
+      return { kind: 'A', icon: 'fa fa-file-o', label: this.i18n.t('git.untracked') || 'Untracked' };
+    }
+    const code = String(file?.worktree || file?.index || 'M').toUpperCase();
+    const map = {
+      M: { kind: 'M', icon: 'fa fa-pencil', label: this.i18n.t('git.changes') || 'Modified' },
+      D: { kind: 'D', icon: 'fa fa-trash-o', label: this.i18n.t('git.deleted') || 'Deleted' },
+      A: { kind: 'A', icon: 'fa fa-plus', label: this.i18n.t('history.status_added') || 'Added' },
+      R: { kind: 'R', icon: 'fa fa-random', label: this.i18n.t('history.status_renamed') || 'Renamed' },
+      C: { kind: 'C', icon: 'fa fa-clone', label: this.i18n.t('history.status_copied') || 'Copied' },
+      T: { kind: 'M', icon: 'fa fa-exchange', label: this.i18n.t('history.status_type_changed') || 'Type changed' },
+      U: { kind: 'D', icon: 'fa fa-exclamation-triangle', label: this.i18n.t('history.status_unmerged') || 'Unmerged' },
+    };
+    return map[code] || map.M;
+  }
+
+  _iconBtn(icon, title, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tb-btn';
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.append(Icon.render(icon));
+    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  _menuBtn(file, group) {
+    const title = this.i18n.t('files.more_actions');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tb-btn';
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    b.append(Icon.render('fa fa-ellipsis-h'));
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._openMenu(b, file, group);
+    });
+    return b;
+  }
+
+  _openMenu(anchor, file, group) {
+    GitPopupMenu.open(anchor, this._menuItemsForFile(file, group));
+  }
+
+  _openMenuAt(x, y, file, group) {
+    GitPopupMenu.openAt(x, y, this._menuItemsForFile(file, group));
+  }
+
+  _menuItemsForFile(file, group) {
+    const items = [
+      { icon: 'fa fa-exchange', label: this.i18n.t('git.view_diff') || 'View diff', onClick: () => this._openDiff(file.path, group === 'staged') },
+      { icon: 'fa fa-file-o', label: this.i18n.t('git.open_regular_editor') || 'Open in regular editor', onClick: () => this._openFile(file.path) },
+    ];
+
+    if (group === 'staged') {
+      items.push({ sep: true });
+      items.push({ icon: 'fa fa-minus', label: this.i18n.t('git.unstage') || 'Unstage', onClick: () => this._unstage([file.path]) });
+    } else {
+      items.push({ sep: true });
+      items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.stage') || 'Stage', onClick: () => this._stage([file.path]) });
+      items.push({ icon: 'fa fa-undo', label: this.i18n.t('git.discard') || 'Discard', onClick: () => this._discard([file.path]) });
+      if (group === 'untracked' || file?.untracked) {
+        items.push({ icon: 'fa fa-trash-o', label: this.i18n.t('actions.delete') || 'Delete', onClick: () => this._deleteUntracked(file.path) });
+      }
+    }
+
+    return items;
+  }
+
+  _openFile(path) {
+    this.onOpenFile({ path, name: path.split('/').pop() });
+  }
+
+  async _deleteUntracked(path) {
+    const message = this.i18n.t('files.confirm_delete', { path }) || `Delete ${path}?`;
+    if (!window.confirm(message)) return;
+    try {
+      await this.api.delete('/files/delete', { path });
+      this.bus?.emit?.('files:changed', { action: 'delete', path });
+      this.refresh();
+    } catch (e) {
+      this.toasts.error(e.message);
+    }
   }
 
   async _openDiff(path, staged) {
@@ -405,3 +507,82 @@ function iconBtn(icon, title, onClick) {
   b.addEventListener('click', onClick);
   return b;
 }
+
+const GitPopupMenu = {
+  current: null,
+
+  open(anchor, items) {
+    const rect = anchor.getBoundingClientRect();
+    GitPopupMenu.openAt(rect.right, rect.bottom + 2, items, { flipYFrom: rect.top - 2 });
+  },
+
+  openAt(x, y, items, options = {}) {
+    GitPopupMenu.close();
+    const menu = document.createElement('div');
+    menu.className = 'codiware-popup-menu';
+    menu.setAttribute('role', 'menu');
+    for (const item of items) {
+      if (item.sep) {
+        const sep = document.createElement('div');
+        sep.className = 'menu-sep';
+        menu.appendChild(sep);
+        continue;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'menu-item';
+      btn.setAttribute('role', 'menuitem');
+      btn.append(Icon.render(item.icon || ''));
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      btn.appendChild(label);
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        GitPopupMenu.close();
+        try { item.onClick?.(); } catch (err) { console.error(err); }
+      });
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    let left = Math.min(x, window.innerWidth - mw - 4);
+    if (left < 4) left = 4;
+    let top = y;
+    if (top + mh > window.innerHeight - 4) {
+      const flipYFrom = typeof options.flipYFrom === 'number' ? options.flipYFrom : (y - 4);
+      top = Math.max(4, flipYFrom - mh);
+    }
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+
+    const outside = (e) => {
+      if (!menu.contains(e.target)) GitPopupMenu.close();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') GitPopupMenu.close(); };
+    const onScroll = () => GitPopupMenu.close();
+    setTimeout(() => document.addEventListener('mousedown', outside), 0);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onScroll);
+    window.addEventListener('scroll', onScroll, true);
+
+    GitPopupMenu.current = {
+      menu,
+      cleanup: () => {
+        document.removeEventListener('mousedown', outside);
+        document.removeEventListener('keydown', onKey);
+        window.removeEventListener('resize', onScroll);
+        window.removeEventListener('scroll', onScroll, true);
+      },
+    };
+  },
+
+  close() {
+    const c = GitPopupMenu.current;
+    if (!c) return;
+    GitPopupMenu.current = null;
+    c.cleanup();
+    c.menu.remove();
+  },
+};

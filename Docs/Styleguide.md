@@ -12,6 +12,8 @@ Buttons and other UI elements, that use icons, support font awesome icons via `f
 
 The same icon is to be used for the same functionality in all places in the app.
 
+Status indicators in Git/file lists should follow the same rule too: if a file state is shown as an icon in one panel, the same icon should be reused in other panels for the same state whenever possible.
+
 ### Colors
 
 Colors of UI elements should be used to highlight these: e.g. promoted button, active menu items, etc. All these colors must be part of the theme!
@@ -69,6 +71,8 @@ Each list item has
 
 List item names and tooltips are only tranlatable if the item represents a function. Names and tooltips of files are not translatable.
 
+Flat file-change lists in the Git panel should visually follow the same row language as the commit-details file list in Git history: status indicator on the left, filename in the middle, inline actions on the right.
+
 ### Toolbars
 
 A toolbar inside the side panel has a number of buttons and a three-dot "more" button on the right, that opens a menu with buttons, that did not fit in the toolbar itself.
@@ -88,6 +92,8 @@ Each list item inside a sidebar has its own small toolbar, displayed on the righ
 The Inline toolbar can show up to 2 most important buttons and the three-dot menu. The menu will hold all buttons, that did not fit.
 
 List items in sidebar trees also support a right-click context menu. This context menu must expose the same item-level actions as the inline toolbar/menu for that item.
+
+The same rule applies to changed-file rows in the Git panel: the three-dot menu and the right-click menu must expose the same row-level actions.
 
 ### Console output blocks
 
