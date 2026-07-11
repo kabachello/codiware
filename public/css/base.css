@@ -152,6 +152,18 @@ textarea { font-family: var(--ide-font-mono); }
   min-height: 0;
 }
 
+/* Drag-to-resize splitter shared by the sidebar, bottom panel and editor outline */
+.ide-splitter {
+  position: relative;
+  z-index: 5;
+  background: var(--ide-titlebar-bg);
+  cursor: col-resize;
+  user-select: none;
+}
+.ide-splitter:hover {
+  background: var(--ide-accent);
+}
+
 .ide-sidebar {
   background: var(--ide-sidebar-bg);
   border-right: 1px solid var(--ide-border);
