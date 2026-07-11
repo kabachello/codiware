@@ -305,7 +305,7 @@ export class GitPanel {
     badge.className = `history-file-status git-file-status history-file-status-${status.kind}`;
     badge.title = status.label;
     badge.setAttribute('aria-label', status.label);
-    badge.append(Icon.render(status.icon));
+    badge.textContent = status.code;
     row.append(badge);
 
     const link = document.createElement('span');
@@ -337,17 +337,17 @@ export class GitPanel {
 
   _buildStatusDescriptor(file, group) {
     if (group === 'untracked' || file?.untracked) {
-      return { kind: 'A', icon: 'fa fa-file-o', label: this.i18n.t('git.untracked') || 'Untracked' };
+      return { code: 'U', kind: 'A', label: this.i18n.t('git.untracked') || 'Untracked' };
     }
     const code = String(file?.worktree || file?.index || 'M').toUpperCase();
     const map = {
-      M: { kind: 'M', icon: 'fa fa-pencil', label: this.i18n.t('git.changes') || 'Modified' },
-      D: { kind: 'D', icon: 'fa fa-trash-o', label: this.i18n.t('git.deleted') || 'Deleted' },
-      A: { kind: 'A', icon: 'fa fa-plus', label: this.i18n.t('history.status_added') || 'Added' },
-      R: { kind: 'R', icon: 'fa fa-random', label: this.i18n.t('history.status_renamed') || 'Renamed' },
-      C: { kind: 'C', icon: 'fa fa-clone', label: this.i18n.t('history.status_copied') || 'Copied' },
-      T: { kind: 'M', icon: 'fa fa-exchange', label: this.i18n.t('history.status_type_changed') || 'Type changed' },
-      U: { kind: 'D', icon: 'fa fa-exclamation-triangle', label: this.i18n.t('history.status_unmerged') || 'Unmerged' },
+      M: { code: 'M', kind: 'M', label: this.i18n.t('git.changes') || 'Modified' },
+      D: { code: 'D', kind: 'D', label: this.i18n.t('git.deleted') || 'Deleted' },
+      A: { code: 'A', kind: 'A', label: this.i18n.t('history.status_added') || 'Added' },
+      R: { code: 'R', kind: 'R', label: this.i18n.t('history.status_renamed') || 'Renamed' },
+      C: { code: 'C', kind: 'C', label: this.i18n.t('history.status_copied') || 'Copied' },
+      T: { code: 'T', kind: 'M', label: this.i18n.t('history.status_type_changed') || 'Type changed' },
+      U: { code: 'U', kind: 'D', label: this.i18n.t('history.status_unmerged') || 'Unmerged' },
     };
     return map[code] || map.M;
   }

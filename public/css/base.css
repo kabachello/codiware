@@ -760,11 +760,14 @@ textarea { font-family: var(--ide-font-mono); }
   background: var(--ide-row-hover);
 }
 .git-file-status {
-  flex: 0 0 20px;
+  flex: 0 0 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-family: var(--ide-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 .git-file-name {
   color: inherit;
