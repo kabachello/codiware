@@ -71,6 +71,12 @@ final class GitService
      * `...?branch=1.x-dev` declarative for callers while avoiding a second round
      * trip from the SPA during bootstrap.
      *
+     * Remote refs are handled in the same user-friendly way as the interactive
+     * branch chooser: selecting `origin/1.x-dev` creates or resets the matching
+     * local branch (`1.x-dev`) to track that remote instead of checking out the
+     * remote ref directly. This avoids detached HEAD states while still letting
+     * callers use the remote name they see in the dropdown.
+     *
      * @return array{status:array{branch:?string,upstream:?string,ahead:int,behind:int,clean:bool,files:array<int,array{path:string,index:string,worktree:string,staged:bool,changed:bool,untracked:bool,conflict:bool,renamed_from:?string}>},switched:bool,target_branch:?string,console:?array{command:string,output:string,exit_code:int,ok:bool}}
      */
     public function ensureBranch(WorkspaceRoot $root, ?string $requestedBranch): array
@@ -86,11 +92,12 @@ final class GitService
             ];
         }
 
-        if (($status['branch'] ?? null) === $branch) {
+        $checkoutPlan = $this->resolveCheckoutTarget($root, $branch);
+        if (($status['branch'] ?? null) === $checkoutPlan['local']) {
             return [
                 'status' => $status,
                 'switched' => false,
-                'target_branch' => $branch,
+                'target_branch' => $checkoutPlan['local'],
                 'console' => null,
             ];
         }
@@ -99,7 +106,7 @@ final class GitService
         return [
             'status' => $this->status($root),
             'switched' => true,
-            'target_branch' => $branch,
+            'target_branch' => $checkoutPlan['local'],
             'console' => $checkout['console'] ?? null,
         ];
     }
@@ -237,7 +244,15 @@ final class GitService
         $this->requireRepo($root);
         $current = trim($this->run($root, ['rev-parse', '--abbrev-ref', 'HEAD']));
         $locals = array_values(array_filter(array_map('trim', explode("\n", $this->run($root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])))));
-        $remotes = array_values(array_filter(array_map('trim', explode("\n", $this->run($root, ['for-each-ref', '--format=%(refname:short)', 'refs/remotes'])))));
+        $remotes = array_values(array_filter(
+            array_map(
+                static fn (string $name): string => trim($name),
+                array_filter(
+                    explode("\n", $this->run($root, ['for-each-ref', '--format=%(refname:short)', 'refs/remotes'])),
+                    static fn (string $name): bool => trim($name) !== '' && trim($name) !== 'origin/HEAD'
+                )
+            )
+        ));
         return [
             'current' => $current !== '' ? $current : null,
             'locals' => $locals,
@@ -248,12 +263,28 @@ final class GitService
     public function checkout(WorkspaceRoot $root, string $branch, bool $create = false): array
     {
         $this->requireRepo($root);
-        $args = ['checkout'];
-        if ($create) {
-            $args[] = '-b';
+        $target = trim($branch);
+        if ($target === '') {
+            throw new CodiwareException('branch is required.', 'bad_request', 400);
         }
-        $args[] = $branch;
-        $console = $this->consoleCapture($root, $args);
+
+        $plan = $this->resolveCheckoutTarget($root, $target);
+        if ($create) {
+            $console = $this->consoleCapture($root, ['checkout', '-b', $plan['local']]);
+            if (!$console['ok']) {
+                throw $this->consoleFailure('checkout', $console);
+            }
+            return ['message' => trim($console['output']), 'console' => $console];
+        }
+
+        if ($plan['remote'] !== null) {
+            $console = $this->consoleCapture(
+                $root,
+                ['checkout', '--track', '-B', $plan['local'], $plan['remote']]
+            );
+        } else {
+            $console = $this->consoleCapture($root, ['checkout', $plan['local']]);
+        }
         if (!$console['ok']) {
             throw $this->consoleFailure('checkout', $console);
         }
@@ -491,6 +522,57 @@ final class GitService
             }
         }
         return $refs;
+    }
+
+    /**
+     * Decide whether a checkout target is a local branch or a remote-tracking
+     * ref and map remote refs like `origin/1.x-dev` to their local tracking
+     * branch name (`1.x-dev`).
+     *
+     * @return array{requested:string,local:string,remote:?string}
+     */
+    private function resolveCheckoutTarget(WorkspaceRoot $root, string $branch): array
+    {
+        $requested = trim($branch);
+        $locals = $this->branchNames($root, 'refs/heads');
+        if (in_array($requested, $locals, true)) {
+            return ['requested' => $requested, 'local' => $requested, 'remote' => null];
+        }
+
+        $remotes = $this->branchNames($root, 'refs/remotes');
+        if (in_array($requested, $remotes, true)) {
+            return [
+                'requested' => $requested,
+                'local' => $this->localNameFromRemote($requested),
+                'remote' => $requested,
+            ];
+        }
+
+        return ['requested' => $requested, 'local' => $requested, 'remote' => null];
+    }
+
+    /**
+     * Read branch names from one git ref namespace and strip empty rows plus
+     * symbolic remote HEAD aliases such as `origin/HEAD`.
+     *
+     * @return string[]
+     */
+    private function branchNames(WorkspaceRoot $root, string $refPrefix): array
+    {
+        return array_values(array_filter(
+            array_map('trim', explode("\n", $this->run($root, ['for-each-ref', '--format=%(refname:short)', $refPrefix]))),
+            static fn (string $name): bool => $name !== '' && !str_ends_with($name, '/HEAD')
+        ));
+    }
+
+    /**
+     * Convert a remote-tracking ref like `origin/feature/x` to the matching
+     * local branch name `feature/x`.
+     */
+    private function localNameFromRemote(string $remoteRef): string
+    {
+        $parts = explode('/', $remoteRef, 2);
+        return $parts[1] ?? $remoteRef;
     }
 
     /**

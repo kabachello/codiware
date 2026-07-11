@@ -117,6 +117,8 @@ Future multi-root support uses the same resolver. The initial `repo/{workspacePa
 
 When a Git workspace is opened, the shell also evaluates the optional `?branch=` query parameter before the SPA starts. If the parameter is missing, the current branch is kept as-is. If it is present and differs from the current branch, the server performs the checkout during shell bootstrap and injects both the resulting git status and the checkout console block into the boot payload. This lets external links open a repository directly on a specific branch without forcing the client to do an extra round trip after rendering.
 
+If the requested branch name is a remote-tracking ref such as `origin/1.x-dev`, the server must not leave the repository in detached HEAD mode. Instead, it resolves that remote ref to the matching local branch name (`1.x-dev`) and checks it out as a tracking branch. The same normalization is used by the interactive branch chooser and by `?branch=` deep links so both entry points behave identically.
+
 ### Back-end Services
 
 ```text
@@ -260,6 +262,8 @@ For future multi-root workspaces, the Git panel should show one repository selec
 After a successful discard, the Git panel emits a `git:file-discarded` event for every restored path. `TabManager` listens to this event and closes all open diff tabs for that repository path, regardless of whether they show staged or working-tree diffs. Regular file tabs remain open because the file itself still exists.
 
 The branch name shown at the top of the Git panel and in the footer status bar acts as the entry point to one shared branch chooser. The chooser loads `/git/branches`, groups local and remote refs, and uses `/git/checkout` when the user selects a branch. This keeps branch switching discoverable in both places while reusing the same checkout flow and console injection behavior.
+
+Selecting a remote branch from that chooser must attach the user to a real local branch instead of checking out the remote ref verbatim. The back end therefore maps a remote entry like `origin/feature/demo` to the local branch `feature/demo` and performs a tracked checkout. This prevents the UI from falling into detached HEAD after a remote branch was chosen while still preserving the remote name in the menu.
 
 ### Search
 
