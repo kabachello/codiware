@@ -283,6 +283,7 @@ async function main() {
           api, i18n, toasts, bus,
           user: boot.user || {},
           hasGitIdentity,
+          initialStatus: boot.git?.initial_status || null,
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
           onOpenHistory: () => bottomPanels.activate('history', { expand: true }),
           onOpenFile: (entry) => tabs.open(entry),
@@ -299,6 +300,7 @@ async function main() {
       i18n,
       repoName: workspace.alias || workspace.label || workspace.path || 'repo',
       onOpenPanel: () => panels.activate('git'),
+      onOpenBranchMenu: (anchor) => gitPanel?.openBranchMenu(anchor),
     });
     const statusSep = document.createElement('span');
     statusSep.className = 'ide-status-sep';
@@ -311,6 +313,14 @@ async function main() {
     window.addEventListener('focus', () => footerGit.refresh());
     window.setInterval(() => footerGit.refresh(), 30000);
     footerGit.refresh();
+
+    const initialBranchSwitch = boot.git?.initial_branch_switch || null;
+    if (initialBranchSwitch?.console) {
+      bus.emit('console:inject', initialBranchSwitch.console);
+    }
+    if (initialBranchSwitch?.switched && initialBranchSwitch?.target) {
+      toasts.success((i18n.t('git.switched_branch') || 'Switched to branch') + ` ${initialBranchSwitch.target}`);
+    }
   }
 
   panels.register('search', {
@@ -480,7 +490,7 @@ function ensureBottomPanelSlots(layout) {
   return { tabsEl, contentEl };
 }
 
-function createGitFooterStatus({ api, i18n, repoName, onOpenPanel }) {
+function createGitFooterStatus({ api, i18n, repoName, onOpenPanel, onOpenBranchMenu }) {
   const el = document.createElement('div');
   el.className = 'ide-status-git';
 
@@ -501,12 +511,23 @@ function createGitFooterStatus({ api, i18n, repoName, onOpenPanel }) {
   const repoEl = document.createElement('span');
   repoEl.className = 'ide-status-git-repo';
   repoEl.textContent = repoName;
+  const branchBtn = document.createElement('button');
+  branchBtn.type = 'button';
+  branchBtn.className = 'ide-status-git-branch';
+  const branchLabel = i18n.t('git.select_branch') || 'Select branch';
+  branchBtn.title = branchLabel;
+  branchBtn.setAttribute('aria-label', branchLabel);
+  const branchNameEl = document.createElement('span');
+  branchNameEl.className = 'ide-status-git-branch-name';
+  branchNameEl.textContent = '—';
+  branchBtn.append(branchNameEl, Icon.render('fa fa-caret-down'));
+
   const aheadBehindEl = document.createElement('span');
   aheadBehindEl.className = 'ide-status-git-ab';
   const countsEl = document.createElement('span');
   countsEl.className = 'ide-status-git-counts';
 
-  mainBtn.append(repoEl, aheadBehindEl, countsEl);
+  mainBtn.append(repoEl, branchBtn, aheadBehindEl, countsEl);
   el.append(refreshBtn, mainBtn);
 
   refreshBtn.addEventListener('click', (event) => {
@@ -514,6 +535,10 @@ function createGitFooterStatus({ api, i18n, repoName, onOpenPanel }) {
     refresh();
   });
   mainBtn.addEventListener('click', () => onOpenPanel?.());
+  branchBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onOpenBranchMenu?.(branchBtn);
+  });
 
   function renderStatusTokens(container, entries) {
     container.replaceChildren();
@@ -537,11 +562,13 @@ function createGitFooterStatus({ api, i18n, repoName, onOpenPanel }) {
     const hasAheadBehind = ahead > 0 || behind > 0;
     const hasCounts = counts.changed > 0 || counts.deleted > 0 || counts.untracked > 0 || counts.staged > 0;
 
+    branchNameEl.textContent = status.branch || '(detached)';
     renderStatusTokens(aheadBehindEl, [['+', ahead], ['-', behind]]);
     renderStatusTokens(countsEl, [['M', counts.changed], ['D', counts.deleted], ['?', counts.untracked], ['S', counts.staged]]);
     mainBtn.classList.toggle('is-alert', hasAheadBehind || hasCounts);
     const title = [
       `${repoName}`,
+      `${i18n.t('git.branch')}: ${status.branch || '(detached)'}`,
       `Ahead: ${ahead}  Behind: ${behind}`,
       `${i18n.t('git.changes')}: ${counts.changed}`,
       `${i18n.t('git.deleted')}: ${counts.deleted}`,

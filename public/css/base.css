@@ -117,6 +117,19 @@ textarea { font-family: var(--ide-font-mono); }
   white-space: nowrap;
 }
 
+.ide-status-git-branch {
+  min-width: 0;
+  max-width: 180px;
+  padding: 0 2px;
+  gap: 4px;
+}
+
+.ide-status-git-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ide-status-git-ab,
 .ide-status-git-counts {
   opacity: 0.95;
@@ -693,6 +706,15 @@ textarea { font-family: var(--ide-font-mono); }
 .codiware-popup-menu .menu-item:hover,
 .codiware-popup-menu .menu-item:focus { background: var(--ide-row-hover); outline: none; }
 .codiware-popup-menu .menu-item .ide-icon { width: 14px; text-align: center; opacity: 0.85; }
+.codiware-popup-menu .menu-item.is-disabled,
+.codiware-popup-menu .menu-item:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.codiware-popup-menu .menu-item.is-disabled:hover,
+.codiware-popup-menu .menu-item:disabled:hover {
+  background: transparent;
+}
 .codiware-popup-menu .menu-sep {
   height: 1px;
   background: var(--ide-border);
@@ -727,6 +749,24 @@ textarea { font-family: var(--ide-font-mono); }
 
 .git-status-list {
   min-width: 0;
+}
+
+.git-branch-header {
+  margin: 6px 0;
+}
+
+.git-branch-button {
+  width: 100%;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--ide-border);
+  background: var(--ide-input-bg, var(--ide-bg));
+  font-family: var(--ide-font-mono);
+}
+
+.git-branch-button:hover {
+  background: var(--ide-tab-hover);
 }
 
 .git-detail-files {

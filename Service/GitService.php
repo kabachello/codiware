@@ -62,6 +62,49 @@ final class GitService
     }
 
     /**
+     * Resolve the branch that should be active when the IDE opens a workspace.
+     *
+     * The caller passes the optional `branch` URL parameter. When it is empty,
+     * the repository stays on its current branch and the current status is
+     * returned unchanged. When it names another branch, git checks out that
+     * branch before the updated status is returned. This keeps deep links like
+     * `...?branch=1.x-dev` declarative for callers while avoiding a second round
+     * trip from the SPA during bootstrap.
+     *
+     * @return array{status:array{branch:?string,upstream:?string,ahead:int,behind:int,clean:bool,files:array<int,array{path:string,index:string,worktree:string,staged:bool,changed:bool,untracked:bool,conflict:bool,renamed_from:?string}>},switched:bool,target_branch:?string,console:?array{command:string,output:string,exit_code:int,ok:bool}}
+     */
+    public function ensureBranch(WorkspaceRoot $root, ?string $requestedBranch): array
+    {
+        $status = $this->status($root);
+        $branch = trim((string)($requestedBranch ?? ''));
+        if ($branch === '') {
+            return [
+                'status' => $status,
+                'switched' => false,
+                'target_branch' => $status['branch'],
+                'console' => null,
+            ];
+        }
+
+        if (($status['branch'] ?? null) === $branch) {
+            return [
+                'status' => $status,
+                'switched' => false,
+                'target_branch' => $branch,
+                'console' => null,
+            ];
+        }
+
+        $checkout = $this->checkout($root, $branch, false);
+        return [
+            'status' => $this->status($root),
+            'switched' => true,
+            'target_branch' => $branch,
+            'console' => $checkout['console'] ?? null,
+        ];
+    }
+
+    /**
      * @return array{old:string,new:string,old_ref:string,path:string,staged:bool}
      */
     public function diff(WorkspaceRoot $root, string $path, bool $staged = false): array

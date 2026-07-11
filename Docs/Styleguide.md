@@ -97,6 +97,8 @@ List items in sidebar trees also support a right-click context menu. This contex
 
 The same rule applies to changed-file rows in the Git panel: the three-dot menu and the right-click menu must expose the same row-level actions.
 
+Branch switching in Git should use the same discoverable interaction wherever the current branch is shown. The branch name itself should be clickable in the Git panel and in the footer status area, and both places should open the same dropdown-style chooser rather than separate custom dialogs.
+
 ### Console output blocks
 
 Console commands and their output must be visually separated into distinct blocks, so multiple runs stay readable in one long terminal scrollback.

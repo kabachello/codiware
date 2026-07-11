@@ -147,7 +147,7 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $searchService = new SearchService($this->pathGuard);
         $consoleService = new ConsoleService($this->config, $this->logger, [$gitColorNormalizer]);
 
-        $shell = new ShellController($this->responses, $this->config, $this->workspaces, $this->basePath, $this->user);
+        $shell = new ShellController($this->responses, $this->config, $this->workspaces, $gitService, $this->basePath, $this->user);
         $assets = new AssetController($this->responses);
         $configCtl = new ConfigController($this->responses, $this->config, $translations, $this->user, $this->basePath);
         $files = new FileController($this->responses, $this->workspaces, $this->pathGuard, $fileService);
