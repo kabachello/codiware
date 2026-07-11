@@ -68,15 +68,16 @@ export class TabManager {
     this._persistOpenTabs();
   }
 
-  async open(entry) {
-    const key = entry.path;
-    if (this.tabs.has(key)) {
-      this.activate(key);
-      return;
-    }
-    const descriptor = this.registry.pick(entry);
+  async open(entry, options = {}) {
+    const descriptor = this._resolveDescriptor(entry, options);
     if (!descriptor) {
       this.toasts.error(this.i18n.t('editor.binary'));
+      return;
+    }
+
+    const key = options.key || entry.path;
+    if (this.tabs.has(key)) {
+      this.activate(key);
       return;
     }
 
@@ -87,7 +88,7 @@ export class TabManager {
     tabEl.draggable = true;
     const name = document.createElement('span');
     name.className = 'ide-tab-name';
-    name.textContent = entry.name || entry.path.split('/').pop();
+    name.textContent = options.label || entry.name || entry.path.split('/').pop();
 
     // Per styleguide: small floppy icon appears when dirty; clicking it saves.
     const dirtyBtn = document.createElement('span');
@@ -147,6 +148,13 @@ export class TabManager {
     }
 
     this.activate(key);
+  }
+
+  _resolveDescriptor(entry, options = {}) {
+    if (options.editorId) {
+      return this.registry.getById(options.editorId);
+    }
+    return this.registry.pick(entry);
   }
 
   activate(key) {
@@ -503,7 +511,7 @@ export class TabManager {
     }
 
     // Look up the diff editor descriptor by ID
-    const descriptor = this.registry.entries.find(d => d.id === 'codiware.diff');
+    const descriptor = this.registry.getById('codiware.diff');
     if (!descriptor) {
       this.toasts.error('Diff editor not available');
       return;

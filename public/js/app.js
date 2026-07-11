@@ -314,7 +314,10 @@ async function main() {
     label: i18n.t('search.title'), icon: 'fa fa-search',
     mount: (host) => new SearchPanel({
       api, i18n, toasts, bus,
-      onOpenLine: (path, line) => tabs.open({ path, name: path.split('/').pop() }).then(() => bus.emit('editor:goto', { path, line })),
+      onOpenLine: (path, line, column) => tabs.open(
+        { path, name: path.split('/').pop() },
+        { editorId: 'codiware.monaco', key: `search:${path}`, label: path.split('/').pop() }
+      ).then(() => bus.emit('editor:goto', { path, line, column })),
     }).mount(host),
   });
 

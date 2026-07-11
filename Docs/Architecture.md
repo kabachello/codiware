@@ -265,7 +265,7 @@ After a successful discard, the Git panel emits a `git:file-discarded` event for
 | `POST` | `/search/replace/preview` | Calculates replacements without writing files. |
 | `POST` | `/search/replace` | Applies replacements to all or selected findings. |
 
-The search panel stays open while files are opened from results. Opening a result focuses the main editor at the matching line.
+The search panel stays open while files are opened from results. Opening a result focuses the main editor at the matching line. Search results intentionally force the Monaco code editor, even for file types that normally open in a specialized editor such as Markdown WYSIWYG, because search operates on raw file text and line/column navigation must stay precise and reliable.
 
 ### Console
 
@@ -377,6 +377,8 @@ Panel sizes, collapsed state, active bottom tab, and active side-panel tabs are 
 All editor tabs show unsaved state, restore from the previous browser session, and expose the absolute resolved path in a hover tooltip over the tab title. Text editors support search/replace within the file and word-wrap toggle. Code editors show line numbers and support go-to-line shortcuts.
 
 In addition to single-tab closing via the close icon or middle click, `TabManager` provides a right-click context menu on tab headers with bulk actions for closing all tabs, tabs to the left, tabs to the right, or all other tabs. Bulk close actions reuse the normal dirty-check flow for each affected tab so users still get a confirmation before unsaved changes are discarded.
+
+`TabManager.open()` also accepts an optional explicit editor override. This is used by cross-feature navigation flows like workspace search, which must open a file in a raw code editor regardless of the file type's normal preferred editor.
 
 ### Extensibility Model
 

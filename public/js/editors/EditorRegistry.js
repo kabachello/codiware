@@ -40,4 +40,9 @@ export class EditorRegistry {
     }
     return null;
   }
+
+  /** Find a registered editor by its descriptor id. */
+  getById(id) {
+    return this.entries.find((descriptor) => descriptor.id === id) || null;
+  }
 }
