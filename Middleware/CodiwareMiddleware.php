@@ -17,6 +17,7 @@ use kabachello\Codiware\Http\Responses;
 use kabachello\Codiware\Http\Router;
 use kabachello\Codiware\Service\ConsoleService;
 use kabachello\Codiware\Service\FileService;
+use kabachello\Codiware\Service\GitColorNormalizer;
 use kabachello\Codiware\Service\GitService;
 use kabachello\Codiware\Service\SearchService;
 use kabachello\Codiware\Service\TranslationService;
@@ -141,9 +142,10 @@ final class CodiwareMiddleware implements MiddlewareInterface
     {
         $translations = new TranslationService();
         $fileService = new FileService($this->pathGuard, $this->config);
-        $gitService = new GitService($this->config, $this->logger);
+        $gitColorNormalizer = new GitColorNormalizer();
+        $gitService = new GitService($this->config, $this->logger, $gitColorNormalizer);
         $searchService = new SearchService($this->pathGuard);
-        $consoleService = new ConsoleService($this->config, $this->logger);
+        $consoleService = new ConsoleService($this->config, $this->logger, [$gitColorNormalizer]);
 
         $shell = new ShellController($this->responses, $this->config, $this->workspaces, $this->basePath, $this->user);
         $assets = new AssetController($this->responses);
@@ -163,11 +165,13 @@ final class CodiwareMiddleware implements MiddlewareInterface
 
         // Files
         $this->router->get('/files/tree', [$files, 'tree']);
+        $this->router->get('/files/find', [$files, 'find']);
         $this->router->get('/files/read', [$files, 'read']);
         $this->router->put('/files/write', [$files, 'write']);
         $this->router->post('/files/create', [$files, 'create']);
         $this->router->post('/files/move', [$files, 'move']);
         $this->router->post('/files/copy', [$files, 'copy']);
+        $this->router->post('/files/duplicate', [$files, 'duplicate']);
         $this->router->delete('/files/delete', [$files, 'delete']);
         $this->router->get('/files/download', [$files, 'download']);
         $this->router->post('/files/upload', [$files, 'upload']);
@@ -186,6 +190,8 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $this->router->post('/git/checkout', [$git, 'checkout']);
         $this->router->get('/git/history', [$git, 'history']);
         $this->router->get('/git/show', [$git, 'show']);
+        $this->router->get('/git/commit', [$git, 'commitDetails']);
+        $this->router->get('/git/commit-diff', [$git, 'commitDiff']);
 
         // Search
         $this->router->get('/search', [$search, 'search']);

@@ -6,18 +6,38 @@ import { Icon } from '../core/Icon.js';
  * Exposes named slots for the rest of the app to mount into.
  */
 export class LayoutManager {
-  constructor(rootEl, { i18n, state, bus }) {
+  constructor(rootEl, { i18n, state, bus, settings } = {}) {
     this.root = rootEl;
     this.i18n = i18n;
     this.state = state;
     this.bus = bus;
+    this.settings = settings || null;
     this.slots = {};
-    this.sidebarWidth = 260;
+    this.sidebarWidth = this._restoreSize('layout.sidebarWidth', 260, 160, this._maxSidebarWidth());
     this.sidebarCollapsed = false;
     this.sidebarStripWidth = 44;
-    this.bottomHeight = 220;
+    this.bottomHeight = this._restoreSize('layout.bottomHeight', 220, 72, 2000);
     this.bottomCollapsed = true;
     this.bottomStripHeight = 32;
+  }
+
+  /**
+   * Read a globally persisted layout size, clamped to a sane range.
+   *
+   * @param {string} name     Setting name in the global SettingsStore.
+   * @param {number} fallback Default when nothing valid is stored.
+   * @param {number} min      Lower bound.
+   * @param {number} max      Upper bound.
+   * @returns {number}
+   */
+  _restoreSize(name, fallback, min, max) {
+    const saved = this.settings?.getGlobal(name);
+    if (typeof saved !== 'number' || !Number.isFinite(saved)) return fallback;
+    return Math.max(min, Math.min(max, saved));
+  }
+
+  _maxSidebarWidth() {
+    return Math.max(160, Math.round((window.innerWidth || 1024) * 0.7));
   }
 
   build() {
@@ -88,8 +108,9 @@ export class LayoutManager {
       onResize: {
         getSize: () => this.sidebarWidth,
         apply: (px) => {
-          this.sidebarWidth = Math.max(160, Math.min(600, px));
+          this.sidebarWidth = Math.max(160, Math.min(this._maxSidebarWidth(), px));
           this._applySidebarState();
+          this.settings?.setGlobal('layout.sidebarWidth', this.sidebarWidth);
         }
       }
     });
@@ -100,7 +121,10 @@ export class LayoutManager {
       onResize: {
         invert: true,
         getSize: () => this.bottomHeight,
-        apply: (px) => this.expandBottom(Math.max(this.bottomStripHeight + 40, Math.min(window.innerHeight - 200, px)))
+        apply: (px) => {
+          this.expandBottom(Math.max(this.bottomStripHeight + 40, Math.min(window.innerHeight - 200, px)));
+          this.settings?.setGlobal('layout.bottomHeight', this.bottomHeight);
+        }
       }
     });
   }
@@ -126,7 +150,7 @@ export class LayoutManager {
     this.expandSidebar(px);
   }
 
-  toggleSidebar(defaultWidth = 260) {
+  toggleSidebar(defaultWidth) {
     if (this.sidebarCollapsed) this.expandSidebar(defaultWidth);
     else this.collapseSidebar();
   }
@@ -140,9 +164,9 @@ export class LayoutManager {
     this._applySidebarState();
   }
 
-  expandSidebar(px = 260) {
+  expandSidebar(px) {
     this.sidebarCollapsed = false;
-    this.sidebarWidth = Math.max(160, Math.min(600, px || this.sidebarWidth || 260));
+    this.sidebarWidth = Math.max(160, Math.min(this._maxSidebarWidth(), px || this.sidebarWidth || 260));
     this._applySidebarState();
   }
 
@@ -154,7 +178,7 @@ export class LayoutManager {
     this.expandBottom(px);
   }
 
-  toggleBottom(defaultHeight = 220) {
+  toggleBottom(defaultHeight) {
     if (this.bottomCollapsed) this.expandBottom(defaultHeight);
     else this.collapseBottom();
   }
@@ -168,10 +192,43 @@ export class LayoutManager {
     this._applyBottomState();
   }
 
-  expandBottom(px = 220) {
+  expandBottom(px) {
     this.bottomCollapsed = false;
     this.bottomHeight = Math.max(this.bottomStripHeight + 40, px || this.bottomHeight || 220);
     this._applyBottomState();
+  }
+
+  /**
+   * Apply a collapsible right-hand editor side panel state to one editor shell.
+   *
+   * The caller provides the editor-local shell elements so this generic layout
+   * manager can reuse the same collapse/expand behavior for Monaco's outline or
+   * future editor-specific side panels without coupling to editor code.
+   *
+   * @param {object} options
+   * @param {HTMLElement} options.shell             Grid container that owns main area, splitter and side panel.
+   * @param {HTMLElement} options.panel             The collapsible side panel element.
+   * @param {HTMLElement} [options.splitter]        Splitter between main area and panel.
+   * @param {number} options.panelWidth             Expanded panel width in pixels.
+   * @param {number} options.stripWidth             Collapsed strip width in pixels.
+   * @param {boolean} options.collapsed             Whether the panel is currently collapsed.
+   */
+  applyEditorSidePanelState({ shell, panel, splitter, panelWidth, stripWidth, collapsed }) {
+    if (!shell || !panel) return;
+
+    const safeStripWidth = Math.max(36, Number(stripWidth) || 44);
+    const safePanelWidth = Math.max(120, Number(panelWidth) || 180);
+
+    if (collapsed) {
+      shell.style.gridTemplateColumns = `minmax(0, 1fr) ${safeStripWidth}px`;
+      if (splitter) splitter.style.display = 'none';
+      panel.classList.add('is-collapsed');
+      return;
+    }
+
+    shell.style.gridTemplateColumns = `minmax(0, 1fr) 5px ${safePanelWidth}px`;
+    if (splitter) splitter.style.display = '';
+    panel.classList.remove('is-collapsed');
   }
 
   _applyBottomState() {

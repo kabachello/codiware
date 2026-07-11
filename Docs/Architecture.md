@@ -51,7 +51,7 @@ The Codiware Composer package provides:
 
 - PSR middleware entry point and internal routing.
 - Static HTML, CSS, JavaScript, skins, icons, and vendor browser assets.
-- File tree, file read/write, upload, download, move, copy, delete, and zip extraction APIs.
+- File tree, file read/write, upload, download, move, copy, duplicate, delete, and zip extraction APIs.
 - Git status, diff, staging, commit, amend, branch, push, discard, and history APIs.
 - Global search and replace APIs.
 - Configured command console APIs.
@@ -129,6 +129,7 @@ src/
     JsonResponder.php
     ErrorResponder.php
     StaticAssetResponder.php
+    IteratorStream.php
   Controller/
     ShellController.php
     AssetController.php
@@ -148,6 +149,8 @@ src/
     GitService.php
     SearchService.php
     ConsoleService.php
+    CommandNormalizerInterface.php
+    GitColorNormalizer.php
     TranslationService.php
 public/
   index.html
@@ -223,10 +226,13 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 | `PUT` | `/files/write` | Writes text content and returns updated metadata. |
 | `POST` | `/files/create` | Creates file or directory. |
 | `POST` | `/files/move` | Moves or renames file/directory. |
-| `POST` | `/files/copy` | Copies file/directory, used by ctrl-drag in the tree. |
+| `POST` | `/files/copy` | Copies file/directory, used by ctrl-drag in the tree and by duplicate after the user confirms the target name. |
+| `POST` | `/files/duplicate` | Duplicates a file or directory in place using a `(copy)` suffix and collision-safe numbering. |
 | `DELETE` | `/files/delete?root=&path=` | Deletes file or directory. |
 | `GET` | `/files/download?root=&path=` | Downloads a file or streams a folder as zip. |
 | `POST` | `/files/upload?root=&path=` | Uploads one or more files. Zip uploads can be extracted with subfolders. |
+
+The explorer panel exposes duplicate for both files and folders via the row action menu and right-click context menu. The UI asks for the new sibling name first and pre-fills it with an `_copy` style suggestion for familiarity with the legacy IDE. After confirmation, the front-end performs a regular `/files/copy` call to that explicit target path. The `/files/duplicate` endpoint remains available for future non-interactive duplication flows and for consumers that prefer automatic `(copy)` naming.
 
 ### Git
 
@@ -249,6 +255,8 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 
 For future multi-root workspaces, the Git panel should show one repository selector per Git-enabled root. The primary workspace root is selected by default; roots outside Git repositories are omitted from the selector.
 
+After a successful discard, the Git panel emits a `git:file-discarded` event for every restored path. `TabManager` listens to this event and closes all open diff tabs for that repository path, regardless of whether they show staged or working-tree diffs. Regular file tabs remain open because the file itself still exists.
+
 ### Search
 
 | Method | Path | Description |
@@ -257,17 +265,43 @@ For future multi-root workspaces, the Git panel should show one repository selec
 | `POST` | `/search/replace/preview` | Calculates replacements without writing files. |
 | `POST` | `/search/replace` | Applies replacements to all or selected findings. |
 
-The search panel stays open while files are opened from results. Opening a result focuses the main editor at the matching line.
+The search panel stays open while files are opened from results. Opening a result focuses the main editor at the matching line. Search results intentionally force the Monaco code editor, even for file types that normally open in a specialized editor such as Markdown WYSIWYG, because search operates on raw file text and line/column navigation must stay precise and reliable.
 
 ### Console
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/console/presets` | Returns configured command presets. |
-| `POST` | `/console/run` | Runs an allowed command in an allowed root/path and streams or polls output. |
-| `POST` | `/console/stop` | Stops a running command process when supported. |
+| `POST` | `/console/run` | Runs an allowed command and streams its output incrementally. |
 
 Console commands are denied by default. A command is allowed only when it matches a configured allow-pattern or exactly matches a configured preset. Presets are inserted into the front-end console input but are not executed automatically, so users can edit them before submitting.
+
+#### Streaming model
+
+The console renders with [xterm.js](https://xtermjs.org/) on the front-end and streams output line-by-line from the back-end. `POST /console/run` returns a `text/plain-stream` response whose body is an `Http\IteratorStream` backed by a PHP generator (`ConsoleService::stream()`). The generator drives a `symfony/process` process started with `Process::fromShellCommandline(...)->start()` and yields each incremental output buffer as it arrives, preserving ANSI color codes verbatim. This mirrors the model proven in ExFace's `WebConsoleFacade` / `IteratorStream`, but Codiware ships its own framework-neutral copy and does not depend on `exface/core`.
+
+There is **no** `/console/stop` endpoint. Stopping is performed by the client aborting the `/console/run` request via an `AbortController`; the emitter stops reading the stream, the generator is destroyed and `symfony/process` terminates the process. The process lifetime is therefore bound to the single streaming request — no job store, temp files, or PID tracking are needed.
+
+No exit code is printed as terminal text. Running vs. finished vs. failed is reflected through the panel's status badge and the prompt marker color.
+
+#### Command normalizers
+
+Command-family tweaks are applied through injectable `Service\CommandNormalizerInterface` implementations rather than hard-coded in the console core. The default set contains `GitColorNormalizer`, which injects `-c color.ui=always` into `git` commands (plus the process env `FORCE_COLOR=1` / `TERM=xterm-256color`) so Git emits color even over a non-TTY pipe. Future families (Composer, npm) can add their own normalizer without touching the console.
+
+#### Ingestion paths: `run` vs. `inject`
+
+The console is a generic command-output hub with two ingestion paths, both reachable directly and via the event bus (`console:run`, `console:inject`):
+
+- **Streamed (`run`)** — typed/interactive commands run through `POST /console/run` and stream live. No structured result.
+- **Injected (`inject`)** — UI-triggered actions that need a *structured* JSON result (e.g. the Git panel) keep their own endpoint and embed the captured CLI output in the response as a `console` block:
+
+  ```json
+  { "console": { "command": "git push", "output": "<raw output with ANSI>", "exit_code": 0, "ok": true } }
+  ```
+
+  The calling panel reads its structured fields and hands the `console` block to the console (`console.inject(...)` / `console:inject`), which echoes it once after the request resolves. On `ok === false` the console auto-opens. A streaming endpoint cannot also return a clean JSON envelope on the same request, which is why Git stays injected: it needs parsed status fields and PHP exception logging more than live output.
+
+The console module has zero imports from `git/`; the Git panel depends on the console, never the reverse.
 
 Recommended default Git presets:
 
@@ -317,6 +351,7 @@ public/js/
     SearchPanel.js
   console/
     ConsolePanel.js
+    ConsoleClient.js
 ```
 
 ### Layout
@@ -331,6 +366,8 @@ The first screen is the IDE itself, not a landing page.
 
 Panel sizes, collapsed state, active bottom tab, and active side-panel tabs are persisted per workspace in `localStorage`.
 
+Inside Monaco-based code editor tabs, the document outline is implemented as an editor-local right side panel that intentionally mirrors the global sidebar behavior: it has its own collapse/expand toggle, keeps a narrow collapsed strip visible for discoverability, remembers width and collapsed state via `SettingsStore`, defaults to collapsed on smartphone-sized screens unless the user already chose another state, and uses the same tab-header rule as the global sidebars so the active tab shows icon + label while expanded and only the active marker while collapsed.
+
 ### Editor Registry
 
 `EditorRegistry` maps file type detection to editor implementations:
@@ -340,6 +377,10 @@ Panel sizes, collapsed state, active bottom tab, and active side-panel tabs are 
 - Image preview/editor for common image formats with zoom, fit-to-screen, download, and future crop/resize extension points.
 
 All editor tabs show unsaved state, restore from the previous browser session, and expose the absolute resolved path in a hover tooltip over the tab title. Text editors support search/replace within the file and word-wrap toggle. Code editors show line numbers and support go-to-line shortcuts.
+
+In addition to single-tab closing via the close icon or middle click, `TabManager` provides a right-click context menu on tab headers with bulk actions for closing all tabs, tabs to the left, tabs to the right, or all other tabs. Bulk close actions reuse the normal dirty-check flow for each affected tab so users still get a confirmation before unsaved changes are discarded.
+
+`TabManager.open()` also accepts an optional explicit editor override. This is used by cross-feature navigation flows like workspace search, which must open a file in a raw code editor regardless of the file type's normal preferred editor.
 
 ### Extensibility Model
 
@@ -382,7 +423,7 @@ The back-end exposes enabled manifests through `/config`. The asset controller s
 
 Built-in editors expose adapter-specific plugin hooks instead of leaking their implementation details across the app. This makes it easy to install existing plugins for libraries like Toast UI Editor while keeping the rest of Codiware independent from those libraries.
 
-- `MarkdownEditor` accepts configured Toast UI plugins, toolbar extensions, custom renderers, syntax highlighters, and preview hooks.
+- `MarkdownEditor` accepts configured Toast UI plugins, toolbar extensions, custom renderers, syntax highlighters, and preview hooks. Its `INCLUDES.PREVIEW_CSS` option (an array of paths relative to the `vendor` folder, e.g. `npm-asset/github-markdown-css/github-markdown.css`) injects extra stylesheets used to style the rendered markdown preview. The optional `CSS_CLASS_FOR_PREVIEW_CONTAINER` option adds one or more CSS classes (space-separated) to the preview container so stylesheets scoped to a wrapper class (e.g. `markdown-body` for github-markdown-css) take effect. The optional `INCLUDES.MERMAID_JS` option points it at a Mermaid library build (a global/IIFE script that exposes `window.mermaid`); when set, fenced ```mermaid code blocks in the preview are rendered as diagrams. It is unset by default so standalone installs skip diagram rendering; the ExFace integration (`axenox.IDE`) points it at the Mermaid build bundled with the core.
 - `CodeEditor` accepts Monaco language registrations, completion providers, hover providers, themes, actions, and keybindings.
 - `ImageEditor` accepts toolbar actions, metadata panels, transformations, and alternate renderers.
 - `GitHistory` and `DiffEditor` can accept render or action plugins later, but they should remain internal until a real extension need appears.
@@ -481,13 +522,16 @@ The file tree supports:
 - Lazy loading.
 - Clear indication of opened files.
 - Persisted expanded/collapsed branches per workspace.
-- Right-click context menu for create, rename, delete, copy, move, upload, download, and reveal actions.
+- Right-click context menu for create, rename, duplicate, delete, copy, move, upload, download, and reveal actions.
 - Drag-to-move and ctrl-drag-to-copy.
 - Drag-and-drop upload for files and zip archives with subfolders.
+- Explicit duplicate actions for files and folders that first ask for the target sibling name, prefilled with an `_copy` suggestion, and then perform a regular copy.
 
 ### Responsiveness
 
 Desktop and tablet layouts show side panels and bottom panels. On narrow mobile screens, the editor becomes full-screen and secondary features move into slide-over panels or bottom tabs. Mobile support is intentionally practical rather than feature-equal: editing remains usable, while complex Git/history/search workflows may require opening panels one at a time.
+
+The Monaco outline panel follows the same principle: on smartphone-sized screens it starts collapsed by default so code keeps maximum width, but users can still expand it from the visible strip when they need structure navigation.
 
 ### Theming and Skins
 
@@ -498,7 +542,7 @@ Base styling uses CSS custom properties in `public/css/base.css`. Built-in files
 - `skins/exface-jeasyui.css`
 - `skins/openui5-horizon.css`
 
-The host can select a skin in configuration or by boot metadata. Dark mode can be automatic through `prefers-color-scheme` or explicitly selected by the user and persisted in `localStorage`.
+The host can select a skin in configuration or by boot metadata. Dark mode can be automatic through `prefers-color-scheme` or explicitly selected by the user and persisted globally via `SettingsStore` (see below).
 
 ## Configuration
 
@@ -579,6 +623,18 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
 ```
 
 Per-user state stays in the browser because the Codiware package does not own user sessions. The storage key includes package version, base path, workspace id, and root id to avoid collisions between iframes or host installations.
+
+### SettingsStore
+
+`SettingsStore` (`public/js/core/SettingsStore.js`) is the single abstraction for persistent per-user UI state. It is backed by `localStorage` and offers two scopes:
+
+- **global** – shared across all workspaces of one installation, e.g. the dark/light theme, the sidebar width (`layout.sidebarWidth`) and the bottom panel height (`layout.bottomHeight`). Keys are `codiware:{basePath}:global:{name}`.
+- **repo** – scoped to a single workspace/repository, e.g. expanded folders in the file tree. Keys are `codiware:{basePath}:repo:{workspaceId}:{name}`.
+
+The installation base path namespaces keys so multiple Codiware instances on the same origin do not collide. Values are JSON-encoded and every access is wrapped in try/catch, so the IDE keeps working when storage is unavailable (private mode, quota). The store is exposed as `window.Codiware.settings` for extensions.
+
+`localStorage` is chosen over the alternatives because UI preferences must survive reloads and browser restarts (ruling out `sessionStorage`), are client-only and must not be sent on every request (ruling out cookies), and are small synchronous values that do not need a transactional database (ruling out IndexedDB).
+
 
 ## Security Architecture
 
@@ -692,7 +748,7 @@ Because the shipped package has no build step, browser tests should run against 
 - Implement file tree, file APIs, text read/write, tab management, tab restoration, and opened-file indicators. Complexity: Large.
 - Add `EditorRegistry`, editor lifecycle contract, Monaco code editor, Markdown editor with Mermaid, and image preview. Complexity: Large.
 - Add adapter hooks for front-end library plugins, starting with Toast UI Editor plugins and Monaco language/completion providers. Complexity: Medium.
-- Add upload, download, zip handling, drag move/copy, and context menus. Complexity: Large.
+- Add upload, download, zip handling, drag move/copy, context menus, and in-place duplicate actions. Complexity: Large.
 
 **Phase 3: Git, Search, and Console**
 
@@ -705,7 +761,7 @@ Because the shipped package has no build step, browser tests should run against 
 - Add skins for light, dark, jEasyUI-like, and OpenUI5 Horizon-like appearances. Complexity: Medium.
 - Add ExFace integration documentation for `axenox/ide`. Complexity: Small.
 - Add automated back-end and Playwright coverage for the critical workflows. Complexity: Large.
-- Verify Windows and Linux behavior for filesystem paths, Git commands, zip handling, and process execution. Complexity: Medium.
+- Verify Windows and Linux behavior for filesystem paths, Git commands, zip handling, process execution, and duplicate-name collision handling. Complexity: Medium.
 
 ## Considerations
 

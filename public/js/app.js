@@ -1,35 +1,126 @@
-import { EventBus } from './core/EventBus.js';
-import { StateStore } from './core/StateStore.js';
-import { ApiClient } from './core/ApiClient.js';
-import { I18n } from './core/I18n.js';
-import { Toasts } from './core/Toasts.js';
-import { LayoutManager } from './layout/LayoutManager.js';
-import { PanelManager } from './layout/PanelManager.js';
-import { BottomPanelManager } from './layout/BottomPanelManager.js';
-import { EditorRegistry } from './editors/EditorRegistry.js';
-import { monacoEditorDescriptor } from './editors/MonacoEditor.js';
-import { markdownEditorDescriptor } from './editors/MarkdownEditor.js';
-import { imageEditorDescriptor } from './editors/ImageEditor.js';
-import { diffEditorDescriptor } from './editors/DiffEditor.js';
-import { TabManager } from './editors/TabManager.js';
-import { FileTree } from './files/FileTree.js';
-import { GitPanel } from './git/GitPanel.js';
-import { SearchPanel } from './search/SearchPanel.js';
-import { ConsolePanel } from './console/ConsolePanel.js';
-import { Icon } from './core/Icon.js';
+let Icon = null;
+
+function withCacheBust(path) {
+  const v = window.CODIWARE_BOOT?.cache_bust || '';
+  if (!v) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}v=${encodeURIComponent(v)}`;
+}
+
+async function loadAppModules() {
+  const [
+    { EventBus },
+    { StateStore },
+    { SettingsStore },
+    { ApiClient },
+    { I18n },
+    { Toasts },
+    { LayoutManager },
+    { PanelManager },
+    { BottomPanelManager },
+    { EditorRegistry },
+    { monacoEditorDescriptor },
+    { markdownEditorDescriptor },
+    { imageEditorDescriptor },
+    { diffEditorDescriptor },
+    { TabManager },
+    { FileTree },
+    { GitPanel },
+    { HistoryPanel },
+    { SearchPanel },
+    { ConsolePanel },
+    { Icon: IconModule },
+  ] = await Promise.all([
+    import(withCacheBust('./core/EventBus.js')),
+    import(withCacheBust('./core/StateStore.js')),
+    import(withCacheBust('./core/SettingsStore.js')),
+    import(withCacheBust('./core/ApiClient.js')),
+    import(withCacheBust('./core/I18n.js')),
+    import(withCacheBust('./core/Toasts.js')),
+    import(withCacheBust('./layout/LayoutManager.js')),
+    import(withCacheBust('./layout/PanelManager.js')),
+    import(withCacheBust('./layout/BottomPanelManager.js')),
+    import(withCacheBust('./editors/EditorRegistry.js')),
+    import(withCacheBust('./editors/MonacoEditor.js')),
+    import(withCacheBust('./editors/MarkdownEditor.js')),
+    import(withCacheBust('./editors/ImageEditor.js')),
+    import(withCacheBust('./editors/DiffEditor.js')),
+    import(withCacheBust('./editors/TabManager.js')),
+    import(withCacheBust('./files/FileTree.js')),
+    import(withCacheBust('./git/GitPanel.js')),
+    import(withCacheBust('./git/HistoryPanel.js')),
+    import(withCacheBust('./search/SearchPanel.js')),
+    import(withCacheBust('./console/ConsolePanel.js')),
+    import(withCacheBust('./core/Icon.js')),
+  ]);
+
+  return {
+    EventBus,
+    StateStore,
+    SettingsStore,
+    ApiClient,
+    I18n,
+    Toasts,
+    LayoutManager,
+    PanelManager,
+    BottomPanelManager,
+    EditorRegistry,
+    monacoEditorDescriptor,
+    markdownEditorDescriptor,
+    imageEditorDescriptor,
+    diffEditorDescriptor,
+    TabManager,
+    FileTree,
+    GitPanel,
+    HistoryPanel,
+    SearchPanel,
+    ConsolePanel,
+    Icon: IconModule,
+  };
+}
 
 /**
  * Application bootstrap. The HTML shell sets `window.CODIWARE_BOOT` with
  * the per-request configuration before this module loads.
  */
 async function main() {
+  const {
+    EventBus,
+    StateStore,
+    SettingsStore,
+    ApiClient,
+    I18n,
+    Toasts,
+    LayoutManager,
+    PanelManager,
+    BottomPanelManager,
+    EditorRegistry,
+    monacoEditorDescriptor,
+    markdownEditorDescriptor,
+    imageEditorDescriptor,
+    diffEditorDescriptor,
+    TabManager,
+    FileTree,
+    GitPanel,
+    HistoryPanel,
+    SearchPanel,
+    ConsolePanel,
+    Icon: LoadedIcon,
+  } = await loadAppModules();
+  Icon = LoadedIcon;
+
   const boot = window.CODIWARE_BOOT || {};
   const basePath = (boot.url_to_api || '/codiware').replace(/\/$/, '');
   const workspace = boot.workspace || {};
 
-  // Theme
-  document.documentElement.dataset.theme = (boot.theme?.default) || 'light';
-  applyTheme(document.documentElement.dataset.theme);
+  // Persistent per-user settings (localStorage). Theme is stored globally,
+  // i.e. shared across all workspaces; other settings may be stored per repo.
+  const settings = new SettingsStore({ install: basePath, workspace: workspace.alias || '' });
+
+  // Theme: prefer the user's saved choice, then the boot default, then light.
+  const initialTheme = settings.getGlobal('theme') || (boot.theme?.default) || 'light';
+  document.documentElement.dataset.theme = initialTheme;
+  applyTheme(initialTheme);
 
   const bus = new EventBus();
   const state = new StateStore({ workspace });
@@ -53,13 +144,14 @@ async function main() {
   registry.register(diffEditorDescriptor);
 
   // Editor context (shared by all editors).
-  const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {} };
+  const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {}, settings };
 
   // Build chrome.
   const root = document.getElementById('codiware-root');
-  const layout = new LayoutManager(root, { i18n, state, bus });
+  const layout = new LayoutManager(root, { i18n, state, bus, settings });
   layout.build();
   ensureBottomLayoutCompatibility(layout);
+  ctx.layout = layout;
   layout.setWorkspaceLabel(workspace.label || workspace.alias || workspace.path || '');
   layout.setStatusLeft(workspace.alias || '', 'fa fa-folder-open');
   layout.setStatusRight(`Codiware IDE • ${boot.user?.name || ''}`);
@@ -68,7 +160,7 @@ async function main() {
   const tabs = new TabManager({
     tabBar: layout.slots.editorTabs,
     host: layout.slots.editorHost,
-    api, registry, ctx, i18n, toasts, bus,
+    api, registry, ctx, i18n, toasts, bus, settings,
   });
 
   const panels = new PanelManager({
@@ -88,8 +180,9 @@ async function main() {
   bottomCollapseBtn.type = 'button';
   bottomCollapseBtn.className = 'ide-bottom-collapse';
   const collapseLabel = i18n.t('actions.collapse');
+  const expandLabel = i18n.t('actions.expand');
   const collapseTitle = collapseLabel && collapseLabel !== 'actions.collapse' ? collapseLabel : 'Collapse panel';
-  const expandTitle = 'Expand panel';
+  const expandTitle = expandLabel && expandLabel !== 'actions.expand' ? expandLabel : 'Expand panel';
 
   const updateBottomToggleIcon = () => {
     const isCollapsed = layout.isBottomCollapsed();
@@ -101,7 +194,7 @@ async function main() {
 
   bottomCollapseBtn.addEventListener('click', (event) => {
     event.stopPropagation();
-    if (layout.isBottomCollapsed()) layout.expandBottom(220);
+    if (layout.isBottomCollapsed()) layout.expandBottom();
     else layout.collapseBottom();
     updateBottomToggleIcon();
   });
@@ -124,7 +217,7 @@ async function main() {
 
   sidebarCollapseBtn.addEventListener('click', (event) => {
     event.stopPropagation();
-    if (layout.isSidebarCollapsed()) layout.expandSidebar(260);
+    if (layout.isSidebarCollapsed()) layout.expandSidebar();
     else layout.collapseSidebar();
     updateSidebarToggleIcon();
   });
@@ -153,8 +246,9 @@ async function main() {
     label: i18n.t('files.title'), icon: 'fa fa-folder',
     mount: (host) => {
       fileTree = new FileTree({
-        host, api, i18n, toasts, bus,
+        host, api, i18n, toasts, bus, settings,
         fileIcons: boot.file_icons || {},
+        filterMinChars: boot.files?.filter_min_chars,
         onOpen: (entry) => tabs.open(entry),
       });
       fileTree.refresh();
@@ -171,6 +265,11 @@ async function main() {
       tabs.closePath(payload.from);
     }
   });
+  bus.on('git:file-discarded', (payload) => {
+    if (payload?.path !== undefined) {
+      tabs.closeDiffsForPath(payload.path);
+    }
+  });
 
   if (boot.features?.git !== false && workspace.is_git) {
     let gitPanel;
@@ -185,6 +284,8 @@ async function main() {
           user: boot.user || {},
           hasGitIdentity,
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
+          onOpenHistory: () => bottomPanels.activate('history', { expand: true }),
+          onOpenFile: (entry) => tabs.open(entry),
         });
         gitPanel.mount(host);
       },
@@ -216,24 +317,46 @@ async function main() {
     label: i18n.t('search.title'), icon: 'fa fa-search',
     mount: (host) => new SearchPanel({
       api, i18n, toasts, bus,
-      onOpenLine: (path, line) => tabs.open({ path, name: path.split('/').pop() }).then(() => bus.emit('editor:goto', { path, line })),
+      onOpenLine: (path, line, column) => tabs.open(
+        { path, name: path.split('/').pop() },
+        { editorId: 'codiware.monaco', key: `search:${path}`, label: path.split('/').pop() }
+      ).then(() => bus.emit('editor:goto', { path, line, column })),
     }).mount(host),
   });
 
   // Bottom tabs
   if (boot.features?.console !== false) {
     const consoleLabel = i18n.t('console.title');
+    // Instantiate eagerly so the panel can subscribe to the bus and receive
+    // injected output (e.g. from the Git panel) even before it is first opened.
+    // The xterm terminal itself is created lazily on first mount.
+    const consolePanel = new ConsolePanel({
+      api, i18n, toasts, bus,
+      open: () => bottomPanels.activate('console', { expand: true }),
+    });
     bottomPanels.register('console', {
       label: consoleLabel && consoleLabel !== 'console.title' ? consoleLabel : 'Console',
       icon: 'fa fa-terminal',
+      mount: (host) => consolePanel.mount(host),
+    });
+  }
+
+  // Git history bottom tab (after Console). Contents load lazily on first open.
+  if (boot.features?.git !== false && workspace.is_git) {
+    let historyPanel;
+    const historyLabel = i18n.t('history.title');
+    bottomPanels.register('history', {
+      label: historyLabel && historyLabel !== 'history.title' ? historyLabel : 'Git history',
+      icon: 'fa fa-history',
       mount: (host) => {
-        const consolePanel = new ConsolePanel({ api, i18n, toasts });
-        consolePanel.mount(host);
+        historyPanel = new HistoryPanel({
+          api, i18n, toasts, bus,
+          onOpenDiff: (opts) => tabs.openDiff(opts),
+          onOpenFile: (entry) => tabs.open(entry),
+        });
+        historyPanel.mount(host);
       },
     });
-
-    // Ensure initial state is always a populated collapsed stripe.
-    
   }
 
   // Toolbar: theme toggle + bottom panel toggle + save
@@ -244,6 +367,7 @@ async function main() {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     applyTheme(next);
+    settings.setGlobal('theme', next);
   });
   const saveBtn = document.createElement('button');
   saveBtn.append(Icon.render('fa fa-floppy-o'), withLabel(i18n.t('actions.save')));
@@ -262,11 +386,15 @@ async function main() {
 
   // Expose minimal extension API on window for late-loading plugins.
   window.Codiware = {
-    api, bus, state, i18n, toasts,
+    api, bus, state, settings, i18n, toasts,
     registerEditor: (d) => registry.register(d),
     openFile: (entry) => tabs.open(entry),
   };
   bus.emit('app:ready');
+
+  // Reopen the file tabs that were open in the previous session for this
+  // workspace. Diff tabs are intentionally not restored.
+  tabs.restore();
 }
 
 function applyTheme(theme) {

@@ -19,11 +19,17 @@ final class GitService
 {
     private string $binary;
 
+    private CommandNormalizerInterface $colorNormalizer;
+
     public function __construct(
         private readonly CodiwareConfig $config,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        ?CommandNormalizerInterface $colorNormalizer = null
     ) {
         $this->binary = (string)($config->get('GIT.BINARY', 'git') ?? 'git');
+        // Shared with the console so output captured for injection is colored the
+        // same way as commands typed into the console.
+        $this->colorNormalizer = $colorNormalizer ?? new GitColorNormalizer();
     }
 
     public function isRepository(WorkspaceRoot $root): bool
@@ -153,22 +159,31 @@ final class GitService
             'GIT_COMMITTER_NAME' => $authorName,
             'GIT_COMMITTER_EMAIL' => $authorEmail,
         ];
-        $out = $this->run($root, $args, env: $env);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, $args, $env);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('commit', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     public function push(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
-        $out = $this->run($root, ['push'], expectExit: [0]);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, ['push']);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('push', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     public function pull(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
-        $out = $this->run($root, ['pull'], expectExit: [0]);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, ['pull']);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('pull', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     /**
@@ -195,43 +210,293 @@ final class GitService
             $args[] = '-b';
         }
         $args[] = $branch;
-        $out = $this->run($root, $args);
-        return ['message' => trim($out)];
+        $console = $this->consoleCapture($root, $args);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('checkout', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
     }
 
     /**
-     * @return array<int,array{hash:string,parents:string[],author:string,email:string,date:int,subject:string}>
+     * Read the commit graph for the history panel.
+     *
+     * Fields are separated by the real ASCII unit-separator byte (0x1F), which
+     * git emits via its `%x1f` format escape, so subjects and author names can
+     * safely contain any printable character. The `refs` field is parsed from
+     * `%D` into typed branch/tag/remote entries so the client can label
+     * branches with text instead of relying on color alone.
+     *
+     * When `$search` is given, the commit list is filtered to rows that match
+     * the term (case-insensitive) in any displayed column — subject, author,
+     * committer, hash, refs or the formatted dates. The filtering is done in
+     * PHP rather than by shelling out to the system `grep`, which is not part
+     * of a default Windows installation, so the behaviour is identical on
+     * Windows and Linux. Because a filtered list no longer represents a
+     * contiguous commit graph, the client hides the branch lanes in this mode.
+     *
+     * @return array<int,array{hash:string,parents:string[],author:string,email:string,date:int,committer:string,commit_date:int,subject:string,refs:array<int,array{type:string,name:string,current:bool}>}>
      */
-    public function history(WorkspaceRoot $root, int $limit, int $skip = 0): array
+    public function history(WorkspaceRoot $root, int $limit, int $skip = 0, string $search = ''): array
     {
         $this->requireRepo($root);
-        $sep = '\x1f';
-        $format = '%H' . $sep . '%P' . $sep . '%an' . $sep . '%ae' . $sep . '%at' . $sep . '%s';
-        $args = ['log', '--max-count=' . $limit, '--skip=' . $skip, '--pretty=format:' . $format];
+        $us = "\x1f"; // field separator (git %x1f)
+        $format = '%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%s%x1f%D';
+        // `--all` walks every branch/tag (not just HEAD) so each branch tip is
+        // present and carries its `%D` decoration — without it only the current
+        // branch is decorated and other lanes get no name. `--date-order` keeps
+        // the listing chronological while still never showing a parent before
+        // its child, matching the date column in the panel.
+        $args = ['log', '--all', '--date-order', '--max-count=' . $limit, '--skip=' . $skip, '--pretty=format:' . $format];
         $out = $this->run($root, $args);
         $lines = $out === '' ? [] : explode("\n", $out);
         $rows = [];
+        $needle = trim($search);
+        $needle = $needle === '' ? '' : mb_strtolower($needle);
         foreach ($lines as $line) {
-            $parts = explode("\x1f", $line);
-            if (count($parts) < 6) {
+            if ($line === '') {
                 continue;
             }
-            $rows[] = [
+            $parts = explode($us, $line);
+            if (count($parts) < 9) {
+                continue;
+            }
+            $refs = $this->parseRefs($parts[8]);
+            $row = [
                 'hash' => $parts[0],
                 'parents' => $parts[1] === '' ? [] : explode(' ', $parts[1]),
                 'author' => $parts[2],
                 'email' => $parts[3],
                 'date' => (int)$parts[4],
-                'subject' => $parts[5],
+                'committer' => $parts[5],
+                'commit_date' => (int)$parts[6],
+                'subject' => $parts[7],
+                'refs' => $refs,
             ];
+            if ($needle !== '' && !$this->historyRowMatches($row, $needle)) {
+                continue;
+            }
+            $rows[] = $row;
         }
         return $rows;
+    }
+
+    /**
+     * Test whether a history row matches a (already lower-cased) search term in
+     * any of its displayed columns: subject, author, committer, hash, ref names
+     * and the formatted author/commit dates. Acts as a cross-platform,
+     * all-column substitute for piping the log through `grep`.
+     */
+    private function historyRowMatches(array $row, string $needle): bool
+    {
+        $haystack = [
+            (string)$row['hash'],
+            (string)$row['author'],
+            (string)$row['email'],
+            (string)$row['committer'],
+            (string)$row['subject'],
+            date('Y-m-d H:i', (int)$row['date']),
+            date('Y-m-d H:i', (int)$row['commit_date']),
+        ];
+        foreach ($row['refs'] as $ref) {
+            $haystack[] = (string)($ref['name'] ?? '');
+        }
+        return mb_strpos(mb_strtolower(implode("\n", $haystack)), $needle) !== false;
+    }
+
+    /**
+     * Full metadata and changed-file list for a single commit, used by the
+     * details pane of the history panel.
+     *
+     * @return array{hash:string,parents:string[],author:string,email:string,date:int,committer:string,committer_email:string,commit_date:int,subject:string,body:string,refs:array<int,array{type:string,name:string,current:bool}>,branches:string[],files:array<int,array{status:string,path:string,old_path?:string}>}
+     */
+    public function commitDetails(WorkspaceRoot $root, string $commit): array
+    {
+        $this->requireRepo($root);
+        $us = "\x1f";
+        // Body (%b) is placed last because it may span multiple lines.
+        $format = '%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ce%x1f%ct%x1f%D%x1f%s%x1f%b';
+        $metaOut = $this->run($root, ['show', '-s', '--pretty=format:' . $format, $commit]);
+        $parts = explode($us, $metaOut);
+        if (count($parts) < 11) {
+            throw new CodiwareException('Commit not found: ' . $commit, 'not_found', 404);
+        }
+        return [
+            'hash' => $parts[0],
+            'parents' => $parts[1] === '' ? [] : explode(' ', $parts[1]),
+            'author' => $parts[2],
+            'email' => $parts[3],
+            'date' => (int)$parts[4],
+            'committer' => $parts[5],
+            'committer_email' => $parts[6],
+            'commit_date' => (int)$parts[7],
+            'refs' => $this->parseRefs($parts[8]),
+            'subject' => $parts[9],
+            'body' => rtrim($parts[10] ?? '', "\n"),
+            'branches' => $this->commitBranches($root, $commit),
+            'files' => $this->commitFiles($root, $commit),
+        ];
+    }
+
+    /**
+     * List the local branches that contain the given commit, i.e. branches from
+     * whose tip the commit is reachable (`git branch --contains`). Used by the
+     * details pane to show where a commit currently lives.
+     *
+     * @return string[]
+     */
+    public function commitBranches(WorkspaceRoot $root, string $commit): array
+    {
+        $out = $this->run($root, ['branch', '--contains', $commit, '--format=%(refname:short)']);
+        $branches = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            $name = trim($line);
+            if ($name !== '') {
+                $branches[] = $name;
+            }
+        }
+        return $branches;
+    }
+
+    /**
+     * List files changed by a commit relative to its first parent. The root
+     * commit is handled via `--root` so its initial files are reported too.
+     *
+     * @return array<int,array{status:string,path:string,old_path?:string}>
+     */
+    public function commitFiles(WorkspaceRoot $root, string $commit): array
+    {
+        $out = $this->run($root, ['diff-tree', '--no-commit-id', '--name-status', '-r', '-M', '--root', $commit]);
+        $files = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $cols = preg_split('/\t/', $line) ?: [];
+            $status = $cols[0] ?? '';
+            $code = $status === '' ? '' : $status[0];
+            if (($code === 'R' || $code === 'C') && isset($cols[2])) {
+                $files[] = ['status' => $code, 'old_path' => $cols[1], 'path' => $cols[2]];
+            } elseif (isset($cols[1])) {
+                $files[] = ['status' => $code, 'path' => $cols[1]];
+            }
+        }
+        return $files;
+    }
+
+    /**
+     * Build the two sides of a diff for a single file introduced by a commit:
+     * the parent version (`old`) and the committed version (`new`). Missing
+     * sides (added/deleted files, root commit) resolve to empty strings so the
+     * diff editor can render additions and deletions cleanly.
+     *
+     * @return array{path:string,old:string,new:string}
+     */
+    public function commitFileDiff(WorkspaceRoot $root, string $commit, string $path, ?string $oldPath = null): array
+    {
+        $this->requireRepo($root);
+        $parentPath = $oldPath !== null && $oldPath !== '' ? $oldPath : $path;
+        $new = '';
+        try {
+            $new = $this->run($root, ['show', $commit . ':' . $path]);
+        } catch (CodiwareException) {
+            $new = '';
+        }
+        $old = '';
+        try {
+            $old = $this->run($root, ['show', $commit . '^:' . $parentPath]);
+        } catch (CodiwareException) {
+            $old = '';
+        }
+        return ['path' => $path, 'old' => $old, 'new' => $new];
     }
 
     public function show(WorkspaceRoot $root, string $commit, string $path): string
     {
         $this->requireRepo($root);
         return $this->run($root, ['show', $commit . ':' . $path]);
+    }
+
+    /**
+     * Parse the `%D` ref decoration string (e.g. `HEAD -> main, origin/main,
+     * tag: v1.0`) into typed entries. Keeping the typing on the server lets the
+     * client render branch and tag labels without re-parsing git output.
+     *
+     * @return array<int,array{type:string,name:string,current:bool}>
+     */
+    private function parseRefs(string $decoration): array
+    {
+        $decoration = trim($decoration);
+        if ($decoration === '') {
+            return [];
+        }
+        $refs = [];
+        foreach (explode(',', $decoration) as $token) {
+            $token = trim($token);
+            if ($token === '') {
+                continue;
+            }
+            if (str_starts_with($token, 'HEAD -> ')) {
+                $refs[] = ['type' => 'branch', 'name' => trim(substr($token, 8)), 'current' => true];
+            } elseif ($token === 'HEAD') {
+                $refs[] = ['type' => 'head', 'name' => 'HEAD', 'current' => true];
+            } elseif (str_starts_with($token, 'tag: ')) {
+                $refs[] = ['type' => 'tag', 'name' => trim(substr($token, 5)), 'current' => false];
+            } elseif (str_contains($token, '/')) {
+                $refs[] = ['type' => 'remote', 'name' => $token, 'current' => false];
+            } else {
+                $refs[] = ['type' => 'branch', 'name' => $token, 'current' => false];
+            }
+        }
+        return $refs;
+    }
+
+    /**
+     * Run a git command capturing its combined, colored output for display in
+     * the console. Unlike {@see run()} this never throws on a non-zero exit so
+     * callers can decide how to surface failures while still echoing the CLI
+     * output to the user.
+     *
+     * @param string[] $args
+     * @param array<string,string> $env
+     * @return array{command:string,output:string,exit_code:int,ok:bool}
+     */
+    private function consoleCapture(WorkspaceRoot $root, array $args, array $env = []): array
+    {
+        // Force color the same way the console does for typed git commands.
+        $colored = array_merge(['-c', 'color.ui=always'], $args);
+        $process = new Process(array_merge([$this->binary], $colored), $root->path, $env === [] ? null : $env);
+        $process->setTimeout(60);
+        $process->run();
+        $exit = (int)($process->getExitCode() ?? -1);
+        return [
+            'command' => $this->colorNormalizer->normalize(implode(' ', array_merge([$this->binary], $args))),
+            'output' => $process->getOutput() . $process->getErrorOutput(),
+            'exit_code' => $exit,
+            'ok' => $exit === 0,
+        ];
+    }
+
+    /**
+     * Build the exception for a failed console-captured git command. The raw CLI
+     * output is attached as a `console` detail so the front-end can inject it
+     * into the console and auto-open it, while server-side logging is preserved.
+     *
+     * @param array{command:string,output:string,exit_code:int,ok:bool} $console
+     */
+    private function consoleFailure(string $operation, array $console): CodiwareException
+    {
+        $this->logger->warning('git command failed', [
+            'cmd' => $console['command'],
+            'exit' => $console['exit_code'],
+            'output' => $console['output'],
+        ]);
+        $detail = trim($console['output']);
+        return new CodiwareException(
+            'git ' . $operation . ' failed: ' . ($detail !== '' ? $detail : 'exit ' . $console['exit_code']),
+            'git_failed',
+            500,
+            ['exit' => $console['exit_code'], 'console' => $console]
+        );
     }
 
     /**

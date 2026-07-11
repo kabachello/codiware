@@ -1,5 +1,7 @@
 # to exclude Obsidian's settings (including plugin and hotkey configurations)
 .obsidian/
+# PHPStorm
+.idea/
 
 /vendor/
 /composer.lock

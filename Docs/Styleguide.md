@@ -8,9 +8,11 @@ Themes are set in the config. The user can switch between light and dark modes u
 
 ### Icons
 
-Buttons and other UI elements, that use icons, support font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. We are using SVG icons from the [Pictogrammers MDI library](https://pictogrammers.com/library/mdi/).
+Buttons and other UI elements, that use icons, support font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`.
 
 The same icon is to be used for the same functionality in all places in the app.
+
+Status indicators in Git/file lists should follow the same rule too: if a file state is shown as an icon in one panel, the same icon should be reused in other panels for the same state whenever possible.
 
 ### Colors
 
@@ -35,6 +37,8 @@ The layout is similar to Visual Studio Code:
 
 All sidebar and bottom panels should look and feel similar. 
 
+Tabs across all panels (sidebar tabs, bottom panel tabs and editor tabs) give hover feedback by changing their background, so it is always clear that a tab can be pressed. Use the `--ide-tab-hover` token for inactive tabs; the token is defined per theme and must stay clearly distinct from `--ide-tabbar-bg` so the effect is visible in both light and dark themes. The currently active tab keeps its distinct background but still brightens slightly on hover so even single-tab panels (like the Monaco outline) react to the pointer.
+
 Bottom panel behavior:
 
 * supports multiple tabs, similar to the left sidebar
@@ -46,6 +50,16 @@ Sidebar behavior:
 * left and right sidebars can be collapsed to a narrow stripe that still shows panel tab icons
 * each sidebar has a collapse/expand toggle button with the same visual language as the bottom panel toggle
 * clicking a sidebar tab in collapsed mode expands the sidebar and opens that tab
+* in expanded mode, only the active sidebar tab shows icon + title in the header row; inactive tabs show only their icons
+* in collapsed mode, the active tab is marked with the same accent line pattern on the relevant outer edge of the sidebar so left and right sidebars feel like mirrored variants of the same component
+
+Editor-local side panels (for example the Monaco outline on the right side inside one editor tab) should follow the same interaction language as the global sidebars whenever possible:
+
+* they can be collapsed into a narrow visible strip instead of disappearing entirely
+* they use the same angle-icon metaphor for collapse/expand
+* on narrow smartphone screens they should default to collapsed if they would otherwise noticeably reduce editing space
+* if they expose tabs, they should follow the same active-tab rule as the global sidebars: active tab shows icon + title while expanded, inactive tabs show icon only
+* if an editor-local panel currently has only one tab, it should still use the same tab/header visual language so additional tabs can be added later without redesign
 
 ### Lists and hierarchies 
 
@@ -58,6 +72,8 @@ Each list item has
 * tooltip
 
 List item names and tooltips are only tranlatable if the item represents a function. Names and tooltips of files are not translatable.
+
+Flat file-change lists in the Git panel should visually follow the same row language as the commit-details file list in Git history: status indicator on the left, filename in the middle, inline actions on the right.
 
 ### Toolbars
 
@@ -79,6 +95,21 @@ The Inline toolbar can show up to 2 most important buttons and the three-dot men
 
 List items in sidebar trees also support a right-click context menu. This context menu must expose the same item-level actions as the inline toolbar/menu for that item.
 
+The same rule applies to changed-file rows in the Git panel: the three-dot menu and the right-click menu must expose the same row-level actions.
+
+### Console output blocks
+
+Console commands and their output must be visually separated into distinct blocks, so multiple runs stay readable in one long terminal scrollback.
+
+Each block should:
+
+* begin with a visible separator line
+* show the executed command directly below that separator
+* contain the command output unchanged
+* end with a visible closing separator or spacing before the next prompt
+
+Separators may use terminal box-drawing characters or similar text-based markers because the console itself is terminal-rendered. The separation must not rely on color only.
+
 ## Editor tabs
 
 The main editor area has tabs for opened files.
@@ -90,6 +121,10 @@ Tab headers show:
 * small floppy icon, that shows up, if the file has unsaved changes. Pressing this icon will save the file
 
 The tab of the currently visible file must be clearly highlighted by using a distinct background color.
+
+Tabs can be reordered via drag and drop. During dragging, text selection inside the tab header should not be triggered. The drop target must be shown with a clear visual insertion marker that does not rely on color only.
+
+Right-clicking a tab header opens a context menu with bulk close actions for all tabs, tabs to the left, tabs to the right, and all other tabs. Disabled actions should stay visible when they are not applicable so the menu remains predictable.
 
 If there is not enough space for all tabs, the right-most tabs "overflow" into a menu, accessible via three-dot button on the right end of the tab bar.
 

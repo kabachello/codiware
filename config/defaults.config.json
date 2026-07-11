@@ -13,6 +13,7 @@
     "*.pfx"
   ],
   "MAX_UPLOAD_BYTES": 52428800,
+  "FILES.FILTER_MIN_CHARS": 3,
   "THEME.DEFAULT": "light",
   "THEME.ALLOW_USER_OVERRIDE": true,
   "THEME.SKIN": null,
@@ -124,7 +125,10 @@
     "codiware.markdown": {
       "INCLUDES.EDITOR_JS": "vendor/npm-asset/toast-ui--editor/dist/esm/index.js",
       "INCLUDES.EDITOR_CSS_LIGHT": "vendor/npm-asset/toast-ui--editor/dist/toastui-editor.css",
-      "INCLUDES.EDITOR_CSS_DARK": "vendor/npm-asset/toast-ui--editor/dist/theme/toastui-editor-dark.css"
+      "INCLUDES.EDITOR_CSS_DARK": "vendor/npm-asset/toast-ui--editor/dist/theme/toastui-editor-dark.css",
+      "INCLUDES.MERMAID_JS": null,
+      "INCLUDES.PREVIEW_CSS": [],
+      "CSS_CLASS_FOR_PREVIEW_CONTAINER": null
     },
     "codiware.monaco": {
       "INCLUDES.MONACO_JS_BASE": "vendor/npm-asset/monaco-editor/min/vs/base"

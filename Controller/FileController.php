@@ -47,6 +47,15 @@ final class FileController
         return $this->responses->ok($this->files->readText($root, $path));
     }
 
+    public function find(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $q = $request->getQueryParams();
+        $query = (string)($q['q'] ?? '');
+        $limit = max(1, min(5000, (int)($q['limit'] ?? 1000)));
+        return $this->responses->ok($this->files->find($root, $query, $limit));
+    }
+
     public function write(ServerRequestInterface $request): ResponseInterface
     {
         $root = $this->root($request);
@@ -102,6 +111,17 @@ final class FileController
             (string)($body['from'] ?? ''),
             (string)($body['to'] ?? '')
         ));
+    }
+
+    public function duplicate(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $body = $this->decodeJson($request);
+        $path = (string)($body['path'] ?? '');
+        if ($path === '') {
+            throw new CodiwareException('path is required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->files->duplicate($root, $path));
     }
 
     public function download(ServerRequestInterface $request): ResponseInterface

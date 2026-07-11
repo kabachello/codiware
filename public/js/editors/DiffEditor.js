@@ -1,4 +1,5 @@
 import { EventBus } from '../core/EventBus.js';
+import { loadMonaco } from './monacoLoader.js';
 
 /**
  * Monaco-based diff editor for viewing git changes.
@@ -36,51 +37,6 @@ const LANGUAGE_MAP = {
   txt: 'plaintext', log: 'plaintext',
 };
 
-let monacoPromise = null;
-
-/**
- * Load the Monaco AMD distribution once and resolve with the global `monaco`
- * namespace. Reuses the same promise as MonacoEditor.
- */
-function loadMonaco() {
-  if (monacoPromise) return monacoPromise;
-  monacoPromise = new Promise((resolve, reject) => {
-    const base = window.CODIWARE_BOOT.extensions['codiware.markdown']["INCLUDES.MONACO_JS_BASE"] || (window.CODIWARE_ASSET_BASE_APP || '') + '/monaco/node_modules/monaco-editor/min/vs';
-
-    const previousRequire = window.require;
-    const previousDefine = window.define;
-
-    const loader = document.createElement('script');
-    loader.src = base + '/loader.js';
-    loader.async = true;
-    loader.onload = () => {
-      try {
-        window.require.config({ paths: { vs: base } });
-        window.MonacoEnvironment = window.MonacoEnvironment || {
-          getWorkerUrl: function (_moduleId, _label) {
-            const proxy = URL.createObjectURL(new Blob([
-              `self.MonacoEnvironment = { baseUrl: '${base}/' };`,
-              `importScripts('${base}/base/worker/workerMain.js');`,
-            ], { type: 'text/javascript' }));
-            return proxy;
-          },
-        };
-        window.require(['vs/editor/editor.main'], () => {
-          const monaco = window.monaco;
-          if (previousDefine !== undefined) window.define = previousDefine;
-          if (previousRequire !== undefined) window.require = previousRequire;
-          resolve(monaco);
-        }, (err) => reject(err));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    loader.onerror = () => reject(new Error('Failed to load Monaco loader from ' + loader.src));
-    document.head.appendChild(loader);
-  });
-  return monacoPromise;
-}
-
 function detectLanguage(path) {
   if (!path) return 'plaintext';
   const name = path.split('/').pop() || '';
@@ -105,6 +61,9 @@ export class DiffEditor {
     this._path = null;
     this._revertWidgets = [];
     this._diffUpdateTimeout = null;
+    this._revealFirstDiffPending = false;
+    this._keyDownHandler = null;
+    this._diffUpdateHandler = null;
 
     host.innerHTML = '';
     host.style.position = 'relative';
@@ -155,6 +114,12 @@ export class DiffEditor {
 
     this._editor = monaco.editor.createDiffEditor(this._container, editorOpts);
 
+    // Keep a single diff-update subscription for this editor instance.
+    this._diffUpdateHandler = this._editor.onDidUpdateDiff(() => {
+      this._updateRevertButtons();
+      this._revealFirstDiff();
+    });
+
     // Apply pending data if any
     if (this._pendingData) {
       this._applyData(this._pendingData);
@@ -177,6 +142,15 @@ export class DiffEditor {
     const language = detectLanguage(data.path);
     this._path = data.path;
     this._originalContent = data.original || '';
+    this._readOnly = Boolean(data.readOnly);
+
+    // Historical diffs (e.g. from the git history panel) are read-only: the
+    // modified side is a past revision, so editing and saving it over the
+    // working file would be destructive. Disable revert/edit in that case.
+    this._editor.updateOptions({
+      readOnly: this._readOnly,
+      originalEditable: false,
+    });
 
     // Dispose old models if they exist
     this._originalModel?.dispose();
@@ -196,6 +170,7 @@ export class DiffEditor {
       original: this._originalModel,
       modified: this._modifiedModel,
     });
+    this._revealFirstDiffPending = true;
 
     // Listen for changes in the modified model
     this._modifiedModel.onDidChangeContent(() => {
@@ -206,22 +181,39 @@ export class DiffEditor {
       this._diffUpdateTimeout = setTimeout(() => this._updateRevertButtons(), 150);
     });
 
-    // Listen for diff computation to complete
-    this._editor.onDidUpdateDiff(() => {
-      this._updateRevertButtons();
-    });
-
-    // Add save shortcut
+    // Scope the save shortcut to this editor instance. `addCommand` registers
+    // on Monaco's shared keybinding service, so with multiple open editors only
+    // the last-registered command fires regardless of focus. `onKeyDown` is
+    // per-instance and routes to the focused tab.
     const modifiedEditor = this._editor.getModifiedEditor();
-    modifiedEditor.addCommand(this._monaco.KeyMod.CtrlCmd | this._monaco.KeyCode.KeyS, () => {
-      this._bus.emit('save-request', this);
+    this._keyDownHandler?.dispose();
+    this._keyDownHandler = modifiedEditor.onKeyDown((e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.keyCode === this._monaco.KeyCode.KeyS) {
+        e.preventDefault();
+        e.stopPropagation();
+        this._bus.emit('save-request', this);
+      }
     });
 
     this._dirty = false;
   }
 
+  _revealFirstDiff() {
+    if (!this._revealFirstDiffPending || !this._editor) return;
+    const lineChanges = this._editor.getLineChanges();
+    this._revealFirstDiffPending = false;
+    if (!Array.isArray(lineChanges) || lineChanges.length === 0) return;
+
+    const firstChange = lineChanges[0];
+    const firstLine = Math.max(1, Number(firstChange?.modifiedStartLineNumber) || 1);
+    const modifiedEditor = this._editor.getModifiedEditor();
+    modifiedEditor.revealLineInCenter(firstLine);
+    modifiedEditor.setPosition({ lineNumber: firstLine, column: 1 });
+  }
+
   _updateRevertButtons() {
     if (!this._editor || !this._monaco) return;
+    if (this._readOnly) return;
 
     const modifiedEditor = this._editor.getModifiedEditor();
 
@@ -360,6 +352,15 @@ export class DiffEditor {
 
   isDirty() { return this._dirty; }
 
+  /**
+   * Move keyboard focus into the editable (modified) side of the diff editor.
+   * No-op while Monaco is still loading. Called when the owning tab is
+   * activated so editor shortcuts target this document.
+   */
+  focus() {
+    this._editor?.getModifiedEditor()?.focus();
+  }
+
   markClean() {
     this._dirty = false;
     this._bus.emit('clean', this);
@@ -370,6 +371,8 @@ export class DiffEditor {
   destroy() {
     try { this._themeObserver?.disconnect(); } catch {}
     try { this._glyphClickHandler?.dispose(); } catch {}
+    try { this._keyDownHandler?.dispose(); } catch {}
+    try { this._diffUpdateHandler?.dispose(); } catch {}
     // To avoid Monaco error, set model to null before disposing models
     try { this._editor?.setModel(null); } catch {}
     try { this._editor?.dispose(); } catch {}

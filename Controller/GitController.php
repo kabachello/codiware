@@ -117,8 +117,9 @@ final class GitController
         $q = $request->getQueryParams();
         $limit = max(1, min(500, (int)($q['limit'] ?? 100)));
         $skip = max(0, (int)($q['skip'] ?? 0));
+        $search = trim((string)($q['search'] ?? ''));
         return $this->responses->ok([
-            'commits' => $this->git->history($root, $limit, $skip),
+            'commits' => $this->git->history($root, $limit, $skip, $search),
         ]);
     }
 
@@ -136,6 +137,35 @@ final class GitController
             'path' => $path,
             'content' => $this->git->show($root, $commit, $path),
         ]);
+    }
+
+    /**
+     * Full metadata and changed-file list for a single commit.
+     */
+    public function commitDetails(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $commit = (string)($request->getQueryParams()['commit'] ?? '');
+        if ($commit === '') {
+            throw new CodiwareException('commit is required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->commitDetails($root, $commit));
+    }
+
+    /**
+     * Diff of a single file introduced by a commit (commit vs its parent).
+     */
+    public function commitDiff(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $q = $request->getQueryParams();
+        $commit = (string)($q['commit'] ?? '');
+        $path = (string)($q['path'] ?? '');
+        $oldPath = isset($q['old_path']) ? (string)$q['old_path'] : null;
+        if ($commit === '' || $path === '') {
+            throw new CodiwareException('commit and path are required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->commitFileDiff($root, $commit, $path, $oldPath));
     }
 
     /**

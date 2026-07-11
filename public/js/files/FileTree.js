@@ -30,16 +30,17 @@ function cssEscape(value) {
  * Each directory is loaded lazily through `api.get('/files/tree', {path})`.
  * Renders a panel toolbar (new file/folder, refresh) above the tree and an
  * inline three-dot menu on each row for per-item actions (rename, delete,
- * download, upload to folder, etc.).
+ * duplicate, download, upload to folder, etc.).
  */
 export class FileTree {
-  constructor({ host, api, i18n, toasts, bus, onOpen, fileIcons }) {
+  constructor({ host, api, i18n, toasts, bus, onOpen, fileIcons, settings, filterMinChars }) {
     this.host = host;
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts || { error: (m) => console.error(m), success: () => {} };
     this.bus = bus;
     this.onOpen = onOpen;
+    this.settings = settings || null;
     this.fileIcons = {
       ...DEFAULT_FILE_ICONS,
       ...(fileIcons || {}),
@@ -47,9 +48,21 @@ export class FileTree {
       by_ext: { ...DEFAULT_FILE_ICONS.by_ext, ...((fileIcons && fileIcons.by_ext) || {}) },
     };
 
+    // Quick-search filter state. While a filter is active the tree shows only
+    // files whose name matches the query, with every ancestor folder expanded.
+    // The minimum number of characters before filtering kicks in is
+    // configurable (`FILES.FILTER_MIN_CHARS`), defaulting to 3.
+    this.filterMinChars = Math.max(1, parseInt(filterMinChars, 10) || 3);
+    this.filterText = '';
+    this._filterActive = false;
+    this._filterDebounce = null;
+    this._savedExpanded = null;
+
     // Paths of folders the user has expanded. Preserved across refreshes so
-    // file operations (create/rename/delete/upload) do not collapse the tree.
-    this.expanded = new Set();
+    // file operations (create/rename/delete/upload) do not collapse the tree,
+    // and persisted in the repo-scoped settings store so they are restored
+    // when the workspace is reopened in a new browser session.
+    this.expanded = new Set(this._loadExpanded());
     this.dragContext = null;
     this.activeDropRow = null;
 
@@ -61,11 +74,45 @@ export class FileTree {
     this._buildToolbar();
     this.host.appendChild(this.toolbarEl);
 
+    this.filterEl = document.createElement('div');
+    this._buildFilter();
+    this.host.appendChild(this.filterEl);
+
+    // The tree lives inside a positioned wrapper so the blocking filter
+    // overlay (spinner) can cover only the tree, leaving the toolbar and the
+    // search field interactive.
+    this.treeWrap = document.createElement('div');
+    this.treeWrap.className = 'file-tree-scroll';
+
     this.rootUl = document.createElement('ul');
     this.rootUl.className = 'tree';
-    this.host.appendChild(this.rootUl);
+    this.treeWrap.appendChild(this.rootUl);
 
+    this.overlay = document.createElement('div');
+    this.overlay.className = 'file-tree-overlay';
+    this.overlay.hidden = true;
+    const spinner = document.createElement('div');
+    spinner.className = 'file-tree-spinner';
+    this.overlay.appendChild(spinner);
+    this.treeWrap.appendChild(this.overlay);
+
+    this.host.appendChild(this.treeWrap);
+
+    this._scrollContainer = (this.host.closest && this.host.closest('.ide-sidebar-content')) || this.host;
     this._setupRootDropTarget();
+  }
+
+  /** Read the persisted set of expanded folder paths from the repo settings. */
+  _loadExpanded() {
+    if (!this.settings) return [];
+    const stored = this.settings.getRepo('tree.expanded', []);
+    return Array.isArray(stored) ? stored.filter((p) => typeof p === 'string') : [];
+  }
+
+  /** Persist the current set of expanded folder paths to the repo settings. */
+  _persistExpanded() {
+    if (!this.settings) return;
+    this.settings.setRepo('tree.expanded', Array.from(this.expanded));
   }
 
   _buildToolbar() {
@@ -90,9 +137,214 @@ export class FileTree {
   }
 
   async refresh() {
+    // Keep the tree filtered across refreshes triggered by saving a file or
+    // by file operations, as long as a valid filter query is active.
+    if (this._filterActive && this.filterText.trim().length >= this.filterMinChars) {
+      await this._applyFilter();
+      return;
+    }
     this.rootUl.innerHTML = '';
     await this._renderInto(this.rootUl, '');
     await this._restoreExpansion();
+  }
+
+  // ---- Quick-search filter ---------------------------------------------
+
+  _buildFilter() {
+    this.filterEl.className = 'file-tree-filter history-search';
+    this.filterEl.append(Icon.render('fa fa-search'));
+
+    const placeholder = this.i18n.t('files.filter_placeholder');
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.className = 'file-tree-filter-input history-search-input';
+    input.placeholder = placeholder;
+    input.setAttribute('aria-label', placeholder);
+    input.value = this.filterText;
+    input.addEventListener('input', () => {
+      this.filterText = input.value || '';
+      this._scheduleFilter();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && input.value !== '') {
+        e.preventDefault();
+        input.value = '';
+        this.filterText = '';
+        this._scheduleFilter(true);
+      }
+    });
+    this.filterInput = input;
+    this.filterEl.append(input);
+  }
+
+  _scheduleFilter(immediate = false) {
+    if (this._filterDebounce) {
+      clearTimeout(this._filterDebounce);
+      this._filterDebounce = null;
+    }
+    const run = () => {
+      this._filterDebounce = null;
+      this._applyFilter();
+    };
+    if (immediate) run();
+    else this._filterDebounce = setTimeout(run, 200);
+  }
+
+  async _applyFilter() {
+    const query = this.filterText.trim();
+    // Below the configured threshold: clear the filter and restore the tree.
+    if (query.length < this.filterMinChars) {
+      if (this._filterActive) await this._clearFilter();
+      return;
+    }
+    // Remember the unfiltered expansion state once, so it can be restored when
+    // the filter is cleared.
+    if (!this._filterActive) {
+      this._savedExpanded = new Set(this.expanded);
+      this._filterActive = true;
+    }
+    this._showOverlay();
+    try {
+      const data = await this.api.get('/files/find', { q: query });
+      // Ignore stale responses if the query changed while the request was in
+      // flight (a newer one will render the correct result).
+      if (this.filterText.trim() !== query) return;
+      const matches = Array.isArray(data?.matches) ? data.matches : [];
+      this._renderFiltered(matches, data?.truncated === true);
+    } catch (e) {
+      this.rootUl.innerHTML = '';
+      const li = document.createElement('li');
+      li.textContent = e.message;
+      li.style.color = '#c0392b';
+      this.rootUl.appendChild(li);
+    } finally {
+      this._hideOverlay();
+    }
+  }
+
+  async _clearFilter() {
+    this._filterActive = false;
+    if (this._savedExpanded) {
+      this.expanded = new Set(this._savedExpanded);
+      this._savedExpanded = null;
+      this._persistExpanded();
+    }
+    await this.refresh();
+  }
+
+  _showOverlay() {
+    if (!this.overlay) return;
+    try { this._scrollContainer.scrollTop = 0; } catch (e) { /* ignore */ }
+    this.overlay.hidden = false;
+    this.host.classList.add('is-filtering');
+  }
+
+  _hideOverlay() {
+    if (!this.overlay) return;
+    this.overlay.hidden = true;
+    this.host.classList.remove('is-filtering');
+  }
+
+  /**
+   * Render the filtered result set. The flat list of matching files is turned
+   * into a nested folder hierarchy (derived from each file's path) so every
+   * match is shown with its complete ancestor chain, fully expanded. Folders
+   * without matching files never appear.
+   */
+  _renderFiltered(matches, truncated) {
+    this.rootUl.innerHTML = '';
+    if (matches.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = this.i18n.t('files.no_matches');
+      li.style.opacity = '0.6';
+      this.rootUl.appendChild(li);
+      return;
+    }
+
+    const rootNode = { dirs: new Map(), files: [] };
+    for (const m of matches) {
+      const parts = String(m.path || '').split('/');
+      const fileName = parts.pop();
+      let node = rootNode;
+      let acc = '';
+      for (const part of parts) {
+        acc = acc === '' ? part : acc + '/' + part;
+        if (!node.dirs.has(part)) {
+          node.dirs.set(part, { name: part, path: acc, dirs: new Map(), files: [] });
+        }
+        node = node.dirs.get(part);
+      }
+      node.files.push({ ...m, name: m.name || fileName });
+    }
+
+    this._renderFilteredNode(rootNode, this.rootUl);
+
+    if (truncated) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.style.opacity = '0.6';
+      li.textContent = this.i18n.t('files.too_many_matches');
+      this.rootUl.appendChild(li);
+    }
+  }
+
+  _renderFilteredNode(node, ul) {
+    const dirs = Array.from(node.dirs.values()).sort((a, b) => a.name.localeCompare(b.name));
+    for (const dir of dirs) {
+      ul.appendChild(this._renderFilteredDir(dir));
+    }
+    const files = node.files.slice().sort((a, b) => a.name.localeCompare(b.name));
+    for (const f of files) {
+      ul.appendChild(this._renderEntry({ type: 'file', name: f.name, path: f.path, is_text: f.is_text }));
+    }
+  }
+
+  _renderFilteredDir(dir) {
+    const li = document.createElement('li');
+    li.className = 'dir open';
+    li.dataset.path = dir.path;
+
+    const row = document.createElement('span');
+    row.className = 'row';
+
+    const toggle = Icon.render('fa fa-caret-down', { extraClass: 'ide-icon-toggle' });
+    const folderSpec = this.fileIcons.folder || 'fa fa-folder';
+    const folderOpenSpec = this.fileIcons.folder_open || folderSpec;
+    let folder = Icon.render(folderOpenSpec);
+    const name = document.createElement('span');
+    name.className = 'row-name';
+    name.textContent = dir.name;
+    row.append(toggle, folder, name);
+
+    const childUl = document.createElement('ul');
+    this._renderFilteredNode(dir, childUl);
+
+    // In filtered mode folders only toggle their visibility; their children are
+    // already in the DOM, so no server round-trip is needed.
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.row-actions')) return;
+      const open = !li.classList.contains('open');
+      li.classList.toggle('open', open);
+      toggle.firstElementChild?.classList.toggle('fa-caret-right', !open);
+      toggle.firstElementChild?.classList.toggle('fa-caret-down', open);
+      const replacement = Icon.render(open ? folderOpenSpec : folderSpec);
+      folder.replaceWith(replacement);
+      folder = replacement;
+      childUl.style.display = open ? '' : 'none';
+    });
+
+    const entry = { type: 'dir', name: dir.name, path: dir.path };
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this._selectRow(row);
+      this._openMenuAt(e.clientX, e.clientY, entry);
+    });
+
+    row.appendChild(this._renderRowActions(entry));
+    li.appendChild(row);
+    li.appendChild(childUl);
+    return li;
   }
 
   /**
@@ -103,16 +355,19 @@ export class FileTree {
   async _restoreExpansion() {
     if (this.expanded.size === 0) return;
     const paths = Array.from(this.expanded).sort((a, b) => a.split('/').length - b.split('/').length);
+    let changed = false;
     for (const path of paths) {
       const li = this.rootUl.querySelector(`li[data-path="${cssEscape(path)}"]`);
       if (!li || !li.classList.contains('dir') || typeof li._open !== 'function') {
         this.expanded.delete(path);
+        changed = true;
         continue;
       }
       if (!li.classList.contains('open')) {
         await li._open();
       }
     }
+    if (changed) this._persistExpanded();
   }
 
   async _renderInto(ul, path) {
@@ -180,6 +435,7 @@ export class FileTree {
           if (childUl) childUl.remove();
           this.expanded.delete(entry.path);
         }
+        this._persistExpanded();
       };
       li._open = () => setOpen(true);
       li._close = () => setOpen(false);
@@ -264,7 +520,10 @@ export class FileTree {
       this._clearDropHighlight(row);
       await this._performDrop(entry.path, e);
       // Keep folders open while moving items around inside them.
-      if (li.classList.contains('dir')) this.expanded.add(entry.path);
+      if (li.classList.contains('dir')) {
+        this.expanded.add(entry.path);
+        this._persistExpanded();
+      }
     });
   }
 
@@ -387,6 +646,8 @@ export class FileTree {
         { icon: 'fa fa-file-o', label: t('files.new_file_here'), onClick: () => this._createPrompt(entry.path, 'file') },
         { icon: 'fa fa-folder', label: t('files.new_folder_here'), onClick: () => this._createPrompt(entry.path, 'dir') },
         { sep: true },
+        { icon: 'fa fa-clipboard', label: t('files.copy_relative_path'), onClick: () => this._copyPathToClipboard(entry.path) },
+        { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
         { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
         { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
         { sep: true },
@@ -396,6 +657,8 @@ export class FileTree {
     }
 
     return [
+      { icon: 'fa fa-clipboard', label: t('files.copy_relative_path'), onClick: () => this._copyPathToClipboard(entry.path) },
+      { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
       { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
       { icon: 'fa fa-trash-o', label: t('files.delete'), onClick: () => this._delete(entry) },
       { sep: true },
@@ -425,6 +688,41 @@ export class FileTree {
     }
   }
 
+  async _duplicate(entry) {
+    const suggestion = this._suggestDuplicateName(entry.name, entry.type);
+    const nextName = window.prompt(this.i18n.t('files.prompt_duplicate', { name: entry.name }), suggestion);
+    if (nextName === null) return;
+    const cleanName = String(nextName).trim().replace(/^\/+/, '').replace(/\/+$/, '');
+    if (cleanName === '') return;
+
+    const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+    const targetPath = parent === '' ? cleanName : `${parent}/${cleanName}`;
+    if (targetPath === entry.path) return;
+
+    try {
+      const res = await this.api.post('/files/copy', { from: entry.path, to: targetPath });
+      await this.refresh();
+      this.bus?.emit?.('files:changed', {
+        action: 'duplicate',
+        from: entry.path,
+        to: res?.to || targetPath,
+      });
+    } catch (e) {
+      this.toasts.error(e.message);
+    }
+  }
+
+  _suggestDuplicateName(name, type) {
+    if (type === 'dir') {
+      return `${name}_copy`;
+    }
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot === name.length - 1) {
+      return `${name}_copy`;
+    }
+    return `${name.slice(0, dot)}_copy${name.slice(dot)}`;
+  }
+
   async _renamePrompt(entry) {
     const next = window.prompt(this.i18n.t('files.prompt_rename', { name: entry.name }), entry.name);
     if (next === null) return;
@@ -450,6 +748,41 @@ export class FileTree {
       this.bus?.emit?.('files:changed', { action: 'delete', path: entry.path });
     } catch (e) {
       this.toasts.error(e.message);
+    }
+  }
+
+  async _copyPathToClipboard(path) {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(path);
+      } else {
+        this._copyTextFallback(path);
+      }
+      this.toasts.success?.(this.i18n.t('files.path_copied'));
+    } catch (e) {
+      try {
+        this._copyTextFallback(path);
+        this.toasts.success?.(this.i18n.t('files.path_copied'));
+      } catch (fallbackError) {
+        this.toasts.error(this.i18n.t('files.path_copy_failed'));
+      }
+    }
+  }
+
+  _copyTextFallback(text) {
+    const input = document.createElement('textarea');
+    input.value = text;
+    input.setAttribute('readonly', 'readonly');
+    input.style.position = 'fixed';
+    input.style.top = '-9999px';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(input);
+    if (!ok) {
+      throw new Error('Copy command rejected');
     }
   }
 

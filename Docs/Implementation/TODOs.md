@@ -4,7 +4,6 @@
 
 ### Explorer
 
-* [ ] add duplicate file button
 * [ ] add a "copy path" button
 
 ## Extension framework
@@ -15,19 +14,7 @@
 
 ## Console
 
-- Rebuild the console panel using xterm.js and symfony process in the backend. 
-	- Make the console write output line-by-line
-	- make commands work on windows and linux.
-	- make sure command output is colored. For git commands add `--colors` automatically just to be sure. 
-	- keep the logic with an array of allowed regexes for commands in the config
-	- xterm.js is already available in `npm-asssets/xterm--xterm`.
-- The console should be the central hub für all cli commands sent by the UI or typed by the user. In future, more extensions will use the console: possibly a composer extension, npm, or others. 
-- make sure all code for the console itself is centralized. The git panel should use it, but the console must not depend on the git panel in any way. In particular allowed-command-regex and command presets should be injected from outside
-
-### Git panel
-
-- Make all cli commands performed by the user  either directly or via button in the git panel to visible in the console panel including their output. Open the panel automatically if a command from the git panel fails. 
-	- Keep the log of all commands in the console panel as long as the editor UI is opened. 
+- more presets
 
 ## Editors
 

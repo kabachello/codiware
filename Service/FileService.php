@@ -74,6 +74,77 @@ final class FileService
     }
 
     /**
+     * Recursively search for files whose name contains the given query.
+     *
+     * Matching is case-insensitive and limited to the file name (not the
+     * whole path). Hidden entries (e.g. ".git") and paths matching the
+     * configured deny patterns are skipped. Each match carries its full
+     * workspace-relative path so the client can rebuild the folder hierarchy.
+     *
+     * @return array{matches:array<int,array{name:string,type:string,path:string,size:int,mtime:int,is_text:bool}>,truncated:bool}
+     */
+    public function find(WorkspaceRoot $root, string $query, int $maxResults = 1000): array
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return ['matches' => [], 'truncated' => false];
+        }
+
+        $base = $this->guard->resolveInside($root, '');
+        if (!is_dir($base)) {
+            return ['matches' => [], 'truncated' => false];
+        }
+        $needle = mb_strtolower($query);
+
+        $directory = new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS);
+        // Skip only the Git metadata directory: it holds thousands of internal
+        // files that are never useful in a name filter and would slow the walk
+        // down. Other dot-folders (e.g. ".github") stay searchable so their
+        // files remain findable, matching what the file tree displays.
+        $filtered = new \RecursiveCallbackFilterIterator(
+            $directory,
+            static fn (\SplFileInfo $info): bool => !($info->isDir() && $info->getFilename() === '.git')
+        );
+        $it = new \RecursiveIteratorIterator($filtered, \RecursiveIteratorIterator::LEAVES_ONLY);
+
+        $matches = [];
+        $truncated = false;
+        foreach ($it as $info) {
+            /** @var \SplFileInfo $info */
+            if (!$info->isFile()) {
+                continue;
+            }
+            $name = $info->getFilename();
+            if (!str_contains(mb_strtolower($name), $needle)) {
+                continue;
+            }
+            $abs = $info->getPathname();
+            $rel = $this->guard->relativize($root, $abs);
+            try {
+                // Ensure deny patterns still apply for each candidate.
+                $this->guard->resolveInside($root, $rel);
+            } catch (CodiwareException) {
+                continue;
+            }
+            if (count($matches) >= $maxResults) {
+                $truncated = true;
+                break;
+            }
+            $matches[] = [
+                'name' => $name,
+                'type' => 'file',
+                'path' => $rel,
+                'size' => (int)(@filesize($abs) ?: 0),
+                'mtime' => (int)(@filemtime($abs) ?: 0),
+                'is_text' => $this->isLikelyText($abs),
+            ];
+        }
+
+        usort($matches, static fn (array $a, array $b): int => strcasecmp($a['path'], $b['path']));
+        return ['matches' => $matches, 'truncated' => $truncated];
+    }
+
+    /**
      * @return array{path:string,content:string,size:int,mtime:int,encoding:string}
      */
     public function readText(WorkspaceRoot $root, string $relative): array
@@ -195,11 +266,45 @@ final class FileService
         if (is_dir($src)) {
             $this->rcopy($src, $dst);
         } else {
+            $parent = dirname($dst);
+            if (!is_dir($parent) && !@mkdir($parent, 0775, true)) {
+                throw new CodiwareException('Cannot create destination directory.', 'mkdir_failed', 500);
+            }
             if (!@copy($src, $dst)) {
                 throw new CodiwareException('Cannot copy file.', 'copy_failed', 500);
             }
         }
         return ['from' => $from, 'to' => $this->guard->relativize($root, $dst)];
+    }
+
+    /**
+     * Create a copy of a file or folder in the same parent directory using a
+     * human-friendly `(copy)` suffix. If the generated name already exists,
+     * numeric suffixes are added as `(copy 2)`, `(copy 3)`, etc.
+     *
+     * @return array{from:string,to:string}
+     */
+    public function duplicate(WorkspaceRoot $root, string $path): array
+    {
+        $path = trim($path, '/');
+        if ($path === '') {
+            throw new CodiwareException('path is required.', 'bad_request', 400);
+        }
+
+        $this->guard->resolveInside($root, $path);
+        $parent = str_contains($path, '/') ? dirname($path) : '';
+        if ($parent === '.') {
+            $parent = '';
+        }
+        $name = basename($path);
+        $targetName = $this->nextDuplicateName($name, function (string $candidate) use ($root, $parent): bool {
+            $candidateRel = $parent === '' ? $candidate : $parent . '/' . $candidate;
+            $candidateAbs = $this->guard->resolveInside($root, $candidateRel, mustExist: false);
+            return file_exists($candidateAbs);
+        });
+        $targetRel = $parent === '' ? $targetName : $parent . '/' . $targetName;
+
+        return $this->copy($root, $path, $targetRel);
     }
 
     /**
@@ -266,7 +371,7 @@ final class FileService
                         continue;
                     }
                     // Reject absolute paths and traversal in zip entries (zip-slip).
-                    if (preg_match('#^[/\\\\]|(^|[\\\\/])\.\.([\\\\/]|$)#', $entryName) === 1) {
+                    if (preg_match('#^[/\\]|(^|[\\/])\.\.([\\/]|$)#', $entryName) === 1) {
                         throw new CodiwareException('Zip entry rejected (traversal).', 'zip_unsafe', 400, ['entry' => $entryName]);
                     }
                     $entryRel = ($relTarget === '' ? '' : $relTarget . '/') . $entryName;
@@ -331,6 +436,31 @@ final class FileService
         $name = basename($name);
         $name = preg_replace('/[\x00-\x1F]/', '', $name) ?? '';
         return $name !== '' ? $name : 'upload';
+    }
+
+    private function nextDuplicateName(string $name, callable $exists): string
+    {
+        $extension = pathinfo($name, PATHINFO_EXTENSION);
+        $filename = pathinfo($name, PATHINFO_FILENAME);
+        $base = $extension === '' ? $name : $filename;
+
+        $candidate = $extension === ''
+            ? $base . ' (copy)'
+            : $base . ' (copy).' . $extension;
+        if (!$exists($candidate)) {
+            return $candidate;
+        }
+
+        $index = 2;
+        while (true) {
+            $candidate = $extension === ''
+                ? $base . ' (copy ' . $index . ')'
+                : $base . ' (copy ' . $index . ').' . $extension;
+            if (!$exists($candidate)) {
+                return $candidate;
+            }
+            $index++;
+        }
     }
 
     private function isLikelyText(string $abs): bool

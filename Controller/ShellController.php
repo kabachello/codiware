@@ -76,6 +76,9 @@ final class ShellController
                 'by_name' => $this->config->get('FILE_ICONS.BY_NAME', new \stdClass()),
                 'by_ext' => $this->config->get('FILE_ICONS.BY_EXT', new \stdClass()),
             ],
+            'files' => [
+                'filter_min_chars' => max(1, (int)$this->config->get('FILES.FILTER_MIN_CHARS', 3)),
+            ],
             'features' => [
                 'git' => (bool)$this->config->get('GIT.ENABLED', true),
                 'console' => (bool)$this->config->get('CONSOLE.ENABLED', true),
