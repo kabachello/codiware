@@ -115,6 +115,10 @@ The resolved workspace id becomes the namespace for local browser state: opened 
 
 Future multi-root support uses the same resolver. The initial `repo/{workspacePath}` remains the primary workspace; optional secondary roots can be added from the allowed root menu and persisted per primary workspace.
 
+When a Git workspace is opened, the shell also evaluates the optional `?branch=` query parameter before the SPA starts. If the parameter is missing, the current branch is kept as-is. If it is present and differs from the current branch, the server performs the checkout during shell bootstrap and injects both the resulting git status and the checkout console block into the boot payload. This lets external links open a repository directly on a specific branch without forcing the client to do an extra round trip after rendering.
+
+If the requested branch name is a remote-tracking ref such as `origin/1.x-dev`, the server must not leave the repository in detached HEAD mode. Instead, it resolves that remote ref to the matching local branch name (`1.x-dev`) and checks it out as a tracking branch. The same normalization is used by the interactive branch chooser and by `?branch=` deep links so both entry points behave identically.
+
 ### Back-end Services
 
 ```text
@@ -207,7 +211,7 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/repo/{workspacePath...}` | Required IDE entry point. Resolves workspace, serves SPA shell, injects boot config. |
+| `GET` | `/repo/{workspacePath...}` | Required IDE entry point. Resolves workspace, optionally checks out `?branch=...`, serves SPA shell, injects boot config. |
 | `GET` | `/assets/{assetPath...}` | Serves Codiware static files and approved vendor browser assets. |
 
 ### Configuration and Translations
@@ -256,6 +260,10 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 For future multi-root workspaces, the Git panel should show one repository selector per Git-enabled root. The primary workspace root is selected by default; roots outside Git repositories are omitted from the selector.
 
 After a successful discard, the Git panel emits a `git:file-discarded` event for every restored path. `TabManager` listens to this event and closes all open diff tabs for that repository path, regardless of whether they show staged or working-tree diffs. Regular file tabs remain open because the file itself still exists.
+
+The branch name shown at the top of the Git panel and in the footer status bar acts as the entry point to one shared branch chooser. The chooser loads `/git/branches`, groups local and remote refs, and uses `/git/checkout` when the user selects a branch. This keeps branch switching discoverable in both places while reusing the same checkout flow and console injection behavior.
+
+Selecting a remote branch from that chooser must attach the user to a real local branch instead of checking out the remote ref verbatim. The back end therefore maps a remote entry like `origin/feature/demo` to the local branch `feature/demo` and performs a tracked checkout. This prevents the UI from falling into detached HEAD after a remote branch was chosen while still preserving the remote name in the menu.
 
 ### Search
 
@@ -514,6 +522,8 @@ Extension controllers receive the same `WorkspaceResolver`, `PathGuard`, logger,
 The Git side panel shows changed files by default and includes a quick filter. A changed file opens a Monaco diff editor in the main editor area. Diff actions support file-level discard initially; the API and UI should leave room for hunk-level discard later.
 
 The panel includes staging controls, commit/amend controls, ahead/behind counters, push, branch checkout/create, and history. The history view should show commit graph, metadata, changed files, and optional diff-to-previous behavior.
+
+The currently checked out branch is interactive in both the Git panel header and the footer status bar. Clicking it opens the same dropdown-style chooser so less technical users always find branch switching where they already look for branch status.
 
 ### File Tree
 

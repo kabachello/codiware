@@ -2,7 +2,7 @@
 import { Icon } from '../core/Icon.js';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, user = {}, hasGitIdentity = true }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, user = {}, hasGitIdentity = true, initialStatus = null }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
@@ -13,8 +13,10 @@ export class GitPanel {
     this.user = user || {};
     this.hasGitIdentity = Boolean(hasGitIdentity);
     this.filterText = '';
-    this._lastStatus = null;
+    this._lastStatus = initialStatus || null;
     this._contextEntry = null;
+    this._branchMenuLoading = false;
+    this._branchMenuCurrent = null;
     bus.on('file:saved', () => this.refresh());
   }
 
@@ -74,6 +76,14 @@ export class GitPanel {
       return b;
     }
     this._collapsed = { staged: false, changed: false, untracked: false };
+    if (this._lastStatus) {
+      this.bus?.emit?.('git:status-updated', this._lastStatus);
+      this._updatePushButton(this._lastStatus);
+      this._updatePullButton(this._lastStatus);
+      this._updateCommitButton(this._lastStatus);
+      this.render(this._lastStatus);
+      return;
+    }
     this.refresh();
   }
 
@@ -82,15 +92,23 @@ export class GitPanel {
     this.body.textContent = '…';
     try {
       const data = await this.api.get('/git/status');
-      this._lastStatus = data;
-      this.bus?.emit?.('git:status-updated', data);
-      this._updatePushButton(data);
-      this._updatePullButton(data);
-      this._updateCommitButton(data);
-      this.render(data);
+      this._applyStatus(data);
     } catch (e) {
       this.body.textContent = e.message;
     }
+  }
+
+  /**
+   * Store one git-status payload, fan it out through the event bus and refresh
+   * all branch/count related UI bits from that single source of truth.
+   */
+  _applyStatus(data) {
+    this._lastStatus = data;
+    this.bus?.emit?.('git:status-updated', data);
+    this._updatePushButton(data);
+    this._updatePullButton(data);
+    this._updateCommitButton(data);
+    this.render(data);
   }
 
   _updatePushButton(status) {
@@ -144,9 +162,24 @@ export class GitPanel {
     const filterSelectionEnd = hadFilterFocus ? this.filterInput.selectionEnd : null;
 
     this.body.innerHTML = '';
-    const header = el('div');
-    header.textContent = `${this.i18n.t('git.branch')}: ${s.branch || '(detached)'}  ↑${s.ahead} ↓${s.behind}`;
-    header.style.margin = '6px 0';
+    const header = el('div', 'git-branch-header');
+    this.branchButton = document.createElement('button');
+    this.branchButton.type = 'button';
+    this.branchButton.className = 'git-branch-button';
+    const branchTitle = this.i18n.t('git.select_branch') || 'Select branch';
+    this.branchButton.title = branchTitle;
+    this.branchButton.setAttribute('aria-label', branchTitle);
+    this.branchButton.append(
+      Icon.render('fa fa-code-fork'),
+      document.createTextNode(` ${s.branch || '(detached)'}`),
+      document.createTextNode(`  ↑${s.ahead} ↓${s.behind}`),
+      Icon.render('fa fa-caret-down')
+    );
+    this.branchButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.openBranchMenu(this.branchButton);
+    });
+    header.appendChild(this.branchButton);
     this.body.appendChild(header);
 
     this.body.appendChild(this._buildFilter());
@@ -473,6 +506,74 @@ export class GitPanel {
     catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
+  /**
+   * Open the branch chooser anchored to one of the branch-name buttons and fill
+   * it with local and remote refs fetched on demand from the Git API.
+   */
+  async openBranchMenu(anchor) {
+    if (!anchor || this._branchMenuLoading) return;
+    this._branchMenuCurrent = anchor;
+    this._branchMenuLoading = true;
+    const loadingLabel = this.i18n.t('git.loading_branches') || 'Loading branches…';
+    GitPopupMenu.open(anchor, [{ icon: 'fa fa-refresh', label: loadingLabel }]);
+    try {
+      const data = await this.api.get('/git/branches');
+      const current = data?.current || this._lastStatus?.branch || null;
+      const items = this._branchMenuItems(data, current);
+      GitPopupMenu.open(anchor, items.length ? items : [{ icon: 'fa fa-code-fork', label: this.i18n.t('git.no_branches') || 'No branches available' }]);
+    } catch (e) {
+      GitPopupMenu.open(anchor, [{ icon: 'fa fa-exclamation-triangle', label: e.message || (this.i18n.t('errors.generic') || 'Something went wrong.') }]);
+    } finally {
+      this._branchMenuLoading = false;
+    }
+  }
+
+  /**
+   * Convert the `/git/branches` response into grouped popup-menu entries while
+   * marking the currently checked out branch with the shared "current" suffix.
+   */
+  _branchMenuItems(data, current) {
+    const currentSuffix = this.i18n.t('git.current_branch_suffix') || ' (current)';
+    const items = [];
+    const addGroup = (label, branches = []) => {
+      const list = Array.isArray(branches) ? branches.filter(Boolean) : [];
+      if (list.length === 0) return;
+      if (items.length > 0) items.push({ sep: true });
+      items.push({ icon: 'fa fa-tag', label, disabled: true });
+      for (const name of list) {
+        const isCurrent = name === current;
+        items.push({
+          icon: isCurrent ? 'fa fa-check' : 'fa fa-code-fork',
+          label: isCurrent ? `${name}${currentSuffix}` : name,
+          onClick: isCurrent ? undefined : () => this.checkoutBranch(name),
+          disabled: isCurrent,
+        });
+      }
+    };
+
+    addGroup(this.i18n.t('git.local_branches') || 'Local branches', data?.locals || []);
+    addGroup(this.i18n.t('git.remote_branches') || 'Remote branches', data?.remotes || []);
+    return items;
+  }
+
+  /**
+   * Check out one branch selected from the dropdown, surface the captured git
+   * output in the console and refresh the shared status afterwards.
+   */
+  async checkoutBranch(branch) {
+    if (!branch) return;
+    try {
+      const resp = await this.api.post('/git/checkout', { branch });
+      this._injectConsole(resp);
+      this.toasts.success((this.i18n.t('git.switched_branch') || 'Switched to branch') + ` ${branch}`);
+      await this.refresh();
+      this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
+    } catch (e) {
+      this._injectConsoleError(e);
+      this.toasts.error(e.message);
+    }
+  }
+
   /** Surface the CLI output embedded in a structured git response in the console. */
   _injectConsole(resp) {
     const block = resp?.console;
@@ -531,6 +632,8 @@ const GitPopupMenu = {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'menu-item';
+      if (item.disabled) btn.classList.add('is-disabled');
+      btn.disabled = Boolean(item.disabled);
       btn.setAttribute('role', 'menuitem');
       btn.append(Icon.render(item.icon || ''));
       const label = document.createElement('span');
@@ -538,6 +641,7 @@ const GitPopupMenu = {
       btn.appendChild(label);
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (item.disabled) return;
         GitPopupMenu.close();
         try { item.onClick?.(); } catch (err) { console.error(err); }
       });

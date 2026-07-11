@@ -7,6 +7,7 @@ use kabachello\Codiware\Middleware\CodiwareConfig;
 use kabachello\Codiware\Middleware\UserContext;
 use kabachello\Codiware\Exception\CodiwareException;
 use kabachello\Codiware\Http\Responses;
+use kabachello\Codiware\Service\GitService;
 use kabachello\Codiware\Workspace\WorkspaceResolver;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -24,6 +25,7 @@ final class ShellController
         private readonly Responses         $responses,
         private readonly CodiwareConfig    $config,
         private readonly WorkspaceResolver $resolver,
+        private readonly GitService        $git,
         private readonly string            $urlToApi,
         private readonly UserContext       $user
     ) {
@@ -40,6 +42,11 @@ final class ShellController
             );
         }
         $root = $this->resolver->resolve($workspacePath);
+        $requestedBranch = trim((string)($request->getQueryParams()['branch'] ?? ''));
+        $branchBootstrap = null;
+        if ($this->git->isRepository($root)) {
+            $branchBootstrap = $this->git->ensureBranch($root, $requestedBranch !== '' ? $requestedBranch : null);
+        }
         $extensions = [];
         foreach ($this->config->get('EXTENSIONS.ENABLED', []) as $extId) {
             $extensions[$extId] = ($this->config->get('EXTENSIONS.CONFIG') ?? [])[$extId] ?? [];
@@ -52,6 +59,16 @@ final class ShellController
             'url_to_npm' => $this->config->get('URL_TO_NPM'),
             'workspace' => $root->toArray(),
             'workspace_path' => $workspacePath,
+            'requested_branch' => $requestedBranch,
+            'git' => [
+                'initial_status' => $branchBootstrap['status'] ?? null,
+                'initial_branch_switch' => [
+                    'requested' => $requestedBranch !== '' ? $requestedBranch : null,
+                    'target' => $branchBootstrap['target_branch'] ?? null,
+                    'switched' => (bool)($branchBootstrap['switched'] ?? false),
+                    'console' => $branchBootstrap['console'] ?? null,
+                ],
+            ],
             'user' => [
                 'name' => $this->user->name,
                 'email' => $this->user->email,
