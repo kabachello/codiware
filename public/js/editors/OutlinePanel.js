@@ -1,7 +1,7 @@
 /**
  * Outline panel for Monaco editor. Shows document symbols (classes, methods,
  * functions, etc.) in a tree structure and allows navigation by clicking.
- * 
+ *
  * Uses Monaco's built-in DocumentSymbol provider to extract symbols from the
  * current model.
  */
@@ -14,19 +14,13 @@ export class OutlinePanel {
     this._symbolCache = [];
     this._disposed = false;
     this._updateTimeout = null;
-    
+
     this._build();
   }
 
   _build() {
     this.container.innerHTML = '';
     this.container.className = 'outline-panel';
-    
-    // Header
-    const header = document.createElement('div');
-    header.className = 'outline-header';
-    header.textContent = this.i18n?.t('outline.title') || 'Outline';
-    this.container.appendChild(header);
 
     // Symbol tree container
     this._tree = document.createElement('div');
@@ -47,11 +41,11 @@ export class OutlinePanel {
   attach(editor, monaco) {
     this._editor = editor;
     this._monaco = monaco;
-    
+
     // Update outline when model changes
     this._modelListener = editor.onDidChangeModel(() => this._scheduleUpdate());
     this._contentListener = editor.onDidChangeModelContent(() => this._scheduleUpdate());
-    
+
     this._scheduleUpdate();
   }
 
@@ -64,7 +58,7 @@ export class OutlinePanel {
 
   async _updateOutline() {
     if (this._disposed || !this._editor || !this._monaco) return;
-    
+
     const model = this._editor.getModel();
     if (!model) {
       this._showEmpty();
@@ -75,7 +69,7 @@ export class OutlinePanel {
       // Parse symbols using regex patterns - works for all languages
       const symbols = this._parseBasicSymbols(model);
       this._symbolCache = symbols;
-      
+
       if (symbols.length === 0) {
         this._showEmpty();
       } else {
@@ -113,7 +107,7 @@ export class OutlinePanel {
         { regex: /^[ \t]*(?:abstract[ \t]+|final[ \t]+)?class[ \t]+(\w+)/gm, kind: SymbolKind.Class },
         // Interfaces
         { regex: /^[ \t]*interface[ \t]+(\w+)/gm, kind: SymbolKind.Interface },
-        // Traits  
+        // Traits
         { regex: /^[ \t]*trait[ \t]+(\w+)/gm, kind: SymbolKind.Class },
         // Methods and functions (with optional visibility/static/abstract)
         { regex: /^[ \t]*(?:(?:public|private|protected|static|abstract|final)[ \t]+)*function[ \t]+(\w+)[ \t]*\(/gm, kind: SymbolKind.Method },
@@ -154,19 +148,19 @@ export class OutlinePanel {
       while ((match = regex.exec(content)) !== null) {
         const name = match[1];
         // Skip common false positives
-        if (!name || name === 'function' || name === 'class' || name === 'if' || 
+        if (!name || name === 'function' || name === 'class' || name === 'if' ||
             name === 'for' || name === 'while' || name === 'switch' || name === 'catch' ||
             name === 'return' || name === 'new' || name === 'else') continue;
-        
+
         // Find line number
         const beforeMatch = content.substring(0, match.index);
         const lineNumber = beforeMatch.split('\n').length;
-        
+
         // Create unique key to avoid duplicates
         const key = `${name}:${lineNumber}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        
+
         symbols.push({
           name,
           kind,
@@ -623,34 +617,34 @@ export class OutlinePanel {
       const item = document.createElement('div');
       item.className = 'outline-item';
       item.style.paddingLeft = (8 + sym.depth * 12) + 'px';
-      
+
       const icon = document.createElement('span');
       icon.className = 'outline-icon';
       icon.innerHTML = this._getSymbolIcon(sym.kind);
-      
+
       const name = document.createElement('span');
       name.className = 'outline-name';
       name.textContent = sym.name;
       name.title = sym.name;
-      
+
       const line = document.createElement('span');
       line.className = 'outline-line';
       line.textContent = sym.range?.startLineNumber || '';
-        if (sym.isSqlComment || sym.isPlainTextItem) {
-          item.append(name, line);
-        } else {
-          item.append(icon, name, line);
-        }
-      
+      if (sym.isSqlComment || sym.isPlainTextItem) {
+        item.append(name, line);
+      } else {
+        item.append(icon, name, line);
+      }
+
       item.addEventListener('click', () => this._goToSymbol(sym));
-      
+
       this._tree.appendChild(item);
     }
   }
 
   _goToSymbol(sym) {
     if (!this._editor || !sym.range) return;
-    
+
     const range = sym.selectionRange || sym.range;
     this._editor.revealLineInCenter(range.startLineNumber);
     this._editor.setPosition({
@@ -662,7 +656,7 @@ export class OutlinePanel {
 
   _getSymbolIcon(kind) {
     const SymbolKind = this._monaco?.languages?.SymbolKind || {};
-    
+
     // Map symbol kinds to simple icons
     const icons = {
       [SymbolKind.File]: '📄',
@@ -692,7 +686,7 @@ export class OutlinePanel {
       [SymbolKind.Operator]: '+',
       [SymbolKind.TypeParameter]: 'T',
     };
-    
+
     return icons[kind] || '<span style="color:#7c7cff">ƒ</span>';
   }
 

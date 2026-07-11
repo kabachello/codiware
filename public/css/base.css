@@ -167,16 +167,36 @@ textarea { font-family: var(--ide-font-mono); }
 .ide-sidebar-tabs button {
   flex: 1; border: 0; border-radius: 0;
   background: transparent;
-  padding: 7px 4px;
+  padding: 7px 8px;
   border-bottom: 2px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   line-height: 1;
+  min-width: 0;
+}
+.ide-sidebar-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.ide-sidebar-tab-label {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ide-fs-sm);
+  font-weight: 600;
 }
 .ide-sidebar-tabs button.active {
   background: var(--ide-bg);
   border-bottom-color: var(--ide-accent);
+}
+.ide-sidebar-tabs button.active .ide-sidebar-tab-label {
+  display: inline;
 }
 
 .ide-sidebar-collapse {
@@ -214,6 +234,10 @@ textarea { font-family: var(--ide-font-mono); }
   padding: 8px 0;
   border-bottom: 0;
   border-left: 2px solid transparent;
+}
+
+.ide-sidebar.is-collapsed .ide-sidebar-tabs button .ide-sidebar-tab-label {
+  display: none;
 }
 
 .ide-sidebar.is-collapsed .ide-sidebar-tabs button.active {
@@ -280,10 +304,23 @@ textarea { font-family: var(--ide-font-mono); }
   z-index: 2;
 }
 
-.ide-splitter {
-  background: var(--ide-border);
-  cursor: col-resize;
-  user-select: none;
+.ide-sidebar-right {
+  border-right: 0;
+  border-left: 1px solid var(--ide-border);
+}
+
+.ide-sidebar-right .ide-sidebar-tabs button.active {
+  border-bottom-color: var(--ide-accent);
+}
+
+.ide-sidebar-right.is-collapsed .ide-sidebar-tabs button {
+  border-left: 0;
+  border-right: 2px solid transparent;
+}
+
+.ide-sidebar-right.is-collapsed .ide-sidebar-tabs button.active {
+  border-left-color: transparent;
+  border-right-color: var(--ide-accent);
 }
 
 .ide-main {
@@ -895,15 +932,38 @@ textarea { font-family: var(--ide-font-mono); }
 .history-file-actions .tb-btn:hover { background: var(--ide-btn-hover); }
 
 /* Outline Panel (document symbols) */
+.monaco-editor-wrapper {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5px 180px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.monaco-editor-container {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.monaco-outline-splitter {
+  min-width: 0;
+}
+
 .monaco-outline-container {
-  width: 180px;
-  min-width: 120px;
-  max-width: 280px;
-  border-left: 1px solid var(--ide-border);
-  background: var(--ide-sidebar-bg, var(--ide-bg));
+  min-width: 0;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
+}
+
+.monaco-outline-content {
+  padding: 0;
+}
+
+.monaco-outline-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .outline-panel {
@@ -929,17 +989,6 @@ textarea { font-family: var(--ide-font-mono); }
 .diff-revert-glyph:hover::before {
   opacity: 1;
   transform: scale(1.1);
-}
-
-.outline-header {
-  padding: 6px 10px;
-  font-size: var(--ide-fs-sm);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ide-fg-muted);
-  border-bottom: 1px solid var(--ide-border);
-  flex-shrink: 0;
 }
 
 .outline-tree {

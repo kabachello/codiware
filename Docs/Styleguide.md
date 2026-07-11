@@ -8,7 +8,7 @@ Themes are set in the config. The user can switch between light and dark modes u
 
 ### Icons
 
-Buttons and other UI elements, that use icons, support font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`. We are using SVG icons from the [Pictogrammers MDI library](https://pictogrammers.com/library/mdi/).
+Buttons and other UI elements, that use icons, support font awesome icons via `fa fa-xxxx` and SVG icons via `<svg></svg>`.
 
 The same icon is to be used for the same functionality in all places in the app.
 
@@ -46,6 +46,16 @@ Sidebar behavior:
 * left and right sidebars can be collapsed to a narrow stripe that still shows panel tab icons
 * each sidebar has a collapse/expand toggle button with the same visual language as the bottom panel toggle
 * clicking a sidebar tab in collapsed mode expands the sidebar and opens that tab
+* in expanded mode, only the active sidebar tab shows icon + title in the header row; inactive tabs show only their icons
+* in collapsed mode, the active tab is marked with the same accent line pattern on the relevant outer edge of the sidebar so left and right sidebars feel like mirrored variants of the same component
+
+Editor-local side panels (for example the Monaco outline on the right side inside one editor tab) should follow the same interaction language as the global sidebars whenever possible:
+
+* they can be collapsed into a narrow visible strip instead of disappearing entirely
+* they use the same angle-icon metaphor for collapse/expand
+* on narrow smartphone screens they should default to collapsed if they would otherwise noticeably reduce editing space
+* if they expose tabs, they should follow the same active-tab rule as the global sidebars: active tab shows icon + title while expanded, inactive tabs show icon only
+* if an editor-local panel currently has only one tab, it should still use the same tab/header visual language so additional tabs can be added later without redesign
 
 ### Lists and hierarchies 
 

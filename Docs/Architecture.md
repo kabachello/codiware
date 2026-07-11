@@ -366,6 +366,8 @@ The first screen is the IDE itself, not a landing page.
 
 Panel sizes, collapsed state, active bottom tab, and active side-panel tabs are persisted per workspace in `localStorage`.
 
+Inside Monaco-based code editor tabs, the document outline is implemented as an editor-local right side panel that intentionally mirrors the global sidebar behavior: it has its own collapse/expand toggle, keeps a narrow collapsed strip visible for discoverability, remembers width and collapsed state via `SettingsStore`, defaults to collapsed on smartphone-sized screens unless the user already chose another state, and uses the same tab-header rule as the global sidebars so the active tab shows icon + label while expanded and only the active marker while collapsed.
+
 ### Editor Registry
 
 `EditorRegistry` maps file type detection to editor implementations:
@@ -528,6 +530,8 @@ The file tree supports:
 ### Responsiveness
 
 Desktop and tablet layouts show side panels and bottom panels. On narrow mobile screens, the editor becomes full-screen and secondary features move into slide-over panels or bottom tabs. Mobile support is intentionally practical rather than feature-equal: editing remains usable, while complex Git/history/search workflows may require opening panels one at a time.
+
+The Monaco outline panel follows the same principle: on smartphone-sized screens it starts collapsed by default so code keeps maximum width, but users can still expand it from the visible strip when they need structure navigation.
 
 ### Theming and Skins
 

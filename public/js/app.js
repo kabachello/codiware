@@ -144,13 +144,14 @@ async function main() {
   registry.register(diffEditorDescriptor);
 
   // Editor context (shared by all editors).
-  const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {} };
+  const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {}, settings };
 
   // Build chrome.
   const root = document.getElementById('codiware-root');
   const layout = new LayoutManager(root, { i18n, state, bus, settings });
   layout.build();
   ensureBottomLayoutCompatibility(layout);
+  ctx.layout = layout;
   layout.setWorkspaceLabel(workspace.label || workspace.alias || workspace.path || '');
   layout.setStatusLeft(workspace.alias || '', 'fa fa-folder-open');
   layout.setStatusRight(`Codiware IDE • ${boot.user?.name || ''}`);
@@ -179,8 +180,9 @@ async function main() {
   bottomCollapseBtn.type = 'button';
   bottomCollapseBtn.className = 'ide-bottom-collapse';
   const collapseLabel = i18n.t('actions.collapse');
+  const expandLabel = i18n.t('actions.expand');
   const collapseTitle = collapseLabel && collapseLabel !== 'actions.collapse' ? collapseLabel : 'Collapse panel';
-  const expandTitle = 'Expand panel';
+  const expandTitle = expandLabel && expandLabel !== 'actions.expand' ? expandLabel : 'Expand panel';
 
   const updateBottomToggleIcon = () => {
     const isCollapsed = layout.isBottomCollapsed();

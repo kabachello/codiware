@@ -1,8 +1,8 @@
-import { Icon } from '../core/Icon.js';
-
 /**
  * Sidebar panel manager: registers named panels (files/git/search) and switches between them.
  */
+import { Icon } from '../core/Icon.js';
+
 export class PanelManager {
   constructor({ tabsEl, contentEl, i18n, layout }) {
     this.tabsEl = tabsEl;
@@ -25,7 +25,16 @@ export class PanelManager {
     btn.dataset.panel = id;
     btn.title = label;
     btn.setAttribute('aria-label', label);
-    btn.append(Icon.render(icon));
+
+    const iconEl = document.createElement('span');
+    iconEl.className = 'ide-sidebar-tab-icon';
+    iconEl.append(Icon.render(icon));
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'ide-sidebar-tab-label';
+    labelEl.textContent = label;
+
+    btn.append(iconEl, labelEl);
     btn.addEventListener('click', () => this.activate(id, { expand: true }));
     const collapseBtn = this.tabsEl.querySelector('.ide-sidebar-collapse');
     if (collapseBtn) this.tabsEl.insertBefore(btn, collapseBtn);

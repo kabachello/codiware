@@ -40,7 +40,6 @@ export class LayoutManager {
     return Math.max(160, Math.round((window.innerWidth || 1024) * 0.7));
   }
 
-
   build() {
     this.root.innerHTML = '';
     this.root.removeAttribute('aria-busy');
@@ -197,6 +196,39 @@ export class LayoutManager {
     this.bottomCollapsed = false;
     this.bottomHeight = Math.max(this.bottomStripHeight + 40, px || this.bottomHeight || 220);
     this._applyBottomState();
+  }
+
+  /**
+   * Apply a collapsible right-hand editor side panel state to one editor shell.
+   *
+   * The caller provides the editor-local shell elements so this generic layout
+   * manager can reuse the same collapse/expand behavior for Monaco's outline or
+   * future editor-specific side panels without coupling to editor code.
+   *
+   * @param {object} options
+   * @param {HTMLElement} options.shell             Grid container that owns main area, splitter and side panel.
+   * @param {HTMLElement} options.panel             The collapsible side panel element.
+   * @param {HTMLElement} [options.splitter]        Splitter between main area and panel.
+   * @param {number} options.panelWidth             Expanded panel width in pixels.
+   * @param {number} options.stripWidth             Collapsed strip width in pixels.
+   * @param {boolean} options.collapsed             Whether the panel is currently collapsed.
+   */
+  applyEditorSidePanelState({ shell, panel, splitter, panelWidth, stripWidth, collapsed }) {
+    if (!shell || !panel) return;
+
+    const safeStripWidth = Math.max(36, Number(stripWidth) || 44);
+    const safePanelWidth = Math.max(120, Number(panelWidth) || 180);
+
+    if (collapsed) {
+      shell.style.gridTemplateColumns = `minmax(0, 1fr) ${safeStripWidth}px`;
+      if (splitter) splitter.style.display = 'none';
+      panel.classList.add('is-collapsed');
+      return;
+    }
+
+    shell.style.gridTemplateColumns = `minmax(0, 1fr) 5px ${safePanelWidth}px`;
+    if (splitter) splitter.style.display = '';
+    panel.classList.remove('is-collapsed');
   }
 
   _applyBottomState() {
