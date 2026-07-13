@@ -254,6 +254,10 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 | `POST` | `/git/push` | Pushes the current branch. |
 | `GET` | `/git/branches?root=` | Lists local/remote branches and current branch. |
 | `POST` | `/git/checkout` | Checks out an existing branch or creates a new branch. |
+| `POST` | `/git/cherry-pick` | Cherry-picks one commit into the current branch. |
+| `POST` | `/git/revert` | Reverts one commit on the current branch. |
+| `POST` | `/git/merge` | Merges one selected ref or commit into the current branch. |
+| `POST` | `/git/reset` | Resets the current branch to one commit using `soft`, `mixed` or `hard` mode. |
 | `GET` | `/git/history?root=&limit=&after=` | Returns commit list with files changed and graph metadata. |
 | `GET` | `/git/show?root=&commit=&path=` | Returns a file at a commit for history diffs. |
 
@@ -264,6 +268,10 @@ After a successful discard, the Git panel emits a `git:file-discarded` event for
 The branch name shown at the top of the Git panel and in the footer status bar acts as the entry point to one shared branch chooser. The chooser loads `/git/branches`, groups local and remote refs, and uses `/git/checkout` when the user selects a branch. This keeps branch switching discoverable in both places while reusing the same checkout flow and console injection behavior.
 
 Selecting a remote branch from that chooser must attach the user to a real local branch instead of checking out the remote ref verbatim. The back end therefore maps a remote entry like `origin/feature/demo` to the local branch `feature/demo` and performs a tracked checkout. This prevents the UI from falling into detached HEAD after a remote branch was chosen while still preserving the remote name in the menu.
+
+The shared branch chooser also includes a `Create branch` action. It asks for the new branch name and calls `/git/checkout` with `create: true`, optionally passing a `start_point` so the same flow can create branches either from the current `HEAD` or from a commit selected in history.
+
+The history panel reuses the same menu language as other Codiware lists: each commit row now supports a right-click context menu and the selected-commit details pane exposes the same three-dot menu. Both entry points open one shared commit-action menu offering cherry-pick, revert, merge, reset (with a submenu for soft/mixed/hard), and create-branch-from-commit. All actions stay in the structured Git API world so the UI can refresh status and inject the captured CLI output into the console after each operation.
 
 ### Search
 
@@ -660,7 +668,7 @@ Zip extraction uses the same guard for every archive entry before writing to dis
 
 Git operations are executed without shell interpolation. Commands are built as argument arrays for `symfony/process`. File paths passed to Git are first resolved relative to the active repository root and rejected if they escape the repository.
 
-Destructive operations such as discard, clean presets, delete, overwrite upload, and replace-in-files require explicit front-end confirmation and return structured details about affected paths.
+Destructive operations such as discard, clean presets, delete, overwrite upload, replace-in-files, branch reset and commit-level history actions require explicit front-end confirmation and return structured details about affected paths or refs.
 
 ### Console Safety
 

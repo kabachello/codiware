@@ -249,6 +249,10 @@ export class HistoryPanel {
       tr.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this._select(c.hash, tr); }
       });
+      tr.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this._openCommitMenuAt(e.clientX, e.clientY, c);
+      });
       table.append(tr);
     }
 
@@ -312,10 +316,16 @@ export class HistoryPanel {
     const pane = this.detailsPane;
     pane.innerHTML = '';
 
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'history-detail-title-wrap';
+
+    titleWrap.append(this._commitMenuButton(d));
+
     const title = document.createElement('div');
     title.className = 'history-detail-title';
     title.textContent = d.subject || '';
-    pane.append(title);
+    titleWrap.append(title);
+    pane.append(titleWrap);
 
     if (d.body) {
       const body = document.createElement('pre');
@@ -381,11 +391,17 @@ export class HistoryPanel {
     link.addEventListener('click', () => this._openCommitDiff(commit, file));
     row.append(link);
 
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this._openFileMenuAt(e.clientX, e.clientY, commit, file);
+    });
+
     const actions = document.createElement('span');
     actions.className = 'history-file-actions';
     actions.append(
       this._iconBtn('fa fa-file-o', this._t('history.open_file', 'Open file in editor'), () => this._openFile(file.path)),
-      this._iconBtn('fa fa-exchange', this._t('history.diff_current', 'Diff with current version'), () => this._openDiffWithCurrent(commit, file))
+      this._iconBtn('fa fa-exchange', this._t('history.diff_current', 'Diff with current version'), () => this._openDiffWithCurrent(commit, file)),
+      this._fileMenuButton(commit, file)
     );
     row.append(actions);
     return row;
@@ -400,6 +416,107 @@ export class HistoryPanel {
     b.append(Icon.render(icon));
     b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
     return b;
+  }
+
+  _commitMenuButton(commit) {
+    const button = this._iconBtn(
+      'fa fa-ellipsis-h',
+      this._t('history.more_actions', 'More commit actions'),
+      () => this._openCommitMenu(button, commit)
+    );
+    return button;
+  }
+
+  _fileMenuButton(commit, file) {
+    const button = this._iconBtn(
+      'fa fa-ellipsis-h',
+      this._t('files.more_actions', 'More actions'),
+      () => this._openFileMenu(button, commit, file)
+    );
+    return button;
+  }
+
+  _openCommitMenu(anchor, commit) {
+    HistoryPopupMenu.open(anchor, this._commitMenuItems(commit));
+  }
+
+  _openCommitMenuAt(x, y, commit) {
+    HistoryPopupMenu.openAt(x, y, this._commitMenuItems(commit));
+  }
+
+  _openFileMenu(anchor, commit, file) {
+    HistoryPopupMenu.open(anchor, this._fileMenuItems(commit, file));
+  }
+
+  _openFileMenuAt(x, y, commit, file) {
+    HistoryPopupMenu.openAt(x, y, this._fileMenuItems(commit, file));
+  }
+
+  _fileMenuItems(commit, file) {
+    return [
+      {
+        icon: 'fa fa-exchange',
+        label: this._t('history.diff_to_parent', 'Show changes introduced by this commit'),
+        onClick: () => this._openCommitDiff(commit, file),
+      },
+      {
+        icon: 'fa fa-file-o',
+        label: this._t('history.open_file', 'Open file in editor'),
+        onClick: () => this._openFile(file.path),
+      },
+      {
+        icon: 'fa fa-columns',
+        label: this._t('history.diff_current', 'Diff with current version'),
+        onClick: () => this._openDiffWithCurrent(commit, file),
+      },
+    ];
+  }
+
+  _commitMenuItems(commit) {
+    return [
+      {
+        icon: 'fa fa-code-fork',
+        label: this._t('history.create_branch_from_commit', 'Create new branch from this commit'),
+        onClick: () => this._promptCreateBranch(commit.hash),
+      },
+      { sep: true },
+      {
+        icon: 'fa fa-random',
+        label: this._t('history.cherry_pick', 'Cherry-pick into current branch'),
+        onClick: () => this._cherryPick(commit.hash),
+      },
+      {
+        icon: 'fa fa-mail-reply',
+        label: this._t('history.revert', 'Revert commit'),
+        onClick: () => this._revert(commit.hash),
+      },
+      {
+        icon: 'fa fa-compress',
+        label: this._t('history.merge', 'Merge into current branch'),
+        onClick: () => this._merge(commit.hash),
+      },
+      {
+        icon: 'fa fa-undo',
+        label: this._t('history.reset', 'Reset current branch to this commit'),
+        children: [
+          {
+            icon: 'fa fa-step-backward',
+            label: this._t('history.reset_soft', 'Soft reset'),
+            onClick: () => this._reset(commit.hash, 'soft'),
+          },
+          {
+            icon: 'fa fa-circle-o',
+            label: this._t('history.reset_mixed', 'Mixed reset'),
+            onClick: () => this._reset(commit.hash, 'mixed'),
+          },
+          {
+            icon: 'fa fa-warning',
+            label: this._t('history.reset_hard', 'Hard reset'),
+            onClick: () => this._reset(commit.hash, 'hard'),
+          },
+        ],
+      },
+    ];
   }
 
   async _openCommitDiff(commit, file) {
@@ -441,6 +558,85 @@ export class HistoryPanel {
     } catch (e) {
       this.toasts.error(e.message);
     }
+  }
+
+  async _cherryPick(commit) {
+    if (!window.confirm(this._t('history.confirm_cherry_pick', 'Cherry-pick this commit into the current branch?'))) return;
+    await this._runCommitAction('/git/cherry-pick', { commit }, this._t('history.cherry_pick_done', 'Cherry-picked commit'));
+  }
+
+  async _revert(commit) {
+    if (!window.confirm(this._t('history.confirm_revert', 'Revert this commit on the current branch?'))) return;
+    await this._runCommitAction('/git/revert', { commit }, this._t('history.revert_done', 'Reverted commit'));
+  }
+
+  async _merge(commit) {
+    if (!window.confirm(this._t('history.confirm_merge', 'Merge the selected commit into the current branch?'))) return;
+    await this._runCommitAction('/git/merge', { commit }, this._t('history.merge_done', 'Merged into current branch'));
+  }
+
+  async _reset(commit, mode) {
+    const key = `history.confirm_reset_${mode}`;
+    const fallback = mode === 'hard'
+      ? 'Hard reset the current branch to this commit? This will discard local changes and move branch history.'
+      : `Reset the current branch to this commit using ${mode} mode?`;
+    if (!window.confirm(this._t(key, fallback))) return;
+    await this._runCommitAction('/git/reset', { commit, mode }, this._t(`history.reset_${mode}_done`, `Reset (${mode}) completed`));
+  }
+
+  async _promptCreateBranch(startPoint) {
+    const branch = window.prompt(
+      this._t('git.prompt_create_branch', 'New branch name'),
+      this._suggestBranchName(startPoint)
+    );
+    if (branch === null) return;
+    const trimmed = String(branch).trim();
+    if (!trimmed) return;
+    await this._createBranch(trimmed, startPoint);
+  }
+
+  _suggestBranchName(startPoint) {
+    const source = String(startPoint || '').trim();
+    if (!source || source === 'HEAD') return '';
+    return source.slice(0, 8);
+  }
+
+  async _createBranch(branch, startPoint) {
+    try {
+      const payload = { branch, create: true, start_point: startPoint };
+      const resp = await this.api.post('/git/checkout', payload);
+      this._injectConsole(resp);
+      this.toasts.success((this._t('git.created_branch', 'Created branch')) + ` ${branch}`);
+      this.bus?.emit?.('git:branch-changed', { branch, startPoint, response: resp });
+      await this.refresh();
+    } catch (e) {
+      this._injectConsoleError(e);
+      this.toasts.error(e.message);
+    }
+  }
+
+  async _runCommitAction(path, payload, successMessage) {
+    try {
+      const resp = await this.api.post(path, payload);
+      this._injectConsole(resp);
+      if (successMessage) this.toasts.success(successMessage + ' ✓');
+      this.bus?.emit?.('git:history-action', { path, payload, response: resp });
+      this.bus?.emit?.('git:branch-changed', { response: resp });
+      await this.refresh();
+    } catch (e) {
+      this._injectConsoleError(e);
+      this.toasts.error(e.message);
+    }
+  }
+
+  _injectConsole(resp) {
+    const block = resp?.console;
+    if (block && this.bus) this.bus.emit('console:inject', block);
+  }
+
+  _injectConsoleError(e) {
+    const block = e?.details?.console;
+    if (block && this.bus) this.bus.emit('console:inject', { ...block, ok: false, autoOpen: true });
   }
 }
 
@@ -631,4 +827,227 @@ function formatDate(ts, withTime) {
 function cssEscape(value) {
   if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
   return String(value).replace(/["\\]/g, '\\$&');
+}
+
+/**
+ * Shared popup-menu controller that supports one nested submenu chain without
+ * closing the parent menu. The submenu stays open only while the pointer or
+ * focus remains inside the active menu path, so reset-mode submenus behave like
+ * regular desktop menus instead of becoming detached floating layers.
+ */
+const HistoryPopupMenu = createPopupMenuController();
+
+/**
+ * Build a popup-menu controller with support for anchored top-level menus and
+ * hover/click driven submenus that stay open while the interaction remains in
+ * the same menu tree.
+ */
+function createPopupMenuController() {
+  return {
+    stack: [],
+    outsideHandler: null,
+    keyHandler: null,
+    resizeHandler: null,
+    scrollHandler: null,
+
+    open(anchor, items) {
+      const rect = anchor.getBoundingClientRect();
+      this.openAt(rect.right, rect.bottom + 2, items, { flipYFrom: rect.top - 2 });
+    },
+
+    openAt(x, y, items, options = {}) {
+      this.closeAll();
+      this._ensureGlobalListeners();
+      this._openLevel({ x, y, items, level: 0, parentButton: null, options });
+    },
+
+    closeAll() {
+      while (this.stack.length) {
+        const entry = this.stack.pop();
+        entry.menu.remove();
+      }
+      this._removeGlobalListeners();
+    },
+
+    closeFrom(level) {
+      while (this.stack.length > level) {
+        const entry = this.stack.pop();
+        entry.menu.remove();
+      }
+      if (this.stack.length === 0) this._removeGlobalListeners();
+    },
+
+    _openLevel({ x, y, items, level, parentButton, options = {} }) {
+      this.closeFrom(level);
+      const menu = this._renderMenu(items, level);
+      document.body.appendChild(menu);
+      const pos = this._positionMenu(menu, x, y, options);
+      menu.style.left = pos.left + 'px';
+      menu.style.top = pos.top + 'px';
+      this.stack.push({ menu, level, parentButton });
+    },
+
+    _renderMenu(items, level) {
+      const menu = document.createElement('div');
+      menu.className = 'codiware-popup-menu';
+      menu.setAttribute('role', 'menu');
+      menu.dataset.menuLevel = String(level);
+
+      menu.addEventListener('pointerleave', () => {
+        this._scheduleHoverSync();
+      });
+
+      for (const item of items) {
+        if (item.sep) {
+          const sep = document.createElement('div');
+          sep.className = 'menu-sep';
+          menu.appendChild(sep);
+          continue;
+        }
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'menu-item';
+        if (item.disabled) btn.classList.add('is-disabled');
+        btn.disabled = Boolean(item.disabled);
+        btn.setAttribute('role', 'menuitem');
+        btn.append(Icon.render(item.icon || ''));
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        btn.appendChild(label);
+
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          btn.classList.add('has-children');
+          btn.appendChild(Icon.render('fa fa-caret-right'));
+          btn.addEventListener('pointerenter', () => {
+            if (item.disabled) return;
+            this._openChildMenu(btn, item.children, level);
+          });
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.disabled) return;
+            this._openChildMenu(btn, item.children, level);
+          });
+        } else {
+          btn.addEventListener('pointerenter', () => {
+            this.closeFrom(level + 1);
+          });
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.disabled) return;
+            this.closeAll();
+            try { item.onClick?.(); } catch (err) { console.error(err); }
+          });
+        }
+
+        menu.appendChild(btn);
+      }
+
+      return menu;
+    },
+
+    _openChildMenu(button, items, parentLevel) {
+      const rect = button.getBoundingClientRect();
+      this._openLevel({
+        x: rect.right + 2,
+        y: rect.top,
+        items,
+        level: parentLevel + 1,
+        parentButton: button,
+        options: { flipYFrom: rect.bottom },
+      });
+    },
+
+    _positionMenu(menu, x, y, options) {
+      const mw = menu.offsetWidth;
+      const mh = menu.offsetHeight;
+      let left = Math.min(x, window.innerWidth - mw - 4);
+      if (left < 4) left = 4;
+      let top = y;
+      if (top + mh > window.innerHeight - 4) {
+        const flipYFrom = typeof options.flipYFrom === 'number' ? options.flipYFrom : (y - 4);
+        top = Math.max(4, flipYFrom - mh);
+      }
+      return { left, top };
+    },
+
+    _ensureGlobalListeners() {
+      if (!this.outsideHandler) {
+        this.outsideHandler = (e) => {
+          if (!this._containsNode(e.target)) this.closeAll();
+        };
+        document.addEventListener('mousedown', this.outsideHandler);
+      }
+      if (!this.keyHandler) {
+        this.keyHandler = (e) => { if (e.key === 'Escape') this.closeAll(); };
+        document.addEventListener('keydown', this.keyHandler);
+      }
+      if (!this.resizeHandler) {
+        this.resizeHandler = () => this.closeAll();
+        window.addEventListener('resize', this.resizeHandler);
+      }
+      if (!this.scrollHandler) {
+        this.scrollHandler = () => this.closeAll();
+        window.addEventListener('scroll', this.scrollHandler, true);
+      }
+    },
+
+    _removeGlobalListeners() {
+      if (this.outsideHandler) {
+        document.removeEventListener('mousedown', this.outsideHandler);
+        this.outsideHandler = null;
+      }
+      if (this.keyHandler) {
+        document.removeEventListener('keydown', this.keyHandler);
+        this.keyHandler = null;
+      }
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler);
+        this.resizeHandler = null;
+      }
+      if (this.scrollHandler) {
+        window.removeEventListener('scroll', this.scrollHandler, true);
+        this.scrollHandler = null;
+      }
+    },
+
+    _containsNode(node) {
+      return this.stack.some((entry) => entry.menu.contains(node) || entry.parentButton?.contains?.(node));
+    },
+
+    _scheduleHoverSync() {
+      requestAnimationFrame(() => this._syncMenusToHover());
+    },
+
+    _syncMenusToHover() {
+      if (this.stack.length <= 1) {
+        const root = this.stack[0];
+        if (!root) return;
+        const hovered = Array.from(document.querySelectorAll(':hover'));
+        const overRoot = hovered.some((el) => root.menu.contains(el));
+        if (!overRoot) this.closeAll();
+        return;
+      }
+      const hovered = Array.from(document.querySelectorAll(':hover'));
+      let keepDepth = 1;
+      for (let i = 1; i < this.stack.length; i++) {
+        const entry = this.stack[i];
+        const parentButton = entry.parentButton;
+        const overParent = parentButton ? hovered.includes(parentButton) : false;
+        const overMenu = hovered.some((el) => entry.menu.contains(el));
+        if (overParent || overMenu) {
+          keepDepth = i + 1;
+        } else {
+          break;
+        }
+      }
+      const root = this.stack[0];
+      const overRoot = root ? hovered.some((el) => root.menu.contains(el)) : false;
+      if (!overRoot && keepDepth <= 1) {
+        this.closeAll();
+        return;
+      }
+      this.closeFrom(keepDepth);
+    },
+  };
 }

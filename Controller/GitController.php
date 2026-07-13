@@ -105,10 +105,56 @@ final class GitController
         $body = $this->decodeJson($request);
         $branch = (string)($body['branch'] ?? '');
         $create = (bool)($body['create'] ?? false);
+        $startPoint = isset($body['start_point']) ? (string)$body['start_point'] : null;
         if ($branch === '') {
             throw new CodiwareException('branch is required.', 'bad_request', 400);
         }
-        return $this->responses->ok($this->git->checkout($root, $branch, $create));
+        return $this->responses->ok($this->git->checkout($root, $branch, $create, $startPoint));
+    }
+
+    public function cherryPick(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $body = $this->decodeJson($request);
+        $commit = (string)($body['commit'] ?? '');
+        if ($commit === '') {
+            throw new CodiwareException('commit is required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->cherryPick($root, $commit));
+    }
+
+    public function revert(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $body = $this->decodeJson($request);
+        $commit = (string)($body['commit'] ?? '');
+        if ($commit === '') {
+            throw new CodiwareException('commit is required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->revert($root, $commit));
+    }
+
+    public function merge(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $body = $this->decodeJson($request);
+        $ref = (string)($body['ref'] ?? $body['commit'] ?? '');
+        if ($ref === '') {
+            throw new CodiwareException('ref is required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->merge($root, $ref));
+    }
+
+    public function reset(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $body = $this->decodeJson($request);
+        $commit = (string)($body['commit'] ?? '');
+        $mode = (string)($body['mode'] ?? '');
+        if ($commit === '' || $mode === '') {
+            throw new CodiwareException('commit and mode are required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->reset($root, $commit, $mode));
     }
 
     public function history(ServerRequestInterface $request): ResponseInterface

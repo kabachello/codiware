@@ -260,7 +260,7 @@ final class GitService
         ];
     }
 
-    public function checkout(WorkspaceRoot $root, string $branch, bool $create = false): array
+    public function checkout(WorkspaceRoot $root, string $branch, bool $create = false, ?string $startPoint = null): array
     {
         $this->requireRepo($root);
         $target = trim($branch);
@@ -268,15 +268,20 @@ final class GitService
             throw new CodiwareException('branch is required.', 'bad_request', 400);
         }
 
-        $plan = $this->resolveCheckoutTarget($root, $target);
         if ($create) {
-            $console = $this->consoleCapture($root, ['checkout', '-b', $plan['local']]);
+            $args = ['checkout', '-b', $target];
+            $start = trim((string)($startPoint ?? ''));
+            if ($start !== '') {
+                $args[] = $start;
+            }
+            $console = $this->consoleCapture($root, $args);
             if (!$console['ok']) {
                 throw $this->consoleFailure('checkout', $console);
             }
             return ['message' => trim($console['output']), 'console' => $console];
         }
 
+        $plan = $this->resolveCheckoutTarget($root, $target);
         if ($plan['remote'] !== null) {
             $console = $this->consoleCapture(
                 $root,
@@ -287,6 +292,76 @@ final class GitService
         }
         if (!$console['ok']) {
             throw $this->consoleFailure('checkout', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
+    }
+
+    /**
+     * Cherry-pick one commit into the currently checked out branch and return
+     * the captured CLI block for console injection.
+     */
+    public function cherryPick(WorkspaceRoot $root, string $commit): array
+    {
+        $this->requireRepo($root);
+        $target = $this->requireCommit($commit);
+        $console = $this->consoleCapture($root, ['cherry-pick', $target]);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('cherry-pick', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
+    }
+
+    /**
+     * Revert one commit on the current branch and return the captured CLI block
+     * so the caller can inject the exact git output into the console.
+     */
+    public function revert(WorkspaceRoot $root, string $commit): array
+    {
+        $this->requireRepo($root);
+        $target = $this->requireCommit($commit);
+        $console = $this->consoleCapture($root, ['revert', '--no-edit', $target]);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('revert', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
+    }
+
+    /**
+     * Merge one commit or branch tip into the current branch. The history panel
+     * passes a commit hash here so users can merge the branch state represented
+     * by that row without leaving the history workflow.
+     */
+    public function merge(WorkspaceRoot $root, string $ref): array
+    {
+        $this->requireRepo($root);
+        $target = trim($ref);
+        if ($target === '') {
+            throw new CodiwareException('ref is required.', 'bad_request', 400);
+        }
+        $console = $this->consoleCapture($root, ['merge', $target]);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('merge', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
+    }
+
+    /**
+     * Reset the current branch pointer to one commit using the selected mode.
+     * Only the three well-known reset modes are accepted so the API stays
+     * explicit and easy to surface in the UI.
+     */
+    public function reset(WorkspaceRoot $root, string $commit, string $mode): array
+    {
+        $this->requireRepo($root);
+        $target = $this->requireCommit($commit);
+        $normalizedMode = strtolower(trim($mode));
+        $allowed = ['soft', 'mixed', 'hard'];
+        if (!in_array($normalizedMode, $allowed, true)) {
+            throw new CodiwareException('reset mode must be one of soft, mixed or hard.', 'bad_request', 400);
+        }
+        $console = $this->consoleCapture($root, ['reset', '--' . $normalizedMode, $target]);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('reset', $console);
         }
         return ['message' => trim($console['output']), 'console' => $console];
     }
@@ -573,6 +648,20 @@ final class GitService
     {
         $parts = explode('/', $remoteRef, 2);
         return $parts[1] ?? $remoteRef;
+    }
+
+    /**
+     * Validate and normalize one commit-ish identifier used by destructive
+     * history actions. Keeping this separate makes controller error messages
+     * consistent and prevents empty strings from reaching the git process.
+     */
+    private function requireCommit(string $commit): string
+    {
+        $target = trim($commit);
+        if ($target === '') {
+            throw new CodiwareException('commit is required.', 'bad_request', 400);
+        }
+        return $target;
     }
 
     /**

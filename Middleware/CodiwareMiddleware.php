@@ -188,6 +188,10 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $this->router->post('/git/pull', [$git, 'pull']);
         $this->router->get('/git/branches', [$git, 'branches']);
         $this->router->post('/git/checkout', [$git, 'checkout']);
+        $this->router->post('/git/cherry-pick', [$git, 'cherryPick']);
+        $this->router->post('/git/revert', [$git, 'revert']);
+        $this->router->post('/git/merge', [$git, 'merge']);
+        $this->router->post('/git/reset', [$git, 'reset']);
         $this->router->get('/git/history', [$git, 'history']);
         $this->router->get('/git/show', [$git, 'show']);
         $this->router->get('/git/commit', [$git, 'commitDetails']);

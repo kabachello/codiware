@@ -75,6 +75,10 @@ List item names and tooltips are only tranlatable if the item represents a funct
 
 Flat file-change lists in the Git panel should visually follow the same row language as the commit-details file list in Git history: status indicator on the left, filename in the middle, inline actions on the right.
 
+Commit rows in Git history follow the same context-menu rule as other actionable lists: right-clicking a row opens the same action set that is available from the inline three-dot button in the details pane, and nested actions such as reset-mode selection should use a submenu instead of separate dialogs when that keeps the available choices visible.
+
+Changed-file rows in the Git history details pane follow the same rule as changed-file rows in the main Git panel: the inline three-dot menu and the right-click menu must expose the same item-level actions.
+
 ### Toolbars
 
 A toolbar inside the side panel has a number of buttons and a three-dot "more" button on the right, that opens a menu with buttons, that did not fit in the toolbar itself.
@@ -98,6 +102,10 @@ List items in sidebar trees also support a right-click context menu. This contex
 The same rule applies to changed-file rows in the Git panel: the three-dot menu and the right-click menu must expose the same row-level actions.
 
 Branch switching in Git should use the same discoverable interaction wherever the current branch is shown. The branch name itself should be clickable in the Git panel and in the footer status area, and both places should open the same dropdown-style chooser rather than separate custom dialogs.
+
+If a branch chooser offers branch-management actions such as `Create branch`, they belong into that same chooser instead of a separate dialog entry point, so users always find branch selection and branch creation in one place.
+
+Popup menus must close predictably again. Clicking outside, pressing `Esc`, scrolling, resizing or moving the pointer fully away from an open menu tree should dismiss the menu. Nested submenus may stay open only while the pointer remains inside the active menu path.
 
 ### Console output blocks
 

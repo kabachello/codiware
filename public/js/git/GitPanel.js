@@ -535,6 +535,14 @@ export class GitPanel {
   _branchMenuItems(data, current) {
     const currentSuffix = this.i18n.t('git.current_branch_suffix') || ' (current)';
     const items = [];
+    const addCreateBranchAction = () => {
+      if (items.length > 0) items.push({ sep: true });
+      items.push({
+        icon: 'fa fa-plus',
+        label: this.i18n.t('git.create_branch') || 'Create branch',
+        onClick: () => this._promptCreateBranch(current || 'HEAD'),
+      });
+    };
     const addGroup = (label, branches = []) => {
       const list = Array.isArray(branches) ? branches.filter(Boolean) : [];
       if (list.length === 0) return;
@@ -553,6 +561,7 @@ export class GitPanel {
 
     addGroup(this.i18n.t('git.local_branches') || 'Local branches', data?.locals || []);
     addGroup(this.i18n.t('git.remote_branches') || 'Remote branches', data?.remotes || []);
+    addCreateBranchAction();
     return items;
   }
 
@@ -566,6 +575,43 @@ export class GitPanel {
       const resp = await this.api.post('/git/checkout', { branch });
       this._injectConsole(resp);
       this.toasts.success((this.i18n.t('git.switched_branch') || 'Switched to branch') + ` ${branch}`);
+      await this.refresh();
+      this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
+    } catch (e) {
+      this._injectConsoleError(e);
+      this.toasts.error(e.message);
+    }
+  }
+
+  /**
+   * Ask for a new branch name and create it from the selected start point. The
+   * new branch is checked out immediately because the back end uses
+   * `git checkout -b`, mirroring the workflow users know from desktop Git UIs.
+   */
+  async _promptCreateBranch(startPoint = 'HEAD') {
+    const branch = window.prompt(
+      this.i18n.t('git.prompt_create_branch') || 'New branch name',
+      this._suggestBranchName(startPoint)
+    );
+    if (branch === null) return;
+    const trimmed = String(branch).trim();
+    if (!trimmed) return;
+    await this._createBranch(trimmed, startPoint);
+  }
+
+  _suggestBranchName(startPoint) {
+    const source = String(startPoint || '').trim();
+    if (!source || source === 'HEAD') return '';
+    return source.replace(/^origin\//, '').replace(/[^A-Za-z0-9._/-]+/g, '-');
+  }
+
+  async _createBranch(branch, startPoint = 'HEAD') {
+    try {
+      const payload = { branch, create: true };
+      if (startPoint && startPoint !== 'HEAD') payload.start_point = startPoint;
+      const resp = await this.api.post('/git/checkout', payload);
+      this._injectConsole(resp);
+      this.toasts.success((this.i18n.t('git.created_branch') || 'Created branch') + ` ${branch}`);
       await this.refresh();
       this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
     } catch (e) {
@@ -609,84 +655,224 @@ function iconBtn(icon, title, onClick) {
   return b;
 }
 
-const GitPopupMenu = {
-  current: null,
+/**
+ * Shared popup-menu controller that supports one nested submenu chain without
+ * closing the parent menu. Branch and file menus therefore keep behaving like
+ * one connected menu tree when the user moves the pointer into a submenu.
+ */
+const GitPopupMenu = createPopupMenuController();
 
-  open(anchor, items) {
-    const rect = anchor.getBoundingClientRect();
-    GitPopupMenu.openAt(rect.right, rect.bottom + 2, items, { flipYFrom: rect.top - 2 });
-  },
+/**
+ * Build a popup-menu controller with support for anchored top-level menus and
+ * hover/click driven submenus that stay open while the interaction remains in
+ * the same menu tree.
+ */
+function createPopupMenuController() {
+  return {
+    stack: [],
+    outsideHandler: null,
+    keyHandler: null,
+    resizeHandler: null,
+    scrollHandler: null,
 
-  openAt(x, y, items, options = {}) {
-    GitPopupMenu.close();
-    const menu = document.createElement('div');
-    menu.className = 'codiware-popup-menu';
-    menu.setAttribute('role', 'menu');
-    for (const item of items) {
-      if (item.sep) {
-        const sep = document.createElement('div');
-        sep.className = 'menu-sep';
-        menu.appendChild(sep);
-        continue;
+    open(anchor, items) {
+      const rect = anchor.getBoundingClientRect();
+      this.openAt(rect.right, rect.bottom + 2, items, { flipYFrom: rect.top - 2 });
+    },
+
+    openAt(x, y, items, options = {}) {
+      this.closeAll();
+      this._ensureGlobalListeners();
+      this._openLevel({ x, y, items, level: 0, parentButton: null, options });
+    },
+
+    closeAll() {
+      while (this.stack.length) {
+        const entry = this.stack.pop();
+        entry.menu.remove();
       }
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'menu-item';
-      if (item.disabled) btn.classList.add('is-disabled');
-      btn.disabled = Boolean(item.disabled);
-      btn.setAttribute('role', 'menuitem');
-      btn.append(Icon.render(item.icon || ''));
-      const label = document.createElement('span');
-      label.textContent = item.label;
-      btn.appendChild(label);
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (item.disabled) return;
-        GitPopupMenu.close();
-        try { item.onClick?.(); } catch (err) { console.error(err); }
+      this._removeGlobalListeners();
+    },
+
+    closeFrom(level) {
+      while (this.stack.length > level) {
+        const entry = this.stack.pop();
+        entry.menu.remove();
+      }
+      if (this.stack.length === 0) this._removeGlobalListeners();
+    },
+
+    _openLevel({ x, y, items, level, parentButton, options = {} }) {
+      this.closeFrom(level);
+      const menu = this._renderMenu(items, level);
+      document.body.appendChild(menu);
+      const pos = this._positionMenu(menu, x, y, options);
+      menu.style.left = pos.left + 'px';
+      menu.style.top = pos.top + 'px';
+      this.stack.push({ menu, level, parentButton });
+    },
+
+    _renderMenu(items, level) {
+      const menu = document.createElement('div');
+      menu.className = 'codiware-popup-menu';
+      menu.setAttribute('role', 'menu');
+      menu.dataset.menuLevel = String(level);
+
+      menu.addEventListener('pointerleave', () => {
+        this._scheduleHoverSync();
       });
-      menu.appendChild(btn);
-    }
-    document.body.appendChild(menu);
 
-    const mw = menu.offsetWidth;
-    const mh = menu.offsetHeight;
-    let left = Math.min(x, window.innerWidth - mw - 4);
-    if (left < 4) left = 4;
-    let top = y;
-    if (top + mh > window.innerHeight - 4) {
-      const flipYFrom = typeof options.flipYFrom === 'number' ? options.flipYFrom : (y - 4);
-      top = Math.max(4, flipYFrom - mh);
-    }
-    menu.style.left = left + 'px';
-    menu.style.top = top + 'px';
+      for (const item of items) {
+        if (item.sep) {
+          const sep = document.createElement('div');
+          sep.className = 'menu-sep';
+          menu.appendChild(sep);
+          continue;
+        }
 
-    const outside = (e) => {
-      if (!menu.contains(e.target)) GitPopupMenu.close();
-    };
-    const onKey = (e) => { if (e.key === 'Escape') GitPopupMenu.close(); };
-    const onScroll = () => GitPopupMenu.close();
-    setTimeout(() => document.addEventListener('mousedown', outside), 0);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onScroll);
-    window.addEventListener('scroll', onScroll, true);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'menu-item';
+        if (item.disabled) btn.classList.add('is-disabled');
+        btn.disabled = Boolean(item.disabled);
+        btn.setAttribute('role', 'menuitem');
+        btn.append(Icon.render(item.icon || ''));
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        btn.appendChild(label);
 
-    GitPopupMenu.current = {
-      menu,
-      cleanup: () => {
-        document.removeEventListener('mousedown', outside);
-        document.removeEventListener('keydown', onKey);
-        window.removeEventListener('resize', onScroll);
-        window.removeEventListener('scroll', onScroll, true);
-      },
-    };
-  },
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          btn.classList.add('has-children');
+          btn.appendChild(Icon.render('fa fa-caret-right'));
+          btn.addEventListener('pointerenter', () => {
+            if (item.disabled) return;
+            this._openChildMenu(btn, item.children, level);
+          });
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.disabled) return;
+            this._openChildMenu(btn, item.children, level);
+          });
+        } else {
+          btn.addEventListener('pointerenter', () => {
+            this.closeFrom(level + 1);
+          });
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.disabled) return;
+            this.closeAll();
+            try { item.onClick?.(); } catch (err) { console.error(err); }
+          });
+        }
 
-  close() {
-    const c = GitPopupMenu.current;
-    if (!c) return;
-    GitPopupMenu.current = null;
-    c.cleanup();
-    c.menu.remove();
-  },
-};
+        menu.appendChild(btn);
+      }
+
+      return menu;
+    },
+
+    _openChildMenu(button, items, parentLevel) {
+      const rect = button.getBoundingClientRect();
+      this._openLevel({
+        x: rect.right + 2,
+        y: rect.top,
+        items,
+        level: parentLevel + 1,
+        parentButton: button,
+        options: { flipYFrom: rect.bottom },
+      });
+    },
+
+    _positionMenu(menu, x, y, options) {
+      const mw = menu.offsetWidth;
+      const mh = menu.offsetHeight;
+      let left = Math.min(x, window.innerWidth - mw - 4);
+      if (left < 4) left = 4;
+      let top = y;
+      if (top + mh > window.innerHeight - 4) {
+        const flipYFrom = typeof options.flipYFrom === 'number' ? options.flipYFrom : (y - 4);
+        top = Math.max(4, flipYFrom - mh);
+      }
+      return { left, top };
+    },
+
+    _ensureGlobalListeners() {
+      if (!this.outsideHandler) {
+        this.outsideHandler = (e) => {
+          if (!this._containsNode(e.target)) this.closeAll();
+        };
+        document.addEventListener('mousedown', this.outsideHandler);
+      }
+      if (!this.keyHandler) {
+        this.keyHandler = (e) => { if (e.key === 'Escape') this.closeAll(); };
+        document.addEventListener('keydown', this.keyHandler);
+      }
+      if (!this.resizeHandler) {
+        this.resizeHandler = () => this.closeAll();
+        window.addEventListener('resize', this.resizeHandler);
+      }
+      if (!this.scrollHandler) {
+        this.scrollHandler = () => this.closeAll();
+        window.addEventListener('scroll', this.scrollHandler, true);
+      }
+    },
+
+    _removeGlobalListeners() {
+      if (this.outsideHandler) {
+        document.removeEventListener('mousedown', this.outsideHandler);
+        this.outsideHandler = null;
+      }
+      if (this.keyHandler) {
+        document.removeEventListener('keydown', this.keyHandler);
+        this.keyHandler = null;
+      }
+      if (this.resizeHandler) {
+        window.removeEventListener('resize', this.resizeHandler);
+        this.resizeHandler = null;
+      }
+      if (this.scrollHandler) {
+        window.removeEventListener('scroll', this.scrollHandler, true);
+        this.scrollHandler = null;
+      }
+    },
+
+    _containsNode(node) {
+      return this.stack.some((entry) => entry.menu.contains(node) || entry.parentButton?.contains?.(node));
+    },
+
+    _scheduleHoverSync() {
+      requestAnimationFrame(() => this._syncMenusToHover());
+    },
+
+    _syncMenusToHover() {
+      if (this.stack.length <= 1) {
+        const root = this.stack[0];
+        if (!root) return;
+        const hovered = Array.from(document.querySelectorAll(':hover'));
+        const overRoot = hovered.some((el) => root.menu.contains(el));
+        if (!overRoot) this.closeAll();
+        return;
+      }
+      const hovered = Array.from(document.querySelectorAll(':hover'));
+      let keepDepth = 1;
+      for (let i = 1; i < this.stack.length; i++) {
+        const entry = this.stack[i];
+        const parentButton = entry.parentButton;
+        const overParent = parentButton ? hovered.includes(parentButton) : false;
+        const overMenu = hovered.some((el) => entry.menu.contains(el));
+        if (overParent || overMenu) {
+          keepDepth = i + 1;
+        } else {
+          break;
+        }
+      }
+      const root = this.stack[0];
+      const overRoot = root ? hovered.some((el) => root.menu.contains(el)) : false;
+      if (!overRoot && keepDepth <= 1) {
+        this.closeAll();
+        return;
+      }
+      this.closeFrom(keepDepth);
+    },
+  };
+}
