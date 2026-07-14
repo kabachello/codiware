@@ -3,9 +3,11 @@ import { Icon } from '../core/Icon.js';
 /**
  * Manages open editor tabs in the main area.
  *
- * Each tab tracks { path, entry, editor, descriptor }.
- * Only one editor is mounted in the host at a time; switching tabs swaps
- * the DOM. Editors keep their state in memory between switches.
+ * Each tab tracks { path, entry, editor, descriptor }. Only one editor is
+ * mounted in the host at a time; switching tabs swaps the DOM. Editors keep
+ * their state in memory between switches. Tabs can also be pinned: pinned
+ * tabs stay grouped at the start of the tab bar, persist per repository and
+ * are excluded from the dedicated "close unpinned tabs" bulk action.
  */
 export class TabManager {
   constructor({ tabBar, host, api, registry, ctx, i18n, toasts, bus, settings }) {
@@ -29,16 +31,19 @@ export class TabManager {
   }
 
   /**
-   * Persist the list of open file tabs and the active tab to the repo-scoped
-   * settings store. Diff tabs are intentionally excluded – they are derived
-   * from Git state and should not be reopened on the next session.
+   * Persist the current tab order, pinned state and active tab per repository.
+   *
+   * Diff tabs are intentionally excluded from restoration because they are
+   * derived from Git state. Pinned state is stored alongside every regular
+   * file tab so a restored session recreates the same left-aligned pinned tab
+   * group before any unpinned tabs.
    */
   _persistOpenTabs() {
     if (!this.settings || this._restoring) return;
     const open = [];
     for (const record of this.tabs.values()) {
       if (record.isDiff) continue;
-      open.push({ path: record.entry.path, name: record.entry.name });
+      open.push({ path: record.entry.path, name: record.entry.name, pinned: !!record.pinned });
     }
     const activeRecord = this.active ? this.tabs.get(this.active) : null;
     const active = activeRecord && !activeRecord.isDiff ? activeRecord.key : null;
@@ -46,8 +51,12 @@ export class TabManager {
   }
 
   /**
-   * Reopen the file tabs persisted from a previous session. Files that no
-   * longer exist are skipped. Diff tabs are never restored.
+   * Reopen the file tabs persisted from a previous session.
+   *
+   * Files that no longer exist are skipped. Diff tabs are never restored.
+   * Pinned tabs are restored together with their saved order so the tab bar
+   * immediately re-creates the same pinned/unpinned grouping from the last
+   * browser session.
    */
   async restore() {
     if (!this.settings) return;
@@ -57,7 +66,7 @@ export class TabManager {
     try {
       for (const item of saved.open) {
         if (!item || typeof item.path !== 'string') continue;
-        await this.open({ path: item.path, name: item.name || item.path.split('/').pop() });
+        await this.open({ path: item.path, name: item.name || item.path.split('/').pop() }, { pinned: !!item.pinned });
       }
     } finally {
       this._restoring = false;
@@ -77,6 +86,7 @@ export class TabManager {
 
     const key = options.key || entry.path;
     if (this.tabs.has(key)) {
+      if (options.pinned) this.setPinned(key, true);
       this.activate(key);
       return;
     }
@@ -89,6 +99,8 @@ export class TabManager {
     const name = document.createElement('span');
     name.className = 'ide-tab-name';
     name.textContent = options.label || entry.name || entry.path.split('/').pop();
+
+    const pinBtn = this._createPinButton(key, { disabled: false });
 
     // Per styleguide: small floppy icon appears when dirty; clicking it saves.
     const dirtyBtn = document.createElement('span');
@@ -104,9 +116,8 @@ export class TabManager {
     close.title = this.i18n.t('actions.close');
     close.addEventListener('click', (e) => { e.stopPropagation(); this.close(key); });
 
-    tabEl.append(name, dirtyBtn, close);
+    tabEl.append(name, pinBtn, dirtyBtn, close);
     this._bindTabInteractions(tabEl, key);
-    this.tabBar.appendChild(tabEl);
 
     // Build editor host (dedicated div per tab, hidden when not active)
     const editorHost = document.createElement('div');
@@ -115,7 +126,7 @@ export class TabManager {
     this.host.appendChild(editorHost);
 
     const editor = descriptor.create(editorHost, this.ctx);
-    const record = { key, entry, tabEl, editorHost, editor, descriptor, dirty: false, dirtyBtn };
+    const record = { key, entry, tabEl, editorHost, editor, descriptor, dirty: false, dirtyBtn, pinBtn, pinned: false };
 
     if (typeof editor.on === 'function') {
       editor.on('change', () => {
@@ -127,6 +138,8 @@ export class TabManager {
     }
 
     this.tabs.set(key, record);
+    this._insertTabByPinnedState(record, { mode: 'append-group' });
+    this._renderPinnedState(record);
 
     // Load content for text-like editors via /files/read; image editor reads its own URL.
     try {
@@ -147,7 +160,40 @@ export class TabManager {
       return;
     }
 
+    if (options.pinned) this.setPinned(key, true, { focus: false });
     this.activate(key);
+  }
+
+  /**
+   * Create the inline pin control for one tab.
+   *
+   * Regular file tabs receive an interactive button that toggles pinned state.
+   * Diff tabs call the same helper with `disabled: true`, which returns a
+   * hidden placeholder so the tab keeps its internal structure without showing
+   * a control that intentionally does nothing.
+   */
+  _createPinButton(key, { disabled = false } = {}) {
+    const pinBtn = document.createElement('span');
+    pinBtn.className = 'ide-tab-pin';
+    if (disabled) {
+      pinBtn.hidden = true;
+      pinBtn.setAttribute('aria-hidden', 'true');
+      return pinBtn;
+    }
+    pinBtn.title = this.i18n.t('tabs.pin');
+    pinBtn.setAttribute('role', 'button');
+    pinBtn.setAttribute('tabindex', '0');
+    pinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.togglePinned(key);
+    });
+    pinBtn.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.togglePinned(key);
+    });
+    return pinBtn;
   }
 
   _resolveDescriptor(entry, options = {}) {
@@ -257,10 +303,117 @@ export class TabManager {
     }
   }
 
+  /**
+   * Rebuild the tab map from the current DOM order.
+   *
+   * The DOM is the source of truth for visual tab order after drag/drop or
+   * pinning moves. Rebuilding the map keeps persistence, left/right bulk close
+   * operations and active-tab fallback aligned with what the user actually
+   * sees in the tab bar.
+   */
+  _syncTabOrderFromDom() {
+    const reordered = new Map();
+    for (const node of this.tabBar.children) {
+      const entry = Array.from(this.tabs.entries()).find(([, record]) => record.tabEl === node);
+      if (!entry) continue;
+      reordered.set(entry[0], entry[1]);
+    }
+    this.tabs = reordered;
+  }
+
+  /**
+   * Insert one tab element into the DOM so pinned tabs stay grouped first.
+   *
+   * Supported modes:
+   * - `append-group`: append to the end of the current group.
+   * - `prepend-unpinned`: place directly behind the pinned block.
+   *
+   * This lets pin/unpin operations express their intended UX explicitly
+   * instead of relying on one generic insertion rule for both directions.
+   */
+  _insertTabByPinnedState(record, { mode = 'append-group' } = {}) {
+    if (!record?.tabEl) return;
+    const siblings = Array.from(this.tabBar.children).filter((node) => node !== record.tabEl);
+    let referenceNode = null;
+
+    if (mode === 'prepend-unpinned' && !record.pinned) {
+      referenceNode = siblings.find((node) => !(this._recordFromTabElement(node)?.pinned)) || null;
+    } else if (record.pinned) {
+      referenceNode = siblings.find((node) => !(this._recordFromTabElement(node)?.pinned)) || null;
+    } else {
+      referenceNode = null;
+    }
+
+    if (referenceNode) {
+      this.tabBar.insertBefore(record.tabEl, referenceNode);
+    } else {
+      this.tabBar.appendChild(record.tabEl);
+    }
+    this._syncTabOrderFromDom();
+  }
+
+  /**
+   * Resolve the tab record that owns one rendered tab element.
+   */
+  _recordFromTabElement(tabEl) {
+    for (const record of this.tabs.values()) {
+      if (record.tabEl === tabEl) return record;
+    }
+    return null;
+  }
+
+  /**
+   * Update the tab DOM so pinned state is visible via CSS classes, labels and
+   * the pin icon variant.
+   */
+  _renderPinnedState(record) {
+    if (!record?.tabEl || !record?.pinBtn || record.pinBtn.hidden) return;
+    const pinned = !!record.pinned;
+    record.tabEl.classList.toggle('is-pinned', pinned);
+    record.pinBtn.classList.toggle('is-active', pinned);
+    record.pinBtn.title = this.i18n.t(pinned ? 'tabs.unpin' : 'tabs.pin');
+    record.pinBtn.setAttribute('aria-label', record.pinBtn.title);
+    record.pinBtn.innerHTML = '';
+    record.pinBtn.append(Icon.render(pinned ? 'fa fa-thumb-tack' : 'fa fa-thumb-tack'));
+  }
+
+  /**
+   * Toggle one tab between pinned and unpinned state.
+   */
+  togglePinned(key) {
+    const record = this.tabs.get(key);
+    if (!record) return;
+    this.setPinned(key, !record.pinned);
+  }
+
+  /**
+   * Apply pinned state to one tab, move it into the correct group and persist
+   * the resulting order.
+   *
+   * Pinning appends the tab to the pinned block. Unpinning places it at the
+   * front of the unpinned block so it stays directly after the pinned tabs
+   * instead of jumping to the far end of the tab bar.
+   */
+  setPinned(key, pinned, { focus = false } = {}) {
+    const record = this.tabs.get(key);
+    if (!record || record.isDiff) return;
+    const nextPinned = !!pinned;
+    if (!!record.pinned === nextPinned) {
+      if (focus) this.activate(key);
+      return;
+    }
+    record.pinned = nextPinned;
+    this._renderPinnedState(record);
+    this._insertTabByPinnedState(record, { mode: nextPinned ? 'append-group' : 'prepend-unpinned' });
+    if (focus) this.activate(key);
+    this._persistOpenTabs();
+  }
+
   _moveTab(sourceKey, targetKey, position) {
     const source = this.tabs.get(sourceKey);
     const target = this.tabs.get(targetKey);
     if (!source || !target || sourceKey === targetKey) return;
+    if (!!source.pinned !== !!target.pinned) return;
 
     const targetEl = target.tabEl;
     if (position === 'before') {
@@ -269,13 +422,7 @@ export class TabManager {
       this.tabBar.insertBefore(source.tabEl, targetEl.nextSibling);
     }
 
-    const reordered = new Map();
-    for (const node of this.tabBar.children) {
-      const key = Array.from(this.tabs.entries()).find(([, record]) => record.tabEl === node)?.[0];
-      if (!key) continue;
-      reordered.set(key, this.tabs.get(key));
-    }
-    this.tabs = reordered;
+    this._syncTabOrderFromDom();
     this._persistOpenTabs();
   }
 
@@ -288,11 +435,13 @@ export class TabManager {
     const index = orderedKeys.indexOf(key);
     if (index === -1) return;
 
+    const unpinnedKeys = orderedKeys.filter((tabKey) => !this.tabs.get(tabKey)?.pinned);
     const counts = {
       left: index,
       right: orderedKeys.length - index - 1,
       others: orderedKeys.length - 1,
       all: orderedKeys.length,
+      unpinned: unpinnedKeys.length,
     };
 
     const menu = document.createElement('div');
@@ -317,6 +466,23 @@ export class TabManager {
       menu.append(btn);
     };
 
+    addItem({
+      label: this.i18n.t(record.pinned ? 'tabs.unpin' : 'tabs.pin'),
+      icon: 'fa fa-thumb-tack',
+      onClick: () => this.togglePinned(key),
+      disabled: record.isDiff,
+    });
+
+    const separator = document.createElement('div');
+    separator.className = 'menu-sep';
+    menu.append(separator);
+
+    addItem({
+      label: this.i18n.t('tabs.close_unpinned'),
+      icon: 'fa fa-times',
+      onClick: () => this.closeUnpinnedTabs(),
+      disabled: counts.unpinned === 0,
+    });
     addItem({
       label: this.i18n.t('tabs.close_all'),
       icon: 'fa fa-times-circle',
@@ -403,6 +569,13 @@ export class TabManager {
 
   closeAllTabs() {
     this.closeTabs(this._orderedTabKeys());
+  }
+
+  /**
+   * Close only tabs that are currently not pinned.
+   */
+  closeUnpinnedTabs() {
+    this.closeTabs(this._orderedTabKeys().filter((key) => !this.tabs.get(key)?.pinned));
   }
 
   closeTabsToLeft(key) {
@@ -528,6 +701,8 @@ export class TabManager {
     name.className = 'ide-tab-name';
     name.textContent = label;
 
+    const pinBtn = this._createPinButton(key, { disabled: true });
+
     // Dirty indicator (floppy icon) for diff tabs
     const dirtyBtn = document.createElement('span');
     dirtyBtn.className = 'ide-tab-dirty';
@@ -542,9 +717,8 @@ export class TabManager {
     close.title = this.i18n.t('actions.close');
     close.addEventListener('click', (e) => { e.stopPropagation(); this.close(key); });
 
-    tabEl.append(name, dirtyBtn, close);
+    tabEl.append(name, pinBtn, dirtyBtn, close);
     this._bindTabInteractions(tabEl, key);
-    this.tabBar.appendChild(tabEl);
 
     // Build editor host
     const editorHost = document.createElement('div');
@@ -553,7 +727,7 @@ export class TabManager {
     this.host.appendChild(editorHost);
 
     const editor = descriptor.create(editorHost, this.ctx);
-    const record = { key, entry: { path }, tabEl, editorHost, editor, descriptor, dirty: false, isDiff: true, dirtyBtn };
+    const record = { key, entry: { path }, tabEl, editorHost, editor, descriptor, dirty: false, isDiff: true, dirtyBtn, pinBtn, pinned: false };
 
     // Listen for changes and save requests
     if (typeof editor.on === 'function') {
@@ -566,6 +740,8 @@ export class TabManager {
     }
 
     this.tabs.set(key, record);
+    this.tabBar.appendChild(tabEl);
+    this._syncTabOrderFromDom();
 
     // Load the diff data
     editor.load({

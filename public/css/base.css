@@ -393,6 +393,9 @@ textarea { font-family: var(--ide-font-mono); }
 .ide-tab.is-dragging {
   opacity: 0.55;
 }
+.ide-tab.is-pinned {
+  font-weight: 600;
+}
 .ide-tab.drop-before::before,
 .ide-tab.drop-after::after {
   content: '';
@@ -409,6 +412,35 @@ textarea { font-family: var(--ide-font-mono); }
 .ide-tab-name {
   user-select: none;
   -webkit-user-select: none;
+}
+.ide-tab-pin,
+.ide-tab-dirty,
+.ide-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ide-tab-pin {
+  opacity: 0.45;
+  cursor: pointer;
+  color: var(--ide-fg-muted);
+}
+.ide-tab:hover .ide-tab-pin,
+.ide-tab.is-pinned .ide-tab-pin,
+.ide-tab.active .ide-tab-pin {
+  opacity: 0.9;
+}
+.ide-tab-pin:hover,
+.ide-tab-pin:focus-visible,
+.ide-tab-pin.is-active {
+  opacity: 1;
+  color: var(--ide-accent);
+  outline: none;
+}
+.ide-tab-pin.is-disabled {
+  opacity: 0.2;
+  cursor: default;
+  color: var(--ide-fg-muted);
 }
 .ide-tab-dirty { color: var(--ide-accent); cursor: pointer; opacity: 0.85; }
 .ide-tab-dirty:hover { opacity: 1; }

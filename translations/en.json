@@ -165,6 +165,10 @@
   "outline.title": "Outline",
   "outline.no_symbols": "No symbols found",
 
+  "tabs.pin": "Pin tab",
+  "tabs.unpin": "Unpin tab",
+  "tabs.pin_disabled_diff": "Diff tabs cannot be pinned",
+  "tabs.close_unpinned": "Close unpinned tabs",
   "tabs.close_all": "Close all tabs",
   "tabs.close_left": "Close tabs to the left",
   "tabs.close_right": "Close tabs to the right",

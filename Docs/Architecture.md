@@ -405,7 +405,7 @@ Inside Monaco-based code editor tabs, the document outline is implemented as an 
 
 All editor tabs show unsaved state, restore from the previous browser session, and expose the absolute resolved path in a hover tooltip over the tab title. Text editors support search/replace within the file and word-wrap toggle. Code editors show line numbers and support go-to-line shortcuts.
 
-In addition to single-tab closing via the close icon or middle click, `TabManager` provides a right-click context menu on tab headers with bulk actions for closing all tabs, tabs to the left, tabs to the right, or all other tabs. Bulk close actions reuse the normal dirty-check flow for each affected tab so users still get a confirmation before unsaved changes are discarded.
+In addition to single-tab closing via the close icon or middle click, `TabManager` provides a right-click context menu on tab headers with bulk actions for closing all tabs, tabs to the left, tabs to the right, all other tabs, and only unpinned tabs. Tabs can be pinned from the same context menu or from the inline pin icon in the tab itself. Pinned tabs persist per repository, stay grouped at the start of the tab bar and are protected from the dedicated `Close unpinned tabs` bulk action. Drag-reordering is intentionally limited to the current group so users cannot accidentally drag an unpinned tab into the pinned block or vice versa.
 
 `TabManager.open()` also accepts an optional explicit editor override. This is used by cross-feature navigation flows like workspace search, which must open a file in a raw code editor regardless of the file type's normal preferred editor.
 
@@ -788,6 +788,7 @@ Because the shipped package has no build step, browser tests should run against 
 - Add adapter hooks for front-end library plugins, starting with Toast UI Editor plugins and Monaco language/completion providers. Complexity: Medium.
 - Add upload, download, zip handling, drag move/copy, context menus, and in-place duplicate actions. Complexity: Large.
 - Extend the explorer with toggleable bulk selection, shared bulk menus and multi-item drag/drop while still relying on the existing single-item file APIs internally. Complexity: Medium.
+- Extend the editor tab system with pinned tabs, persistent pinned state, and a dedicated close-unpinned bulk action while preserving drag/drop and dirty-check behavior. Complexity: Medium.
 
 **Phase 3: Git, Search, and Console**
 
