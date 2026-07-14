@@ -79,6 +79,18 @@ Commit rows in Git history follow the same context-menu rule as other actionable
 
 Changed-file rows in the Git history details pane follow the same rule as changed-file rows in the main Git panel: the inline three-dot menu and the right-click menu must expose the same item-level actions.
 
+In the file tree, optional multi-selection must stay an explicit mode instead of being triggered accidentally. When that mode is active, a dedicated checkbox column is shown left of the file icon so bulk actions are discoverable and row clicks do not unexpectedly open files or collapse folders.
+
+Bulk-action affordances in the explorer must stay narrower than single-item menus: whenever multiple items are selected, actions that require one specific source path such as rename, duplicate or copy-relative-path should disappear or become disabled, while shared actions such as move, delete and download remain available in exactly the same places (toolbar, inline menu and right-click menu).
+
+When bulk move needs a destination folder, prefer a directory-only picker over a free-text path prompt so less technical users can choose the target safely from the existing workspace hierarchy.
+
+When multiple selected items are downloaded together, the interaction should produce one ZIP archive instead of starting many separate browser downloads.
+
+Folder-only trees used inside dialogs should not show expandable carets for empty folders. If a target list contains only directories, the user must be able to trust that a visible caret really means there are child directories to reveal.
+
+Scrollable dialogs with action buttons should keep those footer actions visible while the tree body grows. The content area may scroll, but confirm/cancel buttons must remain reachable without resizing the browser window.
+
 ### Toolbars
 
 A toolbar inside the side panel has a number of buttons and a three-dot "more" button on the right, that opens a menu with buttons, that did not fit in the toolbar itself.

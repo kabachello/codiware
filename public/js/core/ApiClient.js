@@ -33,12 +33,23 @@ export class ApiClient {
     }
   }
 
+  /**
+   * Build one request URL with the current workspace root and arbitrary query
+   * values, preserving repeated keys such as `paths[]` for bulk downloads.
+   */
   url(path, query = {}) {
     const q = new URLSearchParams();
     if (this.workspace && query.root === undefined) q.set('root', this.workspace);
     for (const [k, v] of Object.entries(query)) {
       if (v === undefined || v === null) continue;
-      q.set(k, String(v));
+      if (Array.isArray(v)) {
+        v.forEach((item) => {
+          if (item === undefined || item === null) return;
+          q.append(k, String(item));
+        });
+        continue;
+      }
+      q.append(k, String(v));
     }
     const qs = q.toString();
     return this.base + path + (qs ? '?' + qs : '');

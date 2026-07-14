@@ -25,6 +25,253 @@ function cssEscape(value) {
 }
 
 /**
+ * Normalize a workspace-relative directory path into the API format expected
+ * by `/files/*` endpoints. Leading/trailing slashes are stripped so prompts
+ * can accept either `Docs`, `/Docs` or `Docs/` without changing semantics.
+ */
+function normalizeRelativeDir(path) {
+  return String(path || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+/**
+ * Modal directory picker used by bulk move so users choose a target folder
+ * from the workspace tree instead of typing a free-form path.
+ */
+class DirectoryPickerDialog {
+  constructor({ api, i18n, toasts, title, confirmLabel, initialPath = '' }) {
+    this.api = api;
+    this.i18n = i18n;
+    this.toasts = toasts || { error: (m) => console.error(m) };
+    this.title = title;
+    this.confirmLabel = confirmLabel;
+    this.initialPath = normalizeRelativeDir(initialPath);
+    this.selectedPath = this.initialPath;
+    this.rowByPath = new Map();
+    this.expanded = new Set(['']);
+    this.modal = null;
+    this.resolve = null;
+    this.reject = null;
+    this.onKeyDown = this._onKeyDown.bind(this);
+  }
+
+  /**
+   * Open the picker, render the directory tree and resolve with the chosen
+   * workspace-relative folder path or `null` when the dialog is cancelled.
+   */
+  async open() {
+    return new Promise(async (resolve) => {
+      this.resolve = resolve;
+      this._buildShell();
+      document.body.appendChild(this.modal);
+      document.addEventListener('keydown', this.onKeyDown);
+      await this._renderTree();
+      this._syncSelectionUi();
+      this.confirmBtn?.focus();
+    });
+  }
+
+  _buildShell() {
+    const overlay = document.createElement('div');
+    overlay.className = 'codiware-modal-overlay';
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) this.close(null);
+    });
+
+    const dialog = document.createElement('div');
+    dialog.className = 'codiware-modal codiware-dir-picker';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+
+    const header = document.createElement('div');
+    header.className = 'codiware-modal-header';
+    const title = document.createElement('div');
+    title.className = 'codiware-modal-title';
+    title.textContent = this.title;
+    header.appendChild(title);
+
+    const body = document.createElement('div');
+    body.className = 'codiware-modal-body';
+
+    const hint = document.createElement('div');
+    hint.className = 'codiware-dir-picker-hint';
+    hint.textContent = this.i18n.t('files.move_picker_hint');
+    body.appendChild(hint);
+
+    this.currentPathEl = document.createElement('div');
+    this.currentPathEl.className = 'codiware-dir-picker-current';
+    body.appendChild(this.currentPathEl);
+
+    this.treeEl = document.createElement('ul');
+    this.treeEl.className = 'tree codiware-dir-picker-tree';
+    body.appendChild(this.treeEl);
+
+    const footer = document.createElement('div');
+    footer.className = 'codiware-modal-footer';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'tb-btn';
+    cancelBtn.textContent = this.i18n.t('actions.cancel');
+    cancelBtn.addEventListener('click', () => this.close(null));
+
+    this.confirmBtn = document.createElement('button');
+    this.confirmBtn.type = 'button';
+    this.confirmBtn.className = 'tb-btn primary';
+    this.confirmBtn.textContent = this.confirmLabel;
+    this.confirmBtn.addEventListener('click', () => this.close(this.selectedPath));
+
+    footer.append(cancelBtn, this.confirmBtn);
+    dialog.append(header, body, footer);
+    overlay.appendChild(dialog);
+    this.modal = overlay;
+    this.dialog = dialog;
+  }
+
+  async _renderTree() {
+    this.treeEl.innerHTML = '';
+    this.rowByPath.clear();
+    this.treeEl.appendChild(this._renderRootRow());
+    await this._renderChildren(this.treeEl, '');
+  }
+
+  _renderRootRow() {
+    const li = document.createElement('li');
+    li.className = 'dir open';
+    li.dataset.path = '';
+
+    const row = document.createElement('span');
+    row.className = 'row selected';
+    row.dataset.path = '';
+    row.dataset.entryType = 'dir';
+
+    const spacer = document.createElement('span');
+    spacer.className = 'ide-icon ide-icon-toggle';
+    const icon = Icon.render('fa fa-folder-open');
+    const name = document.createElement('span');
+    name.className = 'row-name';
+    name.textContent = this.i18n.t('files.workspace_root');
+    row.append(spacer, icon, name);
+    row.addEventListener('click', () => this._selectPath(''));
+
+    li.appendChild(row);
+    this.rowByPath.set('', row);
+    return li;
+  }
+
+  async _renderChildren(parentUl, path) {
+    let data;
+    try {
+      data = await this.api.get('/files/tree', { path, foldersOnly: 1 });
+    } catch (e) {
+      this.toasts.error(e.message);
+      return;
+    }
+    const entries = Array.isArray(data?.entries) ? data.entries.filter((entry) => entry.type === 'dir') : [];
+    for (const entry of entries) {
+      parentUl.appendChild(this._renderDir(entry));
+    }
+  }
+
+  _renderDir(entry) {
+    const li = document.createElement('li');
+    li.className = 'dir';
+    li.dataset.path = entry.path;
+
+    const row = document.createElement('span');
+    row.className = 'row';
+    row.dataset.path = entry.path;
+    row.dataset.entryType = 'dir';
+
+    const toggle = Icon.render('fa fa-caret-right', { extraClass: 'ide-icon-toggle' });
+    let folder = Icon.render('fa fa-folder');
+    const name = document.createElement('span');
+    name.className = 'row-name';
+    name.textContent = entry.name;
+    row.append(toggle, folder, name);
+
+    let childUl = null;
+    let loaded = false;
+    const canExpand = entry.has_children !== false;
+    toggle.classList.toggle('is-placeholder', !canExpand);
+
+    const setOpen = async (open) => {
+      if (!canExpand) return;
+      li.classList.toggle('open', open);
+      toggle.firstElementChild?.classList.toggle('fa-caret-right', !open);
+      toggle.firstElementChild?.classList.toggle('fa-caret-down', open);
+      const replacement = Icon.render(open ? 'fa fa-folder-open' : 'fa fa-folder');
+      folder.replaceWith(replacement);
+      folder = replacement;
+      if (open) {
+        if (!childUl) {
+          childUl = document.createElement('ul');
+          li.appendChild(childUl);
+        }
+        if (!loaded) {
+          loaded = true;
+          await this._renderChildren(childUl, entry.path);
+        }
+        childUl.style.display = '';
+        this.expanded.add(entry.path);
+      } else if (childUl) {
+        childUl.style.display = 'none';
+        this.expanded.delete(entry.path);
+      }
+    };
+
+    row.addEventListener('click', async (event) => {
+      if (event.target.closest('.ide-icon-toggle')) {
+        event.stopPropagation();
+        if (!canExpand) return;
+        await setOpen(!li.classList.contains('open'));
+        return;
+      }
+      this._selectPath(entry.path);
+    });
+
+    if (this.expanded.has(entry.path) && canExpand) {
+      setOpen(true);
+    }
+
+    li.appendChild(row);
+    this.rowByPath.set(entry.path, row);
+    return li;
+  }
+
+  _selectPath(path) {
+    this.selectedPath = normalizeRelativeDir(path);
+    this._syncSelectionUi();
+  }
+
+  _syncSelectionUi() {
+    for (const [path, row] of this.rowByPath.entries()) {
+      row.classList.toggle('selected', normalizeRelativeDir(path) === this.selectedPath);
+    }
+    if (this.currentPathEl) {
+      const display = this.selectedPath === ''
+        ? this.i18n.t('files.workspace_root')
+        : this.selectedPath;
+      this.currentPathEl.textContent = this.i18n.t('files.move_picker_selected', { path: display });
+    }
+  }
+
+  _onKeyDown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.close(null);
+    }
+  }
+
+  close(result) {
+    if (this.modal?.parentNode) {
+      this.modal.parentNode.removeChild(this.modal);
+    }
+    document.removeEventListener('keydown', this.onKeyDown);
+    this.resolve?.(result);
+    this.resolve = null;
+  }
+}
+
+/**
  * Recursive file tree using nested <ul> elements.
  *
  * Each directory is loaded lazily through `api.get('/files/tree', {path})`.
@@ -65,6 +312,10 @@ export class FileTree {
     this.expanded = new Set(this._loadExpanded());
     this.dragContext = null;
     this.activeDropRow = null;
+    this.selectionMode = false;
+    this.selectedPaths = new Set();
+    this.rowByPath = new Map();
+    this._suspendRefreshOnce = false;
 
     this.host.innerHTML = '';
     this.host.classList.add('file-tree-host');
@@ -115,14 +366,33 @@ export class FileTree {
     this.settings.setRepo('tree.expanded', Array.from(this.expanded));
   }
 
+  /**
+   * Build the explorer toolbar and keep references to buttons that need to
+   * react to selection-mode changes and multi-selection capabilities.
+   */
   _buildToolbar() {
+    this.newFileBtn = this._tbBtn('fa fa-file-o', this.i18n.t('files.new_file'), () => this._createPrompt('', 'file'));
+    this.newFolderBtn = this._tbBtn('fa fa-folder', this.i18n.t('files.new_folder'), () => this._createPrompt('', 'dir'));
+    this.uploadBtn = this._tbBtn('fa fa-upload', this.i18n.t('files.upload'), () => this._uploadInto(''));
+    this.downloadWorkspaceBtn = this._tbBtn('fa fa-file-archive-o', this.i18n.t('files.download_zip'), () => this._downloadPath('', 'workspace'));
+    this.selectionModeBtn = this._tbBtn('fa fa-check-square-o', this.i18n.t('files.selection_mode_enable'), () => this._toggleSelectionMode());
+    this.moveSelectedBtn = this._tbBtn('fa fa-folder-open-o', this.i18n.t('files.move_selected'), () => this._moveSelectedPrompt());
+    this.downloadSelectedBtn = this._tbBtn('fa fa-download', this.i18n.t('files.download_selected'), () => this._downloadSelected());
+    this.deleteSelectedBtn = this._tbBtn('fa fa-trash-o', this.i18n.t('files.delete_selected'), () => this._deleteSelected());
+    this.refreshBtn = this._tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh());
+
     this.toolbarEl.append(
-      this._tbBtn('fa fa-file-o', this.i18n.t('files.new_file'), () => this._createPrompt('', 'file')),
-      this._tbBtn('fa fa-folder', this.i18n.t('files.new_folder'), () => this._createPrompt('', 'dir')),
-      this._tbBtn('fa fa-upload', this.i18n.t('files.upload'), () => this._uploadInto('')),
-      this._tbBtn('fa fa-file-archive-o', this.i18n.t('files.download_zip'), () => this._downloadPath('', 'workspace')),
-      this._tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
+      this.newFileBtn,
+      this.newFolderBtn,
+      this.uploadBtn,
+      this.downloadWorkspaceBtn,
+      this.selectionModeBtn,
+      this.moveSelectedBtn,
+      this.downloadSelectedBtn,
+      this.deleteSelectedBtn,
+      this.refreshBtn,
     );
+    this._updateSelectionModeUi();
   }
 
   _tbBtn(icon, title, onClick) {
@@ -136,16 +406,211 @@ export class FileTree {
     return b;
   }
 
+  /**
+   * Enable or disable the checkbox-based multi-selection mode. Leaving the
+   * mode clears the selection so the tree returns to the normal single-row
+   * interaction model immediately.
+   */
+  _toggleSelectionMode(force) {
+    const next = typeof force === 'boolean' ? force : !this.selectionMode;
+    if (this.selectionMode === next) return;
+    this.selectionMode = next;
+    if (!next) {
+      this.selectedPaths.clear();
+    }
+    this._syncSelectionUi();
+    this._updateSelectionModeUi();
+  }
+
+  /**
+   * Recalculate toolbar states and the highlighted toggle button for the
+   * current selection mode / selected item count.
+   */
+  _updateSelectionModeUi() {
+    const selectedCount = this.selectedPaths.size;
+    if (this.selectionModeBtn) {
+      this.selectionModeBtn.classList.toggle('primary', this.selectionMode);
+      const title = this.selectionMode
+        ? this.i18n.t('files.selection_mode_disable')
+        : this.i18n.t('files.selection_mode_enable');
+      this.selectionModeBtn.title = title;
+      this.selectionModeBtn.setAttribute('aria-label', title);
+    }
+    if (this.moveSelectedBtn) this.moveSelectedBtn.disabled = !this.selectionMode || selectedCount === 0;
+    if (this.downloadSelectedBtn) this.downloadSelectedBtn.disabled = !this.selectionMode || selectedCount === 0;
+    if (this.deleteSelectedBtn) this.deleteSelectedBtn.disabled = !this.selectionMode || selectedCount === 0;
+  }
+
+  /**
+   * Synchronize every rendered row with the current multi-selection state,
+   * including checkbox visibility, checked markers and selection highlight.
+   */
+  _syncSelectionUi() {
+    for (const [path, row] of this.rowByPath.entries()) {
+      const cb = row.querySelector('.tree-select-checkbox');
+      if (cb) {
+        cb.hidden = !this.selectionMode;
+        cb.checked = this.selectedPaths.has(path);
+      }
+      row.classList.toggle('is-selection-mode', this.selectionMode);
+      row.classList.toggle('selected', this.selectedPaths.has(path));
+    }
+    this.host.classList.toggle('is-selection-mode', this.selectionMode);
+    this._updateSelectionModeUi();
+  }
+
+  /**
+   * Register or refresh a row reference so later mode changes can update the
+   * row without re-rendering the entire tree.
+   */
+  _bindRow(entry, row) {
+    this.rowByPath.set(entry.path, row);
+    row.dataset.path = entry.path;
+    row.dataset.entryType = entry.type;
+    row.classList.toggle('selected', this.selectedPaths.has(entry.path));
+    row.classList.toggle('is-selection-mode', this.selectionMode);
+    const cb = row.querySelector('.tree-select-checkbox');
+    if (cb) {
+      cb.hidden = !this.selectionMode;
+      cb.checked = this.selectedPaths.has(entry.path);
+    }
+  }
+
+  /**
+   * Return the tree entries currently selected for bulk actions. When the
+   * mode is active and the clicked row is among the checked ones, drag/drop
+   * and menus operate on the whole set; otherwise they fall back to the one
+   * explicit entry.
+   */
+  _entriesForAction(entry) {
+    if (!this.selectionMode || this.selectedPaths.size === 0 || !entry?.path || !this.selectedPaths.has(entry.path)) {
+      return [entry];
+    }
+    return this._entriesFromPaths(this.selectedPaths);
+  }
+
+  /**
+   * Rebuild entry descriptors from a set of selected paths using the current
+   * rendered rows, then prune descendants so bulk actions run once per top-
+   * level selection only.
+   */
+  _entriesFromPaths(paths) {
+    const entries = [];
+    const seen = new Set();
+    for (const path of paths || []) {
+      if (typeof path !== 'string' || path === '' || seen.has(path)) continue;
+      seen.add(path);
+      const row = this.rowByPath.get(path);
+      const type = row?.dataset?.entryType || 'file';
+      const name = path.includes('/') ? path.slice(path.lastIndexOf('/') + 1) : path;
+      entries.push({ path, name, type });
+    }
+    return this._filterTopLevelEntries(entries);
+  }
+
+  /**
+   * Remove descendant entries from a bulk-selection list so directory moves or
+   * deletes are executed only once at the highest selected ancestor.
+   */
+  _filterTopLevelEntries(entries) {
+    const sorted = (entries || []).slice().sort((a, b) => a.path.localeCompare(b.path));
+    return sorted.filter((entry, index, list) => {
+      for (let i = 0; i < index; i += 1) {
+        const parentPath = list[i].path;
+        if (entry.path === parentPath || entry.path.startsWith(parentPath + '/')) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Toggle one row inside the current bulk selection and immediately reflect
+   * the change in checkbox state and row highlight.
+   */
+  _toggleEntrySelection(entry, row, checked) {
+    if (checked) this.selectedPaths.add(entry.path);
+    else this.selectedPaths.delete(entry.path);
+    row.classList.toggle('selected', checked);
+    const cb = row.querySelector('.tree-select-checkbox');
+    if (cb) cb.checked = checked;
+    this._updateSelectionModeUi();
+  }
+
+  /**
+   * Return a pruned copy of the selection that still exists in the currently
+   * rendered tree. This keeps bulk actions stable after moves/refreshes.
+   */
+  _pruneSelection() {
+    const next = new Set();
+    for (const path of this.selectedPaths) {
+      if (this.rowByPath.has(path)) next.add(path);
+    }
+    this.selectedPaths = next;
+  }
+
+  /**
+   * Merge new paths into the multi-selection after a successful bulk move/copy
+   * so follow-up actions work without forcing the user to toggle the mode.
+   */
+  _replaceSelectionPaths(operations, { keepSources = false } = {}) {
+    if (!Array.isArray(operations) || operations.length === 0) return;
+    const next = keepSources ? new Set(this.selectedPaths) : new Set();
+    const sourceSet = new Set(operations.map((op) => op.from));
+    if (keepSources) {
+      sourceSet.forEach((path) => next.delete(path));
+    }
+    operations.forEach((op) => {
+      if (typeof op?.to === 'string' && op.to !== '') {
+        next.add(op.to);
+      }
+    });
+    this.selectedPaths = next;
+  }
+
+  /**
+   * Return all selected paths, not just the top-level subset used for the real
+   * bulk operation. Confirmation text uses this so counts stay correct even
+   * when the clicked row lives inside only one branch of the selection.
+   */
+  _selectionDisplayCount() {
+    return Array.from(this.selectedPaths).filter((path) => typeof path === 'string' && path !== '').length;
+  }
+
+  /**
+   * Expand the parent chain and the target directory itself after a move so
+   * newly moved files become visible immediately, even if the destination was
+   * collapsed before the operation.
+   */
+  _ensurePathExpanded(path) {
+    const normalized = normalizeRelativeDir(path);
+    if (normalized === '') return;
+    const parts = normalized.split('/');
+    let current = '';
+    for (const part of parts) {
+      current = current === '' ? part : `${current}/${part}`;
+      this.expanded.add(current);
+    }
+    this._persistExpanded();
+  }
+
   async refresh() {
+    this.rowByPath.clear();
+    this.selectedPaths = new Set(Array.from(this.selectedPaths).filter((path) => typeof path === 'string'));
     // Keep the tree filtered across refreshes triggered by saving a file or
     // by file operations, as long as a valid filter query is active.
     if (this._filterActive && this.filterText.trim().length >= this.filterMinChars) {
       await this._applyFilter();
+      this._pruneSelection();
+      this._syncSelectionUi();
       return;
     }
     this.rootUl.innerHTML = '';
     await this._renderInto(this.rootUl, '');
     await this._restoreExpansion();
+    this._pruneSelection();
+    this._syncSelectionUi();
   }
 
   // ---- Quick-search filter ---------------------------------------------
@@ -253,6 +718,7 @@ export class FileTree {
    */
   _renderFiltered(matches, truncated) {
     this.rootUl.innerHTML = '';
+    this.rowByPath.clear();
     if (matches.length === 0) {
       const li = document.createElement('li');
       li.className = 'empty';
@@ -279,6 +745,8 @@ export class FileTree {
     }
 
     this._renderFilteredNode(rootNode, this.rootUl);
+    this._pruneSelection();
+    this._syncSelectionUi();
 
     if (truncated) {
       const li = document.createElement('li');
@@ -307,7 +775,10 @@ export class FileTree {
 
     const row = document.createElement('span');
     row.className = 'row';
+    row.dataset.entryType = 'dir';
 
+    const entry = { type: 'dir', path: dir.path, name: dir.name };
+    const checkbox = this._createSelectionCheckbox(entry, row);
     const toggle = Icon.render('fa fa-caret-down', { extraClass: 'ide-icon-toggle' });
     const folderSpec = this.fileIcons.folder || 'fa fa-folder';
     const folderOpenSpec = this.fileIcons.folder_open || folderSpec;
@@ -315,7 +786,7 @@ export class FileTree {
     const name = document.createElement('span');
     name.className = 'row-name';
     name.textContent = dir.name;
-    row.append(toggle, folder, name);
+    row.append(checkbox, toggle, folder, name);
 
     const childUl = document.createElement('ul');
     this._renderFilteredNode(dir, childUl);
@@ -323,7 +794,8 @@ export class FileTree {
     // In filtered mode folders only toggle their visibility; their children are
     // already in the DOM, so no server round-trip is needed.
     row.addEventListener('click', (e) => {
-      if (e.target.closest('.row-actions')) return;
+      if (e.target.closest('.row-actions') || e.target.closest('.tree-select-checkbox')) return;
+      if (this.selectionMode && !e.target.closest('.ide-icon-toggle')) return;
       const open = !li.classList.contains('open');
       li.classList.toggle('open', open);
       toggle.firstElementChild?.classList.toggle('fa-caret-right', !open);
@@ -334,7 +806,6 @@ export class FileTree {
       childUl.style.display = open ? '' : 'none';
     });
 
-    const entry = { type: 'dir', name: dir.name, path: dir.path };
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this._selectRow(row);
@@ -344,6 +815,7 @@ export class FileTree {
     row.appendChild(this._renderRowActions(entry));
     li.appendChild(row);
     li.appendChild(childUl);
+    this._bindRow(entry, row);
     return li;
   }
 
@@ -394,6 +866,26 @@ export class FileTree {
     }
   }
 
+  /**
+   * Create the optional selection checkbox shown in bulk-selection mode.
+   * Clicking the checkbox never triggers row open/toggle handlers.
+   */
+  _createSelectionCheckbox(entry, row) {
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'tree-select-checkbox';
+    checkbox.hidden = !this.selectionMode;
+    checkbox.checked = this.selectedPaths.has(entry.path);
+    checkbox.title = this.i18n.t('files.select_item');
+    checkbox.setAttribute('aria-label', this.i18n.t('files.select_item'));
+    checkbox.addEventListener('click', (e) => e.stopPropagation());
+    checkbox.addEventListener('change', (e) => {
+      e.stopPropagation();
+      this._toggleEntrySelection(entry, row, checkbox.checked);
+    });
+    return checkbox;
+  }
+
   _renderEntry(entry) {
     const li = document.createElement('li');
     li.className = entry.type === 'dir' ? 'dir' : 'file';
@@ -401,20 +893,25 @@ export class FileTree {
 
     const row = document.createElement('span');
     row.className = 'row';
+    row.dataset.entryType = entry.type;
+    const checkbox = this._createSelectionCheckbox(entry, row);
 
     if (entry.type === 'dir') {
+      const hasChildren = entry.has_children !== false;
       const toggle = Icon.render('fa fa-caret-right', { extraClass: 'ide-icon-toggle' });
+      toggle.classList.toggle('is-placeholder', !hasChildren);
       const folderIconSpec = this.fileIcons.folder || 'fa fa-folder';
       const folderOpenSpec = this.fileIcons.folder_open || folderIconSpec;
       let folder = Icon.render(folderIconSpec);
       const name = document.createElement('span');
       name.className = 'row-name';
       name.textContent = entry.name;
-      row.append(toggle, folder, name);
+      row.append(checkbox, toggle, folder, name);
 
       // Toggle helper bound to this <li>; reused by user clicks and by
       // `_restoreExpansion()` after a refresh.
       const setOpen = async (open) => {
+        if (!hasChildren) return;
         const isOpen = li.classList.contains('open');
         if (isOpen === open) return;
         li.classList.toggle('open', open);
@@ -441,7 +938,9 @@ export class FileTree {
       li._close = () => setOpen(false);
 
       row.addEventListener('click', async (e) => {
-        if (e.target.closest('.row-actions')) return;
+        if (e.target.closest('.row-actions') || e.target.closest('.tree-select-checkbox')) return;
+        if (this.selectionMode && !e.target.closest('.ide-icon-toggle')) return;
+        if (!hasChildren) return;
         await setOpen(!li.classList.contains('open'));
       });
 
@@ -457,11 +956,13 @@ export class FileTree {
       const name = document.createElement('span');
       name.className = 'row-name';
       name.textContent = entry.name;
-      row.append(document.createElement('span'), file, name); // empty span to align with toggle column
-      row.firstElementChild.className = 'ide-icon ide-icon-toggle';
+      const spacer = document.createElement('span');
+      spacer.className = 'ide-icon ide-icon-toggle';
+      row.append(checkbox, spacer, file, name);
       row.addEventListener('click', (e) => {
-        if (e.target.closest('.row-actions')) return;
+        if (e.target.closest('.row-actions') || e.target.closest('.tree-select-checkbox')) return;
         this._selectRow(row);
+        if (this.selectionMode) return;
         this.onOpen?.(entry);
       });
 
@@ -476,22 +977,25 @@ export class FileTree {
 
     row.appendChild(this._renderRowActions(entry));
     li.appendChild(row);
+    this._bindRow(entry, row);
     return li;
   }
 
   _setupDragSource(row, entry) {
     row.draggable = true;
     row.addEventListener('dragstart', (e) => {
-      if (e.target.closest('.row-actions')) {
+      if (e.target.closest('.row-actions') || e.target.closest('.tree-select-checkbox')) {
         e.preventDefault();
         return;
       }
+      const entries = this._entriesForAction(entry);
       this.dragContext = {
         entry,
+        entries,
         copy: !!(e.ctrlKey || e.metaKey),
       };
       e.dataTransfer.effectAllowed = 'copyMove';
-      e.dataTransfer.setData('text/plain', entry.path);
+      e.dataTransfer.setData('text/plain', entries.map((item) => item.path).join('\n'));
       row.classList.add('dragging');
     });
     row.addEventListener('dragend', () => {
@@ -574,8 +1078,8 @@ export class FileTree {
   _dropModeFor(targetDir) {
     const drag = this.dragContext;
     if (!drag) return null;
-    const source = drag.entry;
-    if (!this._canDropInto(source, targetDir)) return null;
+    const sources = Array.isArray(drag.entries) && drag.entries.length > 0 ? drag.entries : [drag.entry];
+    if (!sources.every((source) => this._canDropInto(source, targetDir))) return null;
     return drag.copy ? 'copy' : 'move';
   }
 
@@ -588,23 +1092,42 @@ export class FileTree {
     return true;
   }
 
+  /**
+   * Execute one drag/drop move or copy operation for every selected top-level
+   * source entry and emit a single change event afterwards.
+   */
   async _performDrop(targetDir, evt) {
     const drag = this.dragContext;
     if (!drag) return;
-    const source = drag.entry;
-    const name = source.path.split('/').pop();
-    const to = targetDir === '' ? name : `${targetDir}/${name}`;
-    if (to === source.path) return;
+    const sources = Array.isArray(drag.entries) && drag.entries.length > 0 ? drag.entries : [drag.entry];
 
     const copy = !!(evt.ctrlKey || evt.metaKey || drag.copy);
     const endpoint = copy ? '/files/copy' : '/files/move';
     const action = copy ? 'copy' : 'move';
+    const operations = [];
+
+    for (const source of sources) {
+      const name = source.path.split('/').pop();
+      const to = targetDir === '' ? name : `${targetDir}/${name}`;
+      if (to === source.path) continue;
+      operations.push({ from: source.path, to, type: source.type });
+    }
+    if (operations.length === 0) return;
 
     try {
-      await this.api.post(endpoint, { from: source.path, to });
-      // Let the central files:changed listener refresh once to avoid
-      // duplicate redraws and visible flicker after a drag-drop move.
-      this.bus?.emit?.('files:changed', { action, from: source.path, to });
+      for (const op of operations) {
+        await this.api.post(endpoint, { from: op.from, to: op.to });
+      }
+      if (!copy) {
+        this._ensurePathExpanded(targetDir);
+      }
+      this._replaceSelectionPaths(operations, { keepSources: false });
+      this._suspendRefreshOnce = true;
+      await this.refresh();
+      this.bus?.emit?.('files:changed', {
+        action,
+        items: operations.map(({ from, to, type }) => ({ from, to, type })),
+      });
     } catch (e) {
       this.toasts.error(e.message);
     }
@@ -639,8 +1162,24 @@ export class FileTree {
     PopupMenu.openAt(x, y, this._menuItemsForEntry(entry));
   }
 
+  /**
+   * Build a row menu that can switch between single-entry actions and the
+   * reduced bulk-action set when the clicked row belongs to an active bulk
+   * selection. Single selected items keep the normal item menu even while
+   * selection mode is enabled so directory/file specific actions stay usable.
+   */
   _menuItemsForEntry(entry) {
     const t = (k) => this.i18n.t(k);
+    const isBulk = this.selectionMode && this.selectedPaths.size > 1 && this.selectedPaths.has(entry.path);
+    if (isBulk) {
+      const selectedEntries = this._entriesFromPaths(this.selectedPaths);
+      return [
+        { icon: 'fa fa-folder-open-o', label: t('files.move_selected'), onClick: () => this._moveEntriesPrompt(selectedEntries) },
+        { icon: 'fa fa-download', label: t('files.download_selected'), onClick: () => this._downloadEntries(selectedEntries) },
+        { icon: 'fa fa-trash-o', label: t('files.delete_selected'), onClick: () => this._deleteEntries(selectedEntries) },
+      ];
+    }
+
     if (entry.type === 'dir') {
       return [
         { icon: 'fa fa-file-o', label: t('files.new_file_here'), onClick: () => this._createPrompt(entry.path, 'file') },
@@ -740,15 +1279,47 @@ export class FileTree {
   }
 
   async _delete(entry) {
-    const confirmMsg = this.i18n.t('files.confirm_delete', { path: entry.path });
+    await this._deleteEntries([entry]);
+  }
+
+  /**
+   * Delete all currently selected entries after one shared confirmation
+   * message. Descendants of selected folders are ignored automatically.
+   */
+  async _deleteEntries(entries) {
+    const topLevelEntries = this._filterTopLevelEntries(entries);
+    if (topLevelEntries.length === 0) return;
+    const displayCount = this.selectionMode ? this._selectionDisplayCount() : topLevelEntries.length;
+    const single = displayCount === 1 && topLevelEntries.length === 1;
+    const confirmMsg = single
+      ? this.i18n.t('files.confirm_delete', { path: topLevelEntries[0].path })
+      : this.i18n.t('files.confirm_delete_multiple', { count: displayCount });
     if (!window.confirm(confirmMsg)) return;
     try {
-      await this.api.delete('/files/delete', { path: entry.path });
+      for (const entry of topLevelEntries) {
+        await this.api.delete('/files/delete', { path: entry.path });
+      }
+      topLevelEntries.forEach((entry) => this.selectedPaths.delete(entry.path));
       await this.refresh();
-      this.bus?.emit?.('files:changed', { action: 'delete', path: entry.path });
+      this.bus?.emit?.('files:changed', {
+        action: 'delete',
+        items: topLevelEntries.map((entry) => ({ path: entry.path, type: entry.type })),
+      });
     } catch (e) {
       this.toasts.error(e.message);
     }
+  }
+
+  _deleteSelected() {
+    this._deleteEntries(this._entriesForSelectionMode());
+  }
+
+  /**
+   * Return the currently selected top-level entries for toolbar-triggered bulk
+   * actions.
+   */
+  _entriesForSelectionMode() {
+    return this._entriesFromPaths(this.selectedPaths);
   }
 
   async _copyPathToClipboard(path) {
@@ -809,6 +1380,31 @@ export class FileTree {
     document.body.removeChild(a);
   }
 
+  /**
+   * Download the selected top-level items as one ZIP archive through the new
+   * repeated `paths[]` API contract, preserving their relative structure.
+   */
+  _downloadEntries(entries) {
+    const topLevelEntries = this._filterTopLevelEntries(entries);
+    if (topLevelEntries.length === 0) return;
+    if (topLevelEntries.length === 1) {
+      this._download(topLevelEntries[0]);
+      return;
+    }
+    const query = { 'paths[]': topLevelEntries.map((entry) => entry.path) };
+    const a = document.createElement('a');
+    a.href = this.api.url('/files/download', query);
+    a.download = 'selection.zip';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  _downloadSelected() {
+    this._downloadEntries(this._entriesForSelectionMode());
+  }
+
   _uploadInto(targetPath) {
     const input = document.createElement('input');
     input.type = 'file';
@@ -854,6 +1450,51 @@ export class FileTree {
   }
 
   /**
+   * Ask the user for one target directory through a folder picker and move
+   * every selected top-level entry into that directory using `/files/move`.
+   */
+  async _moveEntriesPrompt(entries) {
+    const topLevelEntries = this._filterTopLevelEntries(entries);
+    if (topLevelEntries.length === 0) return;
+
+    const picker = new DirectoryPickerDialog({
+      api: this.api,
+      i18n: this.i18n,
+      toasts: this.toasts,
+      title: this.i18n.t('files.move_picker_title'),
+      confirmLabel: this.i18n.t('actions.move'),
+      initialPath: '',
+    });
+    const targetDir = await picker.open();
+    if (targetDir === null) return;
+
+    const operations = [];
+    for (const entry of topLevelEntries) {
+      const name = entry.path.split('/').pop();
+      const to = targetDir === '' ? name : `${targetDir}/${name}`;
+      if (to === entry.path || !this._canDropInto(entry, targetDir)) continue;
+      operations.push({ from: entry.path, to, type: entry.type });
+    }
+    if (operations.length === 0) return;
+
+    try {
+      for (const op of operations) {
+        await this.api.post('/files/move', { from: op.from, to: op.to });
+      }
+      this._ensurePathExpanded(targetDir);
+      this._replaceSelectionPaths(operations, { keepSources: false });
+      await this.refresh();
+      this.bus?.emit?.('files:changed', { action: 'move', items: operations });
+    } catch (e) {
+      this.toasts.error(e.message);
+    }
+  }
+
+  _moveSelectedPrompt() {
+    this._moveEntriesPrompt(this._entriesForSelectionMode());
+  }
+
+  /**
    * Resolve a file icon spec from the configured `file_icons` map.
    * Lookup order: full filename (lower-case) → extension (lower-case) → default.
    *
@@ -878,6 +1519,7 @@ export class FileTree {
   }
 
   _selectRow(row) {
+    if (this.selectionMode) return;
     this.host.querySelectorAll('.row.selected').forEach(r => r.classList.remove('selected'));
     row.classList.add('selected');
   }

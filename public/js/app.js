@@ -254,15 +254,33 @@ async function main() {
       fileTree.refresh();
     },
   });
-  bus.on('files:changed', () => fileTree?.refresh());
+  bus.on('files:changed', () => {
+    if (fileTree?._suspendRefreshOnce) {
+      fileTree._suspendRefreshOnce = false;
+      return;
+    }
+    fileTree?.refresh();
+  });
 
   // Auto-close editor tabs whose underlying file (or parent folder) was deleted.
   bus.on('files:changed', (payload) => {
-    if (payload?.action === 'delete' && payload.path !== undefined) {
-      tabs.closePath(payload.path);
+    if (payload?.action === 'delete') {
+      if (Array.isArray(payload.items)) {
+        payload.items.forEach((item) => {
+          if (item?.path !== undefined) tabs.closePath(item.path);
+        });
+      } else if (payload.path !== undefined) {
+        tabs.closePath(payload.path);
+      }
     }
-    if ((payload?.action === 'rename' || payload?.action === 'move') && payload.from !== undefined) {
-      tabs.closePath(payload.from);
+    if (payload?.action === 'rename' || payload?.action === 'move') {
+      if (Array.isArray(payload.items)) {
+        payload.items.forEach((item) => {
+          if (item?.from !== undefined) tabs.closePath(item.from);
+        });
+      } else if (payload.from !== undefined) {
+        tabs.closePath(payload.from);
+      }
     }
   });
   bus.on('git:file-discarded', (payload) => {

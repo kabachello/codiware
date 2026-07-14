@@ -225,7 +225,7 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/files/tree?root=&path=` | Lists directory entries with type, size, modified time, opened marker, and Git decoration when available. |
+| `GET` | `/files/tree?root=&path=` | Lists directory entries with type, size, modified time, opened marker and a `has_children` hint for folders. |
 | `GET` | `/files/read?root=&path=` | Reads text file content with detected encoding and MIME. |
 | `PUT` | `/files/write` | Writes text content and returns updated metadata. |
 | `POST` | `/files/create` | Creates file or directory. |
@@ -234,9 +234,20 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 | `POST` | `/files/duplicate` | Duplicates a file or directory in place using a `(copy)` suffix and collision-safe numbering. |
 | `DELETE` | `/files/delete?root=&path=` | Deletes file or directory. |
 | `GET` | `/files/download?root=&path=` | Downloads a file or streams a folder as zip. |
+| `GET` | `/files/download?root=&paths[]=` | Downloads multiple selected top-level items as one zip while preserving their relative paths. |
 | `POST` | `/files/upload?root=&path=` | Uploads one or more files. Zip uploads can be extracted with subfolders. |
 
 The explorer panel exposes duplicate for both files and folders via the row action menu and right-click context menu. The UI asks for the new sibling name first and pre-fills it with an `_copy` style suggestion for familiarity with the legacy IDE. After confirmation, the front-end performs a regular `/files/copy` call to that explicit target path. The `/files/duplicate` endpoint remains available for future non-interactive duplication flows and for consumers that prefer automatic `(copy)` naming.
+
+The explorer also supports an explicit multi-selection mode. A toolbar toggle reveals one checkbox column in the tree; while the mode is active, checked items can be moved together via drag and drop, deleted together, or downloaded together. Row menus automatically switch to a reduced bulk-action set when the clicked row belongs to a larger active selection so actions that require one concrete path, such as rename or duplicate, are not offered misleadingly.
+
+Bulk move now uses a dedicated directory picker dialog on the front end. It renders the current workspace as a directory-only tree, lets the user choose the destination folder explicitly and then performs one `/files/move` call per selected top-level item. The tree endpoint therefore exposes a lightweight `has_children` hint so the picker and explorer can suppress fake expand arrows on empty folders without extra round trips.
+
+Folder-only expand hints are stricter than the main explorer: `has_children` is now computed from visible subdirectories only, not from files. This keeps the move picker honest because expanding a folder there can reveal only more folders, never files.
+
+Multi-download keeps the existing `/files/download` endpoint and extends it with repeated `paths[]` query parameters. The front-end must preserve repeated keys when building the request URL; otherwise only the last selected path would reach PHP. When more than one path is passed, the back end builds one temporary ZIP containing every selected top-level item exactly once, preserving their relative workspace paths.
+
+The default filename of that archive is derived from the workspace alias in the format `{alias}_selection.zip`, for example `kabachello.Codiware_selection.zip`. This makes browser downloads easier to identify when users work with multiple app repositories at once.
 
 ### Git
 
@@ -544,6 +555,13 @@ The file tree supports:
 - Drag-to-move and ctrl-drag-to-copy.
 - Drag-and-drop upload for files and zip archives with subfolders.
 - Explicit duplicate actions for files and folders that first ask for the target sibling name, prefilled with an `_copy` suggestion, and then perform a regular copy.
+- A toggleable multi-selection mode with checkboxes for safe bulk actions in the explorer.
+- Bulk move, delete and download actions that operate on the top-level selected items only so selecting a folder and one of its children does not trigger duplicate work.
+- Multi-item drag and drop that reuses the same existing move/copy endpoints per selected item.
+- A directory-picker move dialog that shows only folders and the workspace root as valid destinations.
+- Multi-item download as one ZIP archive through repeated `paths[]` query parameters on the existing download endpoint.
+- Directory rows enriched with a `has_children` hint so empty folders do not render misleading expand handles in either the explorer or folder-only pickers.
+- Multi-download archives named after the current workspace alias so files from parallel repositories do not all arrive as the same generic `selection.zip`.
 
 ### Responsiveness
 
@@ -688,6 +706,7 @@ The console is intentionally narrower than a terminal:
 - Upload size limits are configurable.
 - Existing-file overwrite behavior is explicit.
 - Binary files are not read through text endpoints.
+- Multi-item downloads validate every selected relative path through `PathGuard` before they are added to the temporary ZIP.
 
 ## Error Handling and Logging
 
@@ -733,6 +752,7 @@ The initial release ships English only. The architecture assumes additional loca
 - Multi-root workspaces can be enabled by adding root selection APIs and extending file/search/git requests with the existing `root` parameter.
 - HTML WYSIWYG, ER diagram, diagramming, and advanced image editors can be added as manifest-driven editor modules and asset dependencies.
 - Hunk-level Git discard and apply can extend the existing diff endpoint with patch ranges.
+- The explorer's directory-picker dialog can later reuse a shared modal/list component if more folder-only workflows are added.
 
 ## Testing Strategy
 
@@ -767,6 +787,7 @@ Because the shipped package has no build step, browser tests should run against 
 - Add `EditorRegistry`, editor lifecycle contract, Monaco code editor, Markdown editor with Mermaid, and image preview. Complexity: Large.
 - Add adapter hooks for front-end library plugins, starting with Toast UI Editor plugins and Monaco language/completion providers. Complexity: Medium.
 - Add upload, download, zip handling, drag move/copy, context menus, and in-place duplicate actions. Complexity: Large.
+- Extend the explorer with toggleable bulk selection, shared bulk menus and multi-item drag/drop while still relying on the existing single-item file APIs internally. Complexity: Medium.
 
 **Phase 3: Git, Search, and Console**
 

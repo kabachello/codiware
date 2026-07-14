@@ -26,9 +26,15 @@ final class FileService
     /**
      * List directory entries for the file tree.
      *
-     * @return array<int,array{name:string,type:string,path:string,size:int,mtime:int,is_text:bool}>
+     * Each entry includes a `has_children` flag for directories so lazy trees
+     * can suppress expand affordances on empty folders without loading them a
+     * second time on the client. The optional `$foldersOnly` flag switches the
+     * child hint to a directory-only interpretation used by folder pickers,
+     * while the normal explorer keeps treating files as visible children.
+     *
+     * @return array<int,array{name:string,type:string,path:string,size:int,mtime:int,is_text:bool,has_children?:bool}>
      */
-    public function listDirectory(WorkspaceRoot $root, string $relative): array
+    public function listDirectory(WorkspaceRoot $root, string $relative, bool $foldersOnly = false): array
     {
         $abs = $this->guard->resolveInside($root, $relative);
         if (!is_dir($abs)) {
@@ -54,8 +60,11 @@ final class FileService
                 continue;
             }
             $isDir = is_dir($childAbs);
+            if ($foldersOnly && !$isDir) {
+                continue;
+            }
             $size = $isDir ? 0 : (int)(@filesize($childAbs) ?: 0);
-            $out[] = [
+            $entry = [
                 'name' => $name,
                 'type' => $isDir ? 'dir' : 'file',
                 'path' => $childRel,
@@ -63,6 +72,12 @@ final class FileService
                 'mtime' => (int)(@filemtime($childAbs) ?: 0),
                 'is_text' => $isDir ? false : $this->isLikelyText($childAbs),
             ];
+            if ($isDir) {
+                $entry['has_children'] = $foldersOnly
+                    ? $this->directoryHasVisibleDirectories($root, $childAbs, $childRel)
+                    : $this->directoryHasVisibleEntries($root, $childAbs, $childRel);
+            }
+            $out[] = $entry;
         }
         usort($out, function (array $a, array $b): int {
             if ($a['type'] !== $b['type']) {
@@ -250,6 +265,10 @@ final class FileService
         if (file_exists($dst)) {
             throw new CodiwareException('Destination already exists.', 'exists', 409, ['to' => $to]);
         }
+        $parent = dirname($dst);
+        if (!is_dir($parent) && !@mkdir($parent, 0775, true) && !is_dir($parent)) {
+            throw new CodiwareException('Cannot create destination directory.', 'mkdir_failed', 500, ['to' => $to]);
+        }
         if (!@rename($src, $dst)) {
             throw new CodiwareException('Cannot move.', 'move_failed', 500);
         }
@@ -308,13 +327,24 @@ final class FileService
     }
 
     /**
-     * Stream a file or zipped folder to the caller.
+     * Stream one file, one folder as ZIP, or multiple selected items as one ZIP.
      *
+     * An empty `$relative` still targets the whole workspace root. Passing
+     * multiple paths creates a temporary archive that preserves the relative
+     * folder structure of every selected top-level item.
+     *
+     * @param list<string> $relativePaths
      * @return array{abs:string,name:string,zip:bool,size:int}
      */
-    public function prepareDownload(WorkspaceRoot $root, string $relative): array
+    public function prepareDownload(WorkspaceRoot $root, string $relative = '', array $relativePaths = []): array
     {
-        $abs = $this->guard->resolveInside($root, $relative);
+        $normalizedPaths = $this->normalizeDownloadSelection($relative, $relativePaths);
+        if (count($normalizedPaths) > 1) {
+            return $this->prepareMultiDownload($root, $normalizedPaths);
+        }
+
+        $single = $normalizedPaths[0] ?? trim($relative, '/');
+        $abs = $this->guard->resolveInside($root, $single);
         if (is_file($abs)) {
             return ['abs' => $abs, 'name' => basename($abs), 'zip' => false, 'size' => (int)filesize($abs)];
         }
@@ -329,11 +359,12 @@ final class FileService
         if ($zip->open($tmp, \ZipArchive::OVERWRITE) !== true) {
             throw new CodiwareException('Cannot open zip for writing.', 'zip_failed', 500);
         }
-        $this->addFolderToZip($zip, $abs, basename($abs));
+        $localRoot = $single === '' ? basename($root->path()) : basename($abs);
+        $this->addFolderToZip($zip, $abs, $localRoot);
         $zip->close();
         return [
             'abs' => $tmp,
-            'name' => basename($abs) . '.zip',
+            'name' => ($single === '' ? basename($root->path()) : basename($abs)) . '.zip',
             'zip' => true,
             'size' => (int)(@filesize($tmp) ?: 0),
         ];
@@ -551,5 +582,147 @@ final class FileService
         if (!$hasChildren) {
             $zip->addEmptyDir($localRoot);
         }
+    }
+
+    /**
+     * Normalize the caller's download target into a distinct list of paths.
+     *
+     * The legacy single `path` parameter remains supported. When `paths[]` is
+     * present it takes precedence and empty values are ignored.
+     *
+     * @param list<string> $relativePaths
+     * @return list<string>
+     */
+    private function normalizeDownloadSelection(string $relative, array $relativePaths): array
+    {
+        $paths = [];
+        foreach ($relativePaths as $path) {
+            $clean = trim((string)$path, '/');
+            if ($clean === '') {
+                continue;
+            }
+            $paths[] = $clean;
+        }
+        if ($paths !== []) {
+            return array_values(array_unique($paths));
+        }
+        return [trim($relative, '/')];
+    }
+
+    /**
+     * Build one temporary ZIP containing every selected top-level item once.
+     *
+     * Files are added at their relative path, and directories keep their full
+     * subtree under that same relative root so mixed selections round-trip.
+     *
+     * @param list<string> $relativePaths
+     * @return array{abs:string,name:string,zip:bool,size:int}
+     */
+    private function prepareMultiDownload(WorkspaceRoot $root, array $relativePaths): array
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'codiware_zip_');
+        if ($tmp === false) {
+            throw new CodiwareException('Cannot create temp file.', 'temp_failed', 500);
+        }
+        $zip = new \ZipArchive();
+        if ($zip->open($tmp, \ZipArchive::OVERWRITE) !== true) {
+            throw new CodiwareException('Cannot open zip for writing.', 'zip_failed', 500);
+        }
+
+        foreach ($relativePaths as $relativePath) {
+            $abs = $this->guard->resolveInside($root, $relativePath);
+            $local = str_replace('\\', '/', trim($relativePath, '/'));
+            if (is_dir($abs)) {
+                $this->addFolderToZip($zip, $abs, $local);
+                continue;
+            }
+            if (!is_file($abs)) {
+                $zip->close();
+                throw new CodiwareException('Path is not a file or directory.', 'bad_path', 400, ['path' => $relativePath]);
+            }
+            $zip->addFile($abs, $local);
+        }
+
+        $zip->close();
+        return [
+            'abs' => $tmp,
+            'name' => $this->selectionArchiveName($root),
+            'zip' => true,
+            'size' => (int)(@filesize($tmp) ?: 0),
+        ];
+    }
+
+    /**
+     * Determine whether a directory contains at least one visible entry.
+     *
+     * The main explorer uses this broader variant so folders stay expandable
+     * whenever opening them would reveal either subfolders or files.
+     */
+    private function directoryHasVisibleEntries(WorkspaceRoot $root, string $absDir, string $relativeDir): bool
+    {
+        $items = @scandir($absDir);
+        if ($items === false) {
+            return false;
+        }
+        foreach ($items as $name) {
+            if ($name === '.' || $name === '..') {
+                continue;
+            }
+            $childRel = ($relativeDir === '' ? '' : $relativeDir . '/') . $name;
+            try {
+                $this->guard->resolveInside($root, $childRel);
+                return true;
+            } catch (CodiwareException) {
+                continue;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Determine whether a directory contains at least one visible subdirectory.
+     *
+     * The folder-only move picker uses this to suppress expand affordances on
+     * directories that would reveal no children because they contain only files
+     * or only entries rejected by `PathGuard`.
+     */
+    private function directoryHasVisibleDirectories(WorkspaceRoot $root, string $absDir, string $relativeDir): bool
+    {
+        $items = @scandir($absDir);
+        if ($items === false) {
+            return false;
+        }
+        foreach ($items as $name) {
+            if ($name === '.' || $name === '..') {
+                continue;
+            }
+            $childAbs = $absDir . DIRECTORY_SEPARATOR . $name;
+            if (!is_dir($childAbs)) {
+                continue;
+            }
+            $childRel = ($relativeDir === '' ? '' : $relativeDir . '/') . $name;
+            try {
+                $this->guard->resolveInside($root, $childRel);
+                return true;
+            } catch (CodiwareException) {
+                continue;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Build the default archive name for multi-download ZIP files from the workspace alias.
+     *
+     * The name ends with a timestamp so repeated downloads of the same
+     * repository are easier to distinguish in the browser download list.
+     */
+    private function selectionArchiveName(WorkspaceRoot $root): string
+    {
+        $alias = trim($root->alias);
+        if ($alias === '') {
+            $alias = 'selection';
+        }
+        return $alias . '_selection_' . date('YmdHis') . '.zip';
     }
 }

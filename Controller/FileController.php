@@ -31,8 +31,10 @@ final class FileController
     public function tree(ServerRequestInterface $request): ResponseInterface
     {
         $root = $this->root($request);
-        $path = (string)($request->getQueryParams()['path'] ?? '');
-        $entries = $this->files->listDirectory($root, $path);
+        $query = $request->getQueryParams();
+        $path = (string)($query['path'] ?? '');
+        $foldersOnly = $this->toBool($query['foldersOnly'] ?? false);
+        $entries = $this->files->listDirectory($root, $path, $foldersOnly);
         return $this->responses->ok([
             'root' => $root->toArray(),
             'path' => $path,
@@ -127,8 +129,10 @@ final class FileController
     public function download(ServerRequestInterface $request): ResponseInterface
     {
         $root = $this->root($request);
-        $path = (string)($request->getQueryParams()['path'] ?? '');
-        $info = $this->files->prepareDownload($root, $path);
+        $query = $request->getQueryParams();
+        $path = (string)($query['path'] ?? '');
+        $paths = $this->downloadPaths($query['paths'] ?? $query['paths[]'] ?? null);
+        $info = $this->files->prepareDownload($root, $path, $paths);
         $stream = @fopen($info['abs'], 'rb');
         if ($stream === false) {
             throw new CodiwareException('Cannot open file for download.', 'read_failed', 500);
@@ -203,6 +207,45 @@ final class FileController
             throw new CodiwareException('Request body must be a JSON object.', 'bad_request', 400);
         }
         return $decoded;
+    }
+
+    /**
+     * Normalize repeated `paths[]` query parameters into a clean string list.
+     *
+     * @param mixed $raw
+     * @return list<string>
+     */
+    private function downloadPaths(mixed $raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+        $paths = [];
+        foreach ($raw as $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $clean = trim((string)$value);
+            if ($clean === '') {
+                continue;
+            }
+            $paths[] = $clean;
+        }
+        return $paths;
+    }
+
+    /**
+     * Convert common query-string truthy values into a boolean flag.
+     */
+    private function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_scalar($value)) {
+            return in_array(strtolower((string)$value), ['1', 'true', 'yes', 'on'], true);
+        }
+        return false;
     }
 
     private function guessMime(string $name): ?string
