@@ -176,6 +176,7 @@ export class ImageEditor {
     this._name = 'image';
     this._url = '';
     this._themeObserver = null;
+    this._zoomControlListeners = [];
     host.innerHTML = '';
     host.style.display = 'block';
     host.style.position = 'relative';
@@ -229,6 +230,7 @@ export class ImageEditor {
       cssMaxHeight: 3000,
       usageStatistics: false,
     });
+    this._bindZoomControls();
 
     const establishCleanState = () => {
       this._editor.off('undoStackChanged', establishCleanState);
@@ -237,6 +239,42 @@ export class ImageEditor {
       this._bindDirtyTracking();
     };
     this._editor.on('undoStackChanged', establishCleanState);
+  }
+
+  _bindZoomControls() {
+    this._removeZoomControlListeners();
+    const bind = (selector, callback) => {
+      const button = this._el.querySelector(selector);
+      if (!button) return;
+      const handler = (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        callback();
+      };
+      button.addEventListener('click', handler, true);
+      this._zoomControlListeners.push({ button, handler });
+    };
+
+    bind('.tie-btn-zoomIn', () => this._zoomIn());
+    bind('.tie-btn-zoomOut', () => this._editor?._graphics?.zoomOut?.());
+  }
+
+  _removeZoomControlListeners() {
+    for (const { button, handler } of this._zoomControlListeners) {
+      button.removeEventListener('click', handler, true);
+    }
+    this._zoomControlListeners = [];
+  }
+
+  _zoomIn() {
+    const graphics = this._editor?._graphics;
+    const canvas = graphics?.getCanvas?.();
+    if (!graphics?.zoom || !canvas) return;
+    const center = canvas.getCenter();
+    graphics.zoom(
+      { x: center.x ?? center.left, y: center.y ?? center.top },
+      Math.min(canvas.getZoom() + 1, 4)
+    );
   }
 
   _bindDirtyTracking() {
@@ -254,6 +292,7 @@ export class ImageEditor {
     if (!this._editor || this._destroyed) return;
     let dataUrl = this._url;
     try { dataUrl = this._editor.toDataURL({ format: this._formatFromMime(this._mime) }); } catch (e) { /* ignore */ }
+    this._removeZoomControlListeners();
     try { this._editor.destroy?.(); } catch (e) { /* ignore */ }
     this._editor = null;
     this._createEditor(dataUrl);
@@ -281,6 +320,7 @@ export class ImageEditor {
       this._themeObserver.disconnect();
       this._themeObserver = null;
     }
+    this._removeZoomControlListeners();
     try { this._editor?.destroy?.(); } catch (e) { /* ignore */ }
     this._editor = null;
     this.host.innerHTML = '';
