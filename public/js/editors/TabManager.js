@@ -222,6 +222,29 @@ export class TabManager {
   async save(key) {
     const record = this.tabs.get(key);
     if (!record) return;
+    // Editors that persist binary or otherwise custom-encoded content expose a
+    // getSavePayload() returning { content, encoding }; text editors use the
+    // plain getContent() string path below.
+    if (typeof record.editor.getSavePayload === 'function') {
+      try {
+        const payload = record.editor.getSavePayload();
+        if (!payload || payload.content == null) return;
+        await this.api.put('/files/write', {
+          path: record.entry.path,
+          content: payload.content,
+          encoding: payload.encoding || 'utf8',
+        });
+        record.editor.markClean?.();
+        record.dirty = false;
+        record.tabEl.classList.remove('dirty');
+        if (record.dirtyBtn) record.dirtyBtn.style.display = 'none';
+        this.toasts.success(this.i18n.t('actions.save') + ' ✓');
+        this.bus.emit('file:saved', record);
+      } catch (e) {
+        this.toasts.error(e.message);
+      }
+      return;
+    }
     if (typeof record.editor.getContent !== 'function') return;
     try {
       // Allow editors to run async pre-save processing (e.g. the markdown

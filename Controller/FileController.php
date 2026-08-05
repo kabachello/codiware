@@ -64,10 +64,11 @@ final class FileController
         $body = $this->decodeJson($request);
         $path = (string)($body['path'] ?? '');
         $content = (string)($body['content'] ?? '');
+        $encoding = (string)($body['encoding'] ?? 'utf8');
         if ($path === '') {
             throw new CodiwareException('path is required.', 'bad_request', 400);
         }
-        return $this->responses->ok($this->files->writeText($root, $path, $content));
+        return $this->responses->ok($this->files->writeText($root, $path, $content, $encoding));
     }
 
     public function create(ServerRequestInterface $request): ResponseInterface

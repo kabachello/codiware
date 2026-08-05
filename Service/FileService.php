@@ -192,8 +192,17 @@ final class FileService
     /**
      * @return array{path:string,size:int,mtime:int}
      */
-    public function writeText(WorkspaceRoot $root, string $relative, string $content): array
+    public function writeText(WorkspaceRoot $root, string $relative, string $content, string $encoding = 'utf8'): array
     {
+        // Binary editors (e.g. the image editor) transport their payload as
+        // base64 so it survives the JSON body untouched; decode it here.
+        if ($encoding === 'base64') {
+            $decoded = base64_decode($content, true);
+            if ($decoded === false) {
+                throw new CodiwareException('Invalid base64 content.', 'bad_request', 400, ['path' => $relative]);
+            }
+            $content = $decoded;
+        }
         $max = (int)($this->config->get('MAX_UPLOAD_BYTES', 52428800) ?? 52428800);
         if (strlen($content) > $max) {
             throw new CodiwareException(

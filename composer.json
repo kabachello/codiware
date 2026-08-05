@@ -13,6 +13,7 @@
         "symfony/process": "^5.4 || ^6.4 || ^7.0",
         "npm-asset/font-awesome": "4.7",
         "npm-asset/toast-ui--editor": "^3.1",
+        "npm-asset/tui-image-editor": "^3",
         "npm-asset/xterm--xterm": "^6",
         "guzzlehttp/psr7": "^2.0"
     },
