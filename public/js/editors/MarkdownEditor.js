@@ -191,6 +191,7 @@ export class MarkdownEditor {
     this.listeners = { change: [], 'save-request': [] };
     this._themeObserver = null;
     this._previewObserver = null;
+    this._wwObserver = null;
     // True while content is being loaded programmatically, used to suppress
     // the synthetic change event Toast UI fires during setMarkdown().
     this._loading = false;
@@ -247,6 +248,27 @@ export class MarkdownEditor {
     const preview = this.editorEl.querySelector('.toastui-editor-md-preview .toastui-editor-contents');
     if (!preview) return;
     preview.querySelectorAll('img[src]').forEach((img) => {
+      const raw = img.getAttribute('src') || '';
+      if (this._isRelativeSrc(raw)) {
+        img.src = this._resolveSrc(raw);
+      }
+    });
+  }
+
+  /**
+   * Rewrite relative `src` of every image rendered in the WYSIWYG (ProseMirror)
+   * editor. The WYSIWYG image node renders its stored `src` verbatim, so a
+   * freshly pasted relative path (e.g. `images/x.png`) would resolve against
+   * the page URL and show broken until the next mode switch. Only the rendered
+   * `<img>` element is changed; ProseMirror's image node view has no contentDOM
+   * and therefore ignores this attribute mutation, so the node keeps its
+   * relative path and the saved markdown stays relative.
+   */
+  _rewriteWysiwygImages() {
+    if (!this.editorEl) return;
+    const container = this.editorEl.querySelector('.toastui-editor-ww-container .toastui-editor-contents');
+    if (!container) return;
+    container.querySelectorAll('img[src]').forEach((img) => {
       const raw = img.getAttribute('src') || '';
       if (this._isRelativeSrc(raw)) {
         img.src = this._resolveSrc(raw);
@@ -371,6 +393,23 @@ export class MarkdownEditor {
           };
         },
       },
+      hooks: {
+        // Upload images the moment they are pasted or selected, then insert a
+        // relative link to the saved file instead of embedding a base64 data
+        // URI. On failure, fall back to the default inline embedding so the
+        // image is never lost (beforeSave() retries externalizing on save).
+        addImageBlobHook: (blob, callback) => {
+          this._uploadImageBlob(blob, this._imageFileName(blob))
+            .then((relPath) => callback(relPath, blob.name || 'image'))
+            .catch((e) => {
+              console.error('Codiware: image upload failed, embedding inline instead', e);
+              const reader = new FileReader();
+              reader.onload = () => callback(reader.result, blob.name || 'image');
+              reader.readAsDataURL(blob);
+            });
+          return false;
+        },
+      },
     };
 
     this.editor = typeof Editor.factory === 'function'
@@ -428,6 +467,19 @@ export class MarkdownEditor {
       preview.addEventListener('click', (e) => this._onPreviewClick(e));
     }
 
+    // Rewrite relative image sources in the WYSIWYG editor as they appear.
+    // Covers images freshly pasted while in WYSIWYG mode, which would otherwise
+    // render broken until a mode switch re-resolves them.
+    const wwContents = this.editorEl.querySelector('.toastui-editor-ww-container .toastui-editor-contents');
+    this._wwObserver = new MutationObserver(() => this._rewriteWysiwygImages());
+    this._wwObserver.observe(wwContents || this.editorEl, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src'],
+    });
+    this._rewriteWysiwygImages();
+
     // Load the Mermaid library (if configured) and render any diagrams already
     // present in the initial preview.
     loadMermaid().then(() => this._refreshMermaid());
@@ -484,6 +536,113 @@ export class MarkdownEditor {
     return this.editor ? this.editor.getMarkdown() : this.originalContent;
   }
 
+  /**
+   * Async pre-save hook invoked by the owning tab before the markdown is
+   * written to disk. Images pasted or uploaded into the editor are already
+   * externalized on paste via `addImageBlobHook`, so this is a fallback that
+   * catches any remaining inline base64 images (e.g. from pasted markdown/HTML
+   * text or documents saved before that feature existed): it writes each into
+   * an `images` folder next to the markdown file and replaces the data URI with
+   * a relative link. Identical data URIs are uploaded only once.
+   *
+   * No-op when there are no inline images, so files without them are saved
+   * verbatim. Only relevant for the Toast UI markdown editor; the Monaco editor
+   * never produces inline data URIs and does not implement this hook.
+   */
+  async beforeSave() {
+    if (!this.editor) return;
+    const markdown = this.editor.getMarkdown();
+    // Match base64 image data URIs regardless of whether they appear in
+    // markdown `![]()` syntax or raw `<img src="">` tags, so replacing the URI
+    // itself preserves the surrounding markup.
+    const dataUriRegex = /data:image\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)/g;
+    const matches = [...markdown.matchAll(dataUriRegex)];
+    if (matches.length === 0) return;
+
+    // Map each unique data URI to the relative link of its saved file so the
+    // same image referenced multiple times is only uploaded once.
+    const uploads = new Map();
+    for (const match of matches) {
+      const dataUri = match[0];
+      if (uploads.has(dataUri)) continue;
+      const blob = this._dataUriToBlob(dataUri);
+      const relPath = await this._uploadImageBlob(blob, this._imageFileName(blob));
+      uploads.set(dataUri, relPath);
+    }
+
+    let newMarkdown = markdown;
+    for (const [dataUri, relPath] of uploads) {
+      newMarkdown = newMarkdown.split(dataUri).join(relPath);
+    }
+
+    if (newMarkdown !== markdown) {
+      // Sync the editor with the externalized links. Suppress the change event
+      // so the tab keeps its clean baseline (the tab calls markClean() right
+      // after this content is written to disk).
+      this._loading = true;
+      this.editor.setMarkdown(newMarkdown, false);
+      this._loading = false;
+      this._rewritePreviewImages();
+      this._refreshMermaid();
+    }
+  }
+
+  /**
+   * Upload one image blob into the `images` folder next to the markdown file
+   * and return the markdown-relative link (`images/<name>`). Notifies the shell
+   * so the file tree reflects the new file.
+   */
+  async _uploadImageBlob(blob, fileName) {
+    const imagesDir = this._currentDir ? this._currentDir + '/images' : 'images';
+    const fd = new FormData();
+    fd.append('file', blob, fileName);
+    const res = await this.ctx.api.request('POST', '/files/upload', {
+      query: { path: imagesDir, autoname: 1 },
+      body: fd,
+    });
+    const saved = Array.isArray(res?.uploaded) ? res.uploaded[0] : null;
+    const savedName = saved?.path ? saved.path.split('/').pop() : fileName;
+    this.ctx?.bus?.emit?.('files:changed', { action: 'upload', path: imagesDir });
+    return 'images/' + savedName;
+  }
+
+  /**
+   * Decode a base64 `data:` URI into a Blob suitable for multipart upload.
+   */
+  _dataUriToBlob(dataUri) {
+    const comma = dataUri.indexOf(',');
+    const meta = dataUri.slice(0, comma);
+    const base64 = dataUri.slice(comma + 1);
+    const mime = /data:([^;]+)/.exec(meta)?.[1] || 'application/octet-stream';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  /**
+   * Map a `data:image/<subtype>` subtype to a file extension.
+   */
+  _imageExtFromSubtype(subtype) {
+    const map = { jpeg: 'jpg', 'svg+xml': 'svg', 'x-icon': 'ico' };
+    return map[subtype] || subtype.replace(/[^a-z0-9]/g, '') || 'png';
+  }
+
+  /**
+   * Build the base file name for an image blob. The server turns this into a
+   * sequential `<stem>_NN.<ext>` name (e.g. `image_01.png`). Uses the original
+   * file name stem when available (toolbar uploads), otherwise `image`.
+   */
+  _imageFileName(blob) {
+    const subtype = ((blob.type || '').split('/')[1] || 'png').toLowerCase();
+    const ext = this._imageExtFromSubtype(subtype);
+    const stem = (blob.name || '')
+      .replace(/\.[^./\\]+$/, '')
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '') || 'image';
+    return `${stem}.${ext}`;
+  }
+
   isDirty() {
     return this.getContent() !== this.originalContent;
   }
@@ -524,6 +683,10 @@ export class MarkdownEditor {
     if (this._previewObserver) {
       this._previewObserver.disconnect();
       this._previewObserver = null;
+    }
+    if (this._wwObserver) {
+      this._wwObserver.disconnect();
+      this._wwObserver = null;
     }
     if (this.editor) {
       this.editor.destroy();

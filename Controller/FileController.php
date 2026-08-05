@@ -152,6 +152,7 @@ final class FileController
         $params = $request->getQueryParams();
         $target = (string)($params['path'] ?? '');
         $extract = isset($params['extract']) && in_array($params['extract'], ['1', 'true', 'yes'], true);
+        $autoName = isset($params['autoname']) && in_array($params['autoname'], ['1', 'true', 'yes'], true);
 
         $uploaded = $request->getUploadedFiles();
         if ($uploaded === []) {
@@ -177,7 +178,7 @@ final class FileController
                     'tmp_name' => $tmp,
                     'size' => (int)($file->getSize() ?? 0),
                     'error' => $file->getError(),
-                ], $extract);
+                ], $extract, $autoName);
                 @unlink($tmp);
             }
         }

@@ -128,6 +128,9 @@ window.Codiware.registerEditor({
 
 Each editor implements `load(content, meta)`, `getContent()`, `isDirty()`,
 `markClean()`, `destroy()`, and an optional `on('change'|'save-request', fn)`.
+An editor may also implement an optional async `beforeSave()` hook that runs
+before the content is written to disk (used by the markdown editor to
+externalize pasted inline images into separate files).
 
 Adding a richer editor library (Monaco, CodeMirror 6, Toast UI):
 

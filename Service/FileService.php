@@ -373,9 +373,13 @@ final class FileService
     /**
      * Save one uploaded file under `$targetDir` (relative to root). Returns saved path.
      *
+     * When `$autoName` is true, the file name is turned into a sequential,
+     * zero-padded `<stem>_NN.<ext>` (e.g. `image_01.png`, `image_02.png`) by
+     * picking the lowest number not yet taken in the target directory.
+     *
      * @param array{name:string,tmp_name:string,size:int,error:int} $uploaded
      */
-    public function saveUpload(WorkspaceRoot $root, string $targetDir, array $uploaded, bool $extractZip = false): array
+    public function saveUpload(WorkspaceRoot $root, string $targetDir, array $uploaded, bool $extractZip = false, bool $autoName = false): array
     {
         if (($uploaded['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             throw new CodiwareException('Upload failed.', 'upload_failed', 400, ['error' => $uploaded['error'] ?? null]);
@@ -437,6 +441,25 @@ final class FileService
         }
 
         $rel = ($relTarget === '' ? '' : $relTarget . '/') . $name;
+        // Create the target directory up front. resolveInside(mustExist:false)
+        // validates a not-yet-existing file against its parent, so uploading
+        // into a still-missing subfolder (e.g. an `images/` folder) would fail
+        // with "parent_not_found" unless the directory is created first.
+        if ($relTarget !== '') {
+            $absTargetDir = $this->guard->resolveInside($root, $relTarget, mustExist: false);
+            if (!is_dir($absTargetDir) && !@mkdir($absTargetDir, 0775, true) && !is_dir($absTargetDir)) {
+                throw new CodiwareException('Cannot create destination directory.', 'mkdir_failed', 500, ['path' => $relTarget]);
+            }
+        }
+        // Assign a sequential name (e.g. image_01.png) when requested, using the
+        // lowest number still free in the target directory.
+        if ($autoName) {
+            $name = $this->nextNumberedName($name, function (string $candidate) use ($root, $relTarget): bool {
+                $candidateRel = ($relTarget === '' ? '' : $relTarget . '/') . $candidate;
+                return file_exists($this->guard->resolveInside($root, $candidateRel, mustExist: false));
+            });
+            $rel = ($relTarget === '' ? '' : $relTarget . '/') . $name;
+        }
         $abs = $this->guard->resolveInside($root, $rel, mustExist: false);
         if (file_exists($abs)) {
             throw new CodiwareException('File already exists at destination.', 'exists', 409, ['path' => $rel]);
@@ -467,6 +490,31 @@ final class FileService
         $name = basename($name);
         $name = preg_replace('/[\x00-\x1F]/', '', $name) ?? '';
         return $name !== '' ? $name : 'upload';
+    }
+
+    /**
+     * Return the lowest free `<stem>_NN.<ext>` name (two-digit, zero-padded,
+     * starting at 01) for `$name` in a directory, using `$exists` to test each
+     * candidate. Extensionless names get a plain `_NN` suffix.
+     */
+    private function nextNumberedName(string $name, callable $exists): string
+    {
+        $extension = pathinfo($name, PATHINFO_EXTENSION);
+        $stem = pathinfo($name, PATHINFO_FILENAME);
+        if ($stem === '') {
+            $stem = 'file';
+        }
+        $index = 1;
+        while (true) {
+            $suffix = str_pad((string)$index, 2, '0', STR_PAD_LEFT);
+            $candidate = $extension === ''
+                ? $stem . '_' . $suffix
+                : $stem . '_' . $suffix . '.' . $extension;
+            if (!$exists($candidate)) {
+                return $candidate;
+            }
+            $index++;
+        }
     }
 
     private function nextDuplicateName(string $name, callable $exists): string

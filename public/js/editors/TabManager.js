@@ -223,9 +223,14 @@ export class TabManager {
     const record = this.tabs.get(key);
     if (!record) return;
     if (typeof record.editor.getContent !== 'function') return;
-    const content = record.editor.getContent();
-    if (content === null) return;
     try {
+      // Allow editors to run async pre-save processing (e.g. the markdown
+      // editor externalizes any leftover inline base64 images into files).
+      if (typeof record.editor.beforeSave === 'function') {
+        await record.editor.beforeSave();
+      }
+      const content = record.editor.getContent();
+      if (content === null) return;
       await this.api.put('/files/write', { path: record.entry.path, content });
       record.editor.markClean?.();
       record.dirty = false;
