@@ -112,31 +112,62 @@ final class GitService
     }
 
     /**
-     * @return array{old:string,new:string,old_ref:string,path:string,staged:bool}
+     * Build the two sides of a Git diff for the working tree or the index.
+     *
+     * Text files keep the legacy `old`/`new` string fields used by the Monaco
+     * diff editor. Raster images return `type: image` plus data-URL based
+     * `old_image`/`new_image` fields so JSON encoding never sees raw binary
+     * bytes. Missing sides are marked with `exists: false` for added/deleted
+     * files and are rendered as empty panes by the image diff editor.
+     *
+     * @return array<string,mixed>
      */
     public function diff(WorkspaceRoot $root, string $path, bool $staged = false): array
     {
         $this->requireRepo($root);
         $absPath = $root->path . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
-        $oldRef = $staged ? 'HEAD' : ':0'; // :0 = index version
+
         $newContent = '';
+        $newExists = false;
         if (!$staged && is_file($absPath)) {
-            $newContent = (string)@file_get_contents($absPath);
+            $fileContent = @file_get_contents($absPath);
+            if ($fileContent !== false) {
+                $newContent = $fileContent;
+                $newExists = true;
+            }
         } elseif ($staged) {
-            // For staged diffs, "new" is what's in the index.
             try {
                 $newContent = $this->run($root, ['show', ':' . $path], expectExit: [0]);
+                $newExists = true;
             } catch (CodiwareException) {
                 $newContent = '';
+                $newExists = false;
             }
         }
+
         $oldContent = '';
+        $oldExists = false;
         try {
             $oldContent = $this->run($root, ['show', 'HEAD:' . $path], expectExit: [0]);
+            $oldExists = true;
         } catch (CodiwareException) {
             $oldContent = '';
+            $oldExists = false;
         }
+
+        if ($this->isRasterImagePath($path)) {
+            return [
+                'type' => 'image',
+                'path' => $path,
+                'staged' => $staged,
+                'old_ref' => 'HEAD',
+                'old_image' => $this->imageSide($path, $oldContent, $oldExists),
+                'new_image' => $this->imageSide($path, $newContent, $newExists),
+            ];
+        }
+
         return [
+            'type' => 'text',
             'path' => $path,
             'staged' => $staged,
             'old_ref' => 'HEAD',
@@ -536,27 +567,44 @@ final class GitService
      * Build the two sides of a diff for a single file introduced by a commit:
      * the parent version (`old`) and the committed version (`new`). Missing
      * sides (added/deleted files, root commit) resolve to empty strings so the
-     * diff editor can render additions and deletions cleanly.
+     * diff editor can render additions and deletions cleanly. Raster images are
+     * returned as base64 data URLs instead of raw binary strings.
      *
-     * @return array{path:string,old:string,new:string}
+     * @return array<string,mixed>
      */
     public function commitFileDiff(WorkspaceRoot $root, string $commit, string $path, ?string $oldPath = null): array
     {
         $this->requireRepo($root);
         $parentPath = $oldPath !== null && $oldPath !== '' ? $oldPath : $path;
         $new = '';
+        $newExists = false;
         try {
             $new = $this->run($root, ['show', $commit . ':' . $path]);
+            $newExists = true;
         } catch (CodiwareException) {
             $new = '';
+            $newExists = false;
         }
         $old = '';
+        $oldExists = false;
         try {
             $old = $this->run($root, ['show', $commit . '^:' . $parentPath]);
+            $oldExists = true;
         } catch (CodiwareException) {
             $old = '';
+            $oldExists = false;
         }
-        return ['path' => $path, 'old' => $old, 'new' => $new];
+
+        if ($this->isRasterImagePath($path) || $this->isRasterImagePath($parentPath)) {
+            return [
+                'type' => 'image',
+                'path' => $path,
+                'old_image' => $this->imageSide($parentPath, $old, $oldExists),
+                'new_image' => $this->imageSide($path, $new, $newExists),
+            ];
+        }
+
+        return ['type' => 'text', 'path' => $path, 'old' => $old, 'new' => $new];
     }
 
     public function show(WorkspaceRoot $root, string $commit, string $path): string
@@ -662,6 +710,48 @@ final class GitService
             throw new CodiwareException('commit is required.', 'bad_request', 400);
         }
         return $target;
+    }
+
+    /**
+     * Determine whether a path should be rendered by the image diff editor.
+     */
+    private function isRasterImagePath(string $path): bool
+    {
+        return preg_match('/\.(png|jpe?g|gif|webp|bmp)$/i', $path) === 1;
+    }
+
+    /**
+     * Resolve the browser MIME type used in image diff data URLs.
+     */
+    private function imageMime(string $path): string
+    {
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        return match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'bmp' => 'image/bmp',
+            default => 'image/png',
+        };
+    }
+
+    /**
+     * Convert one optional image blob to the JSON-safe shape used by the client.
+     *
+     * @return array{exists:bool,mime:string,src:?string,size:int}
+     */
+    private function imageSide(string $path, string $content, bool $exists): array
+    {
+        $mime = $this->imageMime($path);
+        if (!$exists) {
+            return ['exists' => false, 'mime' => $mime, 'src' => null, 'size' => 0];
+        }
+        return [
+            'exists' => true,
+            'mime' => $mime,
+            'src' => 'data:' . $mime . ';base64,' . base64_encode($content),
+            'size' => strlen($content),
+        ];
     }
 
     /**

@@ -701,20 +701,21 @@ export class TabManager {
 
   /**
    * Open a diff view for a file. Used by the git panel to show changes.
-   * @param {Object} options - { path: string, staged: boolean, diffData: { old: string, new: string }, key?: string, label?: string, readOnly?: boolean }
+   * @param {Object} options - { path: string, staged: boolean, diffData: { old: string, new: string, type?: string }, key?: string, label?: string, readOnly?: boolean }
    */
   openDiff({ path, staged, diffData, key: customKey, label: customLabel, readOnly = false }) {
-    // Use a unique key that distinguishes staged vs working-copy diffs
+    // Use a unique key that distinguishes staged vs working-copy diffs.
     const key = customKey || `diff:${staged ? 'staged' : 'working'}:${path}`;
     if (this.tabs.has(key)) {
       this.activate(key);
       return;
     }
 
-    // Look up the diff editor descriptor by ID
-    const descriptor = this.registry.getById('codiware.diff');
+    const isImageDiff = diffData?.type === 'image';
+    const descriptorId = isImageDiff ? 'codiware.diffImage' : 'codiware.diff';
+    const descriptor = this.registry.getById(descriptorId);
     if (!descriptor) {
-      this.toasts.error('Diff editor not available');
+      this.toasts.error(isImageDiff ? 'Image diff editor not available' : 'Diff editor not available');
       return;
     }
 
@@ -731,7 +732,8 @@ export class TabManager {
 
     const pinBtn = this._createPinButton(key, { disabled: true });
 
-    // Dirty indicator (floppy icon) for diff tabs
+    // Dirty indicator (floppy icon) for editable text diff tabs. Image diffs
+    // are read-only and never emit changes, so the icon stays hidden there.
     const dirtyBtn = document.createElement('span');
     dirtyBtn.className = 'ide-tab-dirty';
     dirtyBtn.title = this.i18n.t('actions.save');
@@ -771,14 +773,19 @@ export class TabManager {
     this.tabBar.appendChild(tabEl);
     this._syncTabOrderFromDom();
 
-    // Load the diff data
-    editor.load({
-      original: diffData.old || '',
-      modified: diffData.new || '',
-      path: path,
-      staged: staged,
-      readOnly: readOnly,
-    });
+    // Load the diff data. Image diff payloads are already JSON-safe data URLs;
+    // text diff payloads keep the Monaco `original`/`modified` contract.
+    if (isImageDiff) {
+      editor.load({ ...diffData, path, staged, readOnly });
+    } else {
+      editor.load({
+        original: diffData.old || '',
+        modified: diffData.new || '',
+        path: path,
+        staged: staged,
+        readOnly: readOnly,
+      });
+    }
 
     this.activate(key);
   }

@@ -94,6 +94,9 @@
   "git.no_matching_changes": "No matching changed files",
 
   "diff.revert_block": "Revert this block",
+  "diff.image_old": "Old image",
+  "diff.image_new": "New image",
+  "diff.image_empty": "(empty)",
 
   "search.title": "Search",
   "search.placeholder": "Search workspace…",

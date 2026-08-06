@@ -1,3 +1,5 @@
+import { diffImageEditorDescriptor } from './DiffImageEditor.js';
+
 /**
  * Editor registry. Maps file extension / mime to an editor factory.
  *
@@ -21,6 +23,10 @@
 export class EditorRegistry {
   constructor() {
     this.entries = [];
+    // Image diffs are a programmatic editor opened from Git diff payloads, not
+    // from normal file type detection. Registering it here keeps TabManager's
+    // diff routing independent from the app bootstrap registration order.
+    this.register(diffImageEditorDescriptor);
   }
 
   register(descriptor) {
