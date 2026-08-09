@@ -249,13 +249,19 @@ export class GitPanel {
           this.i18n.t('git.stage_all') || 'Stage all',
           () => this._stage(paths)
         ));
-        header.appendChild(iconBtn(
-          'fa fa-undo',
-          key === 'untracked'
-            ? (this.i18n.t('git.discard_all_untracked') || 'Discard all untracked files')
-            : (this.i18n.t('git.discard_all') || 'Discard all changes'),
-          () => this._discard(paths)
-        ));
+        if (key === 'untracked') {
+          header.appendChild(iconBtn(
+            'fa fa-trash-o',
+            this.i18n.t('git.delete_all_untracked') || 'Delete all untracked files',
+            () => this._deleteUntracked(paths)
+          ));
+        } else {
+          header.appendChild(iconBtn(
+            'fa fa-undo',
+            this.i18n.t('git.discard_all') || 'Discard all changes',
+            () => this._discard(paths)
+          ));
+        }
       }
       this.body.appendChild(header);
       if (!this._collapsed[key]) {
@@ -360,7 +366,11 @@ export class GitPanel {
       actions.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
     } else {
       actions.append(this._iconBtn('fa fa-plus', this.i18n.t('git.stage') || 'Stage', () => this._stage([f.path])));
-      actions.append(this._iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
+      if (group === 'untracked' || f?.untracked) {
+        actions.append(this._iconBtn('fa fa-trash-o', this.i18n.t('git.delete_untracked') || 'Delete untracked file', () => this._deleteUntracked([f.path])));
+      } else {
+        actions.append(this._iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
+      }
     }
 
     actions.append(this._menuBtn(f, group));
@@ -420,6 +430,7 @@ export class GitPanel {
   }
 
   _menuItemsForFile(file, group) {
+    const isUntracked = group === 'untracked' || file?.untracked;
     const items = [
       { icon: 'fa fa-exchange', label: this.i18n.t('git.view_diff') || 'View diff', onClick: () => this._openDiff(file.path, group === 'staged') },
       { icon: 'fa fa-file-o', label: this.i18n.t('git.open_regular_editor') || 'Open in regular editor', onClick: () => this._openFile(file.path) },
@@ -431,9 +442,10 @@ export class GitPanel {
     } else {
       items.push({ sep: true });
       items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.stage') || 'Stage', onClick: () => this._stage([file.path]) });
-      items.push({ icon: 'fa fa-undo', label: this.i18n.t('git.discard') || 'Discard', onClick: () => this._discard([file.path]) });
-      if (group === 'untracked' || file?.untracked) {
-        items.push({ icon: 'fa fa-trash-o', label: this.i18n.t('actions.delete') || 'Delete', onClick: () => this._deleteUntracked(file.path) });
+      if (isUntracked) {
+        items.push({ icon: 'fa fa-trash-o', label: this.i18n.t('git.delete_untracked') || 'Delete untracked file', onClick: () => this._deleteUntracked([file.path]) });
+      } else {
+        items.push({ icon: 'fa fa-undo', label: this.i18n.t('git.discard') || 'Discard', onClick: () => this._discard([file.path]) });
       }
     }
 
@@ -444,12 +456,30 @@ export class GitPanel {
     this.onOpenFile({ path, name: path.split('/').pop() });
   }
 
-  async _deleteUntracked(path) {
-    const message = this.i18n.t('files.confirm_delete', { path }) || `Delete ${path}?`;
+  /**
+   * Delete one or more untracked files through the regular file API.
+   *
+   * Git cannot discard untracked files with `git checkout --`, so untracked
+   * rows expose a delete action instead. Every deleted path is announced over
+   * the shared `files:changed` bus event so the explorer and open tabs can
+   * refresh just like after a delete from the file tree.
+   */
+  async _deleteUntracked(paths) {
+    const list = Array.isArray(paths) ? paths.filter(Boolean) : [paths].filter(Boolean);
+    if (list.length === 0) return;
+    const message = list.length === 1
+      ? (this.i18n.t('files.confirm_delete', { path: list[0] }) || `Delete ${list[0]}?`)
+      : (this.i18n.t('files.confirm_delete_multiple', { count: list.length }) || `Delete ${list.length} selected items?`);
     if (!window.confirm(message)) return;
     try {
-      await this.api.delete('/files/delete', { path });
-      this.bus?.emit?.('files:changed', { action: 'delete', path });
+      for (const path of list) {
+        await this.api.delete('/files/delete', { path });
+      }
+      this.bus?.emit?.('files:changed', {
+        action: 'delete',
+        path: list.length === 1 ? list[0] : undefined,
+        items: list.map((path) => ({ path })),
+      });
       this.refresh();
     } catch (e) {
       this.toasts.error(e.message);

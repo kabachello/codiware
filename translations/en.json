@@ -84,6 +84,8 @@
   "git.unstage_all": "Unstage all",
   "git.discard_all": "Discard all changes",
   "git.discard_all_untracked": "Discard all untracked files",
+  "git.delete_untracked": "Delete untracked file",
+  "git.delete_all_untracked": "Delete all untracked files",
   "git.confirm_discard_single": "Discard local changes to",
   "git.confirm_discard_multiple": "Discard local changes to",
   "git.files_label": "files",
