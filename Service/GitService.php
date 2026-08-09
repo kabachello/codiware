@@ -51,13 +51,20 @@ final class GitService
     }
 
     /**
+     * Read the current repository status as file-level entries for the Git panel.
+     *
+     * Untracked directories are expanded with `--untracked-files=all` so the UI
+     * receives concrete file paths instead of one synthetic `folder/` row. This
+     * keeps diff, stage and delete actions identical for new files no matter
+     * whether their parent folder was already tracked by Git.
+     *
      * @return array{branch:?string,upstream:?string,ahead:int,behind:int,clean:bool,files:array<int,array{path:string,index:string,worktree:string,staged:bool,changed:bool,untracked:bool,conflict:bool,renamed_from:?string}>}
      */
     public function status(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
         // -z separator avoids quoting issues for paths with spaces/utf-8.
-        $out = $this->run($root, ['status', '--porcelain=v2', '--branch', '-z']);
+        $out = $this->run($root, ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z']);
         return $this->parseStatusV2($out);
     }
 
@@ -872,7 +879,8 @@ final class GitService
             }
             $marker = $rec[0];
             if ($marker === '?') {
-                // "? path"
+                // "? path". Status is called with --untracked-files=all, so
+                // paths here are concrete files, not synthetic untracked folders.
                 $path = substr($rec, 2);
                 $files[] = $this->file($path, '?', '?', staged: false, changed: false, untracked: true, conflict: false);
                 $i++;
