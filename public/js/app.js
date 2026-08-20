@@ -291,6 +291,7 @@ async function main() {
 
   if (boot.features?.git !== false && workspace.is_git) {
     let gitPanel;
+    let gitStatusInvalidated = false;
     const hasGitIdentity = typeof boot.user?.has_git_identity === 'boolean'
       ? boot.user.has_git_identity
       : Boolean((boot.user?.name || '').trim() && (boot.user?.email || '').trim());
@@ -301,7 +302,7 @@ async function main() {
           api, i18n, toasts, bus,
           user: boot.user || {},
           hasGitIdentity,
-          initialStatus: boot.git?.initial_status || null,
+          initialStatus: gitStatusInvalidated ? null : (boot.git?.initial_status || null),
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
           onOpenHistory: () => bottomPanels.activate('history', { expand: true }),
           onOpenFile: (entry) => tabs.open(entry),
@@ -328,6 +329,22 @@ async function main() {
     bus.on('file:saved', () => footerGit.refresh());
     bus.on('files:changed', () => footerGit.refresh());
     bus.on('git:status-updated', (status) => footerGit.updateFromStatus(status));
+    // History-panel actions such as "Create branch from commit" bypass the
+    // Git sidebar UI but still change the same repository state. Invalidate the
+    // boot status, refresh the mounted Git panel when possible and otherwise
+    // refresh the footer directly so all visible branch indicators converge.
+    bus.on('git:branch-changed', (payload) => {
+      gitStatusInvalidated = true;
+      if (payload?.status) {
+        footerGit.updateFromStatus(payload.status);
+        return;
+      }
+      if (gitPanel) {
+        gitPanel.refresh();
+        return;
+      }
+      footerGit.refresh();
+    });
     window.addEventListener('focus', () => footerGit.refresh());
     window.setInterval(() => footerGit.refresh(), 30000);
     footerGit.refresh();
