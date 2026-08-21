@@ -1,4 +1,4 @@
-/** Source-control sidebar panel. */
+/** Source-control sidebar panel (Git-Panel). */
 import { Icon } from '../core/Icon.js';
 import { PopupMenu } from '../core/PopupMenu.js';
 
@@ -16,6 +16,7 @@ export class GitPanel {
     this.filterText = '';
     this._lastStatus = initialStatus || null;
     this._branchMenuLoading = false;
+    this._statusRequestSeq = 0;
     bus.on('file:saved', () => this.refresh());
   }
 
@@ -72,23 +73,49 @@ export class GitPanel {
   /** Refresh status from the Git API and re-render all status-dependent UI. */
   async refresh() {
     if (!this.body) return;
+    const requestSeq = ++this._statusRequestSeq;
     this.body.textContent = '…';
     try {
       const data = await this.api.get('/git/status');
-      this._applyStatus(data);
+      // Ignore stale refresh responses. A stage/unstage operation can finish
+      // while an older status request is still running; the older result must
+      // not overwrite the newer post-action panel state.
+      if (requestSeq !== this._statusRequestSeq) return;
+      this._applyStatus(data, { invalidatePending: false });
     } catch (e) {
-      this.body.textContent = e.message;
+      if (requestSeq === this._statusRequestSeq) this.body.textContent = e.message;
     }
   }
 
   /** Store one status payload, broadcast it and update buttons/list rendering. */
-  _applyStatus(data) {
-    this._lastStatus = data;
-    this.bus?.emit?.('git:status-updated', data);
-    this._updatePushButton(data);
-    this._updatePullButton(data);
-    this._updateCommitButton(data);
-    this.render(data);
+  _applyStatus(data, { invalidatePending = true } = {}) {
+    if (invalidatePending) this._statusRequestSeq += 1;
+    const status = this._normalizeStatus(data);
+    this._lastStatus = status;
+    this.bus?.emit?.('git:status-updated', status);
+    this._updatePushButton(status);
+    this._updatePullButton(status);
+    this._updateCommitButton(status);
+    try {
+      this.render(status);
+    } catch (e) {
+      console.error('[GitPanel] render failed:', e);
+      if (this.body) this.body.textContent = e?.message || String(e);
+    }
+  }
+
+  /** Normalize API payloads into the complete status shape expected by render(). */
+  _normalizeStatus(data) {
+    const payload = data?.status && typeof data.status === 'object' ? data.status : (data || {});
+    const files = Array.isArray(payload.files) ? payload.files.filter(Boolean) : [];
+    return {
+      branch: payload.branch ?? null,
+      upstream: payload.upstream ?? null,
+      ahead: Number(payload.ahead || 0),
+      behind: Number(payload.behind || 0),
+      clean: files.length === 0,
+      files,
+    };
   }
 
   _updatePushButton(status) { this._updateSyncButton(this.pushBtn, this.i18n.t('git.push'), Number(status?.ahead || 0)); }
@@ -170,9 +197,16 @@ export class GitPanel {
       untracked: { label: this.i18n.t('git.untracked'), items: [] },
     };
     for (const f of s.files) {
-      if (f.untracked) groups.untracked.items.push(f);
-      else if (f.staged) groups.staged.items.push(f);
-      else groups.changed.items.push(f);
+      if (f.untracked) {
+        groups.untracked.items.push(f);
+        continue;
+      }
+      // Git reports index and worktree states independently. A file can be
+      // staged and still have newer unstaged changes after an export/save. Show
+      // it in both groups so users can stage the new worktree delta directly
+      // instead of having to unstage the older index version first.
+      if (f.staged) groups.staged.items.push(f);
+      if (f.changed) groups.changed.items.push(f);
     }
 
     const filter = this._normalizeFilter(this.filterText);
@@ -217,8 +251,10 @@ export class GitPanel {
       }
     }
 
-    if (filter && visibleItemCount === 0) {
-      const empty = el('div', 'git-filter-empty', this.i18n.t('git.no_matching_changes') || 'No matching changed files');
+    if (visibleItemCount === 0) {
+      const empty = el('div', 'git-filter-empty', filter
+        ? (this.i18n.t('git.no_matching_changes') || 'No matching changed files')
+        : (this.i18n.t('git.no_changes') || 'No changes'));
       empty.style.color = 'var(--ide-fg-muted)';
       empty.style.marginTop = '8px';
       this.body.appendChild(empty);
@@ -294,9 +330,11 @@ export class GitPanel {
     return row;
   }
 
+  /** Pick the status code from the index or worktree column for the visible group. */
   _buildStatusDescriptor(file, group) {
     if (group === 'untracked' || file?.untracked) return { code: 'U', kind: 'A', label: this.i18n.t('git.untracked') || 'Untracked' };
-    const code = String(file?.worktree || file?.index || 'M').toUpperCase();
+    const rawCode = group === 'staged' ? (file?.index || file?.worktree || 'M') : (file?.worktree || file?.index || 'M');
+    const code = String(rawCode === '.' ? 'M' : rawCode).toUpperCase();
     const map = {
       M: { code: 'M', kind: 'M', label: this.i18n.t('git.changes') || 'Modified' },
       D: { code: 'D', kind: 'D', label: this.i18n.t('git.deleted') || 'Deleted' },
@@ -351,7 +389,7 @@ export class GitPanel {
     try {
       for (const path of list) await this.api.delete('/files/delete', { path });
       this.bus?.emit?.('files:changed', { action: 'delete', path: list.length === 1 ? list[0] : undefined, items: list.map((path) => ({ path })) });
-      this.refresh();
+      await this.refresh();
     } catch (e) { this.toasts.error(e.message); }
   }
 
@@ -362,8 +400,8 @@ export class GitPanel {
     } catch (e) { this.toasts.error(e.message); }
   }
 
-  async _stage(paths) { try { await this.api.post('/git/stage', { paths }); this.refresh(); } catch (e) { this.toasts.error(e.message); } }
-  async _unstage(paths) { try { await this.api.post('/git/unstage', { paths }); this.refresh(); } catch (e) { this.toasts.error(e.message); } }
+  async _stage(paths) { try { await this.api.post('/git/stage', { paths }); await this.refresh(); } catch (e) { this.toasts.error(e.message); } }
+  async _unstage(paths) { try { await this.api.post('/git/unstage', { paths }); await this.refresh(); } catch (e) { this.toasts.error(e.message); } }
 
   /** Discard changed files and close matching diff tabs through the event bus. */
   async _discard(paths) {
@@ -374,7 +412,7 @@ export class GitPanel {
     try {
       await this.api.post('/git/discard', { paths });
       for (const path of paths) this.bus?.emit?.('git:file-discarded', { path });
-      this.refresh();
+      await this.refresh();
     } catch (e) { this.toasts.error(e.message); }
   }
 
