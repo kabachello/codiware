@@ -265,8 +265,9 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 | `POST` | `/git/push` | Pushes the current branch. |
 | `GET` | `/git/branches?root=` | Lists local/remote branches and current branch. |
 | `POST` | `/git/checkout` | Checks out an existing branch or creates a new branch. |
+| `POST` | `/git/delete-branch` | Deletes one local branch or one remote branch selected in the branch chooser. |
 | `POST` | `/git/cherry-pick` | Cherry-picks one commit into the current branch. |
-| `POST` | `/git/revert` | Reverts one commit on the current branch. |
+| `POST` | `/git/revert` | Reverts one commit into the current branch. |
 | `POST` | `/git/merge` | Merges one selected ref or commit into the current branch. |
 | `POST` | `/git/reset` | Resets the current branch to one commit using `soft`, `mixed` or `hard` mode. |
 | `GET` | `/git/history?root=&limit=&after=` | Returns commit list with files changed and graph metadata. |
@@ -276,7 +277,7 @@ For future multi-root workspaces, the Git panel should show one repository selec
 
 After a successful discard, the Git panel emits a `git:file-discarded` event for every restored path. `TabManager` listens to this event and closes all open diff tabs for that repository path, regardless of whether they show staged or working-tree diffs. Regular file tabs remain open because the file itself still exists.
 
-The branch name shown at the top of the Git panel and in the footer status bar acts as the entry point to one shared branch chooser. The chooser loads `/git/branches`, groups local and remote refs, and uses `/git/checkout` when the user selects a branch. This keeps branch switching discoverable in both places while reusing the same checkout flow and console injection behavior.
+The branch name shown at the top of the Git panel and in the footer status bar acts as the entry point to one shared branch chooser. The chooser loads `/git/branches`, groups local and remote refs, and opens a submenu for each branch instead of checking it out immediately. That submenu currently offers `Checkout`, `Merge into current branch`, and `Delete branch`. Current local branches keep checkout and delete visible but disabled; all destructive delete actions require an explicit confirmation prompt.
 
 Selecting a remote branch from that chooser must attach the user to a real local branch instead of checking out the remote ref verbatim. The back end therefore maps a remote entry like `origin/feature/demo` to the local branch `feature/demo` and performs a tracked checkout. This prevents the UI from falling into detached HEAD after a remote branch was chosen while still preserving the remote name in the menu.
 
@@ -540,7 +541,7 @@ Extension controllers receive the same `WorkspaceResolver`, `PathGuard`, logger,
 
 The Git side panel shows changed files by default and includes a quick filter. A changed file opens a Monaco diff editor in the main editor area. Diff actions support file-level discard initially; the API and UI should leave room for hunk-level discard later.
 
-The panel includes staging controls, commit/amend controls, ahead/behind counters, push, branch checkout/create, and history. The history view should show commit graph, metadata, changed files, and optional diff-to-previous behavior.
+The panel includes staging controls, commit/amend controls, ahead/behind counters, push, branch checkout/create, and history. The branch chooser opens a per-branch action submenu so users can checkout, merge or delete a branch from the same discoverable menu. The history view should show commit graph, metadata, changed files, and optional diff-to-previous behavior.
 
 The currently checked out branch is interactive in both the Git panel header and the footer status bar. Clicking it opens the same dropdown-style chooser so less technical users always find branch switching where they already look for branch status.
 
@@ -554,7 +555,7 @@ The file tree supports:
 - Right-click context menu for create, rename, duplicate, delete, copy, move, upload, download, and reveal actions.
 - Drag-to-move and ctrl-drag-to-copy.
 - Drag-and-drop upload for files and zip archives with subfolders.
-- Explicit duplicate actions for files and folders that first ask for the target sibling name, prefilled with an `_copy` suggestion, and then perform a regular copy.
+- Explicit duplicate actions for files and folders that first ask for the target sibling name, prefilled with an `_copy` style suggestion, and then perform a regular copy.
 - A toggleable multi-selection mode with checkboxes for safe bulk actions in the explorer.
 - Bulk move, delete and download actions that operate on the top-level selected items only so selecting a folder and one of its children does not trigger duplicate work.
 - Multi-item drag and drop that reuses the same existing move/copy endpoints per selected item.
@@ -686,7 +687,7 @@ Zip extraction uses the same guard for every archive entry before writing to dis
 
 Git operations are executed without shell interpolation. Commands are built as argument arrays for `symfony/process`. File paths passed to Git are first resolved relative to the active repository root and rejected if they escape the repository.
 
-Destructive operations such as discard, clean presets, delete, overwrite upload, replace-in-files, branch reset and commit-level history actions require explicit front-end confirmation and return structured details about affected paths or refs.
+Destructive operations such as discard, clean presets, delete, overwrite upload, replace-in-files, branch deletion, branch reset and commit-level history actions require explicit front-end confirmation and return structured details about affected paths or refs.
 
 ### Console Safety
 

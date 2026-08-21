@@ -12,6 +12,7 @@ use kabachello\Codiware\Workspace\WorkspaceResolver;
 use kabachello\Codiware\Workspace\WorkspaceRoot;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Symfony\Component\Process\Process;
 
 /**
  * REST endpoints wrapping `GitService`.
@@ -112,6 +113,48 @@ final class GitController
         return $this->responses->ok($this->git->checkout($root, $branch, $create, $startPoint));
     }
 
+    /**
+     * Delete one branch selected from the branch chooser and return a console block.
+     *
+     * Local branches use `git branch -d`. Remote rows are sent as their visible
+     * tracking ref (for example `origin/feature/demo`) and are translated to
+     * `git push origin --delete feature/demo` without invoking a shell.
+     */
+    public function deleteBranch(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $body = $this->decodeJson($request);
+        $branch = trim((string)($body['branch'] ?? ''));
+        $remote = (bool)($body['remote'] ?? false);
+        if ($branch === '') {
+            throw new CodiwareException('branch is required.', 'bad_request', 400);
+        }
+
+        if ($remote) {
+            [$remoteName, $remoteBranch] = $this->splitRemoteBranch($branch);
+            $args = ['push', $remoteName, '--delete', $remoteBranch];
+        } else {
+            $args = ['branch', '-d', $branch];
+        }
+
+        $console = $this->captureGitConsole($root, $args);
+        if (!$console['ok']) {
+            throw new CodiwareException(
+                'git delete branch failed: ' . (trim($console['output']) !== '' ? trim($console['output']) : 'exit ' . $console['exit_code']),
+                'git_failed',
+                500,
+                ['exit' => $console['exit_code'], 'console' => $console]
+            );
+        }
+
+        return $this->responses->ok([
+            'branch' => $branch,
+            'remote' => $remote,
+            'message' => trim($console['output']),
+            'console' => $console,
+        ]);
+    }
+
     public function cherryPick(ServerRequestInterface $request): ResponseInterface
     {
         $root = $this->root($request);
@@ -185,9 +228,7 @@ final class GitController
         ]);
     }
 
-    /**
-     * Full metadata and changed-file list for a single commit.
-     */
+    /** Full metadata and changed-file list for a single commit. */
     public function commitDetails(ServerRequestInterface $request): ResponseInterface
     {
         $root = $this->root($request);
@@ -198,9 +239,7 @@ final class GitController
         return $this->responses->ok($this->git->commitDetails($root, $commit));
     }
 
-    /**
-     * Diff of a single file introduced by a commit (commit vs its parent).
-     */
+    /** Diff of a single file introduced by a commit (commit vs its parent). */
     public function commitDiff(ServerRequestInterface $request): ResponseInterface
     {
         $root = $this->root($request);
@@ -212,6 +251,43 @@ final class GitController
             throw new CodiwareException('commit and path are required.', 'bad_request', 400);
         }
         return $this->responses->ok($this->git->commitFileDiff($root, $commit, $path, $oldPath));
+    }
+
+    /**
+     * Split a visible remote-tracking branch name into remote name and branch name.
+     *
+     * @return array{0:string,1:string}
+     */
+    private function splitRemoteBranch(string $branch): array
+    {
+        $parts = explode('/', $branch, 2);
+        if (count($parts) !== 2 || trim($parts[0]) === '' || trim($parts[1]) === '') {
+            throw new CodiwareException('remote branch must have the form remote/name.', 'bad_request', 400);
+        }
+        return [$parts[0], $parts[1]];
+    }
+
+    /**
+     * Run a git command via argument arrays and return the console-injection block.
+     *
+     * @param string[] $args
+     * @return array{command:string,output:string,exit_code:int,ok:bool}
+     */
+    private function captureGitConsole(WorkspaceRoot $root, array $args): array
+    {
+        $process = new Process(array_merge(['git', '-c', 'color.ui=always'], $args), $root->path, [
+            'FORCE_COLOR' => '1',
+            'TERM' => 'xterm-256color',
+        ]);
+        $process->setTimeout(60);
+        $process->run();
+        $exit = (int)($process->getExitCode() ?? -1);
+        return [
+            'command' => 'git ' . implode(' ', $args),
+            'output' => $process->getOutput() . $process->getErrorOutput(),
+            'exit_code' => $exit,
+            'ok' => $exit === 0,
+        ];
     }
 
     /**

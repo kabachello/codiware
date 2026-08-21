@@ -559,8 +559,12 @@ export class GitPanel {
   }
 
   /**
-   * Convert the `/git/branches` response into grouped popup-menu entries while
-   * marking the currently checked out branch with the shared "current" suffix.
+   * Convert the `/git/branches` response into grouped popup-menu entries.
+   *
+   * Branch rows now open a submenu instead of checking out immediately. This
+   * keeps checkout, merge and delete discoverable in one place while preventing
+   * destructive branch deletion from happening without an explicit second click
+   * and confirmation prompt.
    */
   _branchMenuItems(data, current) {
     const currentSuffix = this.i18n.t('git.current_branch_suffix') || ' (current)';
@@ -573,26 +577,54 @@ export class GitPanel {
         onClick: () => this._promptCreateBranch(current || 'HEAD'),
       });
     };
-    const addGroup = (label, branches = []) => {
+    const addGroup = (label, branches = [], remote = false) => {
       const list = Array.isArray(branches) ? branches.filter(Boolean) : [];
       if (list.length === 0) return;
       if (items.length > 0) items.push({ sep: true });
-      items.push({ icon: 'fa fa-tag', label, disabled: true });
+      items.push({ icon: remote ? 'fa fa-cloud' : 'fa fa-tag', label, disabled: true });
       for (const name of list) {
-        const isCurrent = name === current;
+        const isCurrent = !remote && name === current;
         items.push({
           icon: isCurrent ? 'fa fa-check' : 'fa fa-code-fork',
           label: isCurrent ? `${name}${currentSuffix}` : name,
-          onClick: isCurrent ? undefined : () => this.checkoutBranch(name),
-          disabled: isCurrent,
+          children: this._branchActionItems(name, { current: isCurrent, remote }),
         });
       }
     };
 
-    addGroup(this.i18n.t('git.local_branches') || 'Local branches', data?.locals || []);
-    addGroup(this.i18n.t('git.remote_branches') || 'Remote branches', data?.remotes || []);
+    addGroup(this.i18n.t('git.local_branches') || 'Local branches', data?.locals || [], false);
+    addGroup(this.i18n.t('git.remote_branches') || 'Remote branches', data?.remotes || [], true);
     addCreateBranchAction();
     return items;
+  }
+
+  /**
+   * Build the action submenu for one branch row. Current local branches cannot
+   * be checked out or deleted, but their disabled actions stay visible so the
+   * branch menu has a predictable shape for all rows.
+   */
+  _branchActionItems(branch, { current = false, remote = false } = {}) {
+    return [
+      {
+        icon: 'fa fa-check',
+        label: this.i18n.t('git.checkout_branch') || 'Checkout',
+        onClick: current ? undefined : () => this.checkoutBranch(branch),
+        disabled: current,
+      },
+      {
+        icon: 'fa fa-compress',
+        label: this.i18n.t('git.merge_branch') || 'Merge into current branch',
+        onClick: current ? undefined : () => this.mergeBranch(branch),
+        disabled: current,
+      },
+      { sep: true },
+      {
+        icon: 'fa fa-trash-o',
+        label: this.i18n.t(remote ? 'git.delete_remote_branch' : 'git.delete_branch') || 'Delete branch',
+        onClick: current ? undefined : () => this.deleteBranch(branch, remote),
+        disabled: current,
+      },
+    ];
   }
 
   /**
@@ -607,6 +639,50 @@ export class GitPanel {
       this.toasts.success((this.i18n.t('git.switched_branch') || 'Switched to branch') + ` ${branch}`);
       await this.refresh();
       this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
+    } catch (e) {
+      this._injectConsoleError(e);
+      this.toasts.error(e.message);
+    }
+  }
+
+  /**
+   * Merge the selected branch/ref into the currently checked out branch through
+   * the structured Git API and inject the exact CLI output into the console.
+   */
+  async mergeBranch(branch) {
+    if (!branch) return;
+    const message = (this.i18n.t('git.confirm_merge_branch', { branch }) || `Merge ${branch} into the current branch?`);
+    if (!window.confirm(message)) return;
+    try {
+      const resp = await this.api.post('/git/merge', { ref: branch });
+      this._injectConsole(resp);
+      this.toasts.success((this.i18n.t('git.branch_merged') || 'Merged branch') + ` ${branch} ✓`);
+      await this.refresh();
+      this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
+    } catch (e) {
+      this._injectConsoleError(e);
+      this.toasts.error(e.message);
+    }
+  }
+
+  /**
+   * Delete one local or remote branch after confirmation. Remote rows are sent
+   * as their full tracking ref (for example `origin/feature/x`) so the back end
+   * can delete the matching branch on that remote safely via argument arrays.
+   */
+  async deleteBranch(branch, remote = false) {
+    if (!branch) return;
+    const key = remote ? 'git.confirm_delete_remote_branch' : 'git.confirm_delete_branch';
+    const fallback = remote
+      ? `Delete remote branch ${branch}? This removes it from the remote repository.`
+      : `Delete branch ${branch}?`;
+    if (!window.confirm(this.i18n.t(key, { branch }) || fallback)) return;
+    try {
+      const resp = await this.api.post('/git/delete-branch', { branch, remote });
+      this._injectConsole(resp);
+      this.toasts.success((this.i18n.t('git.branch_deleted') || 'Deleted branch') + ` ${branch} ✓`);
+      await this.refresh();
+      this.bus?.emit?.('git:branch-deleted', { branch, remote, response: resp, status: this._lastStatus });
     } catch (e) {
       this._injectConsoleError(e);
       this.toasts.error(e.message);
