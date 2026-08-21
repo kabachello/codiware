@@ -1,5 +1,6 @@
 /** Source-control sidebar panel. */
 import { Icon } from '../core/Icon.js';
+import { PopupMenu } from '../core/PopupMenu.js';
 
 export class GitPanel {
   constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, user = {}, hasGitIdentity = true, initialStatus = null }) {
@@ -7,33 +8,30 @@ export class GitPanel {
     this.i18n = i18n;
     this.toasts = toasts;
     this.bus = bus;
-    this.onOpenDiff = onOpenDiff; // Callback: (path, staged, diffData) => void
+    this.onOpenDiff = onOpenDiff;
     this.onOpenHistory = typeof onOpenHistory === 'function' ? onOpenHistory : () => {};
     this.onOpenFile = typeof onOpenFile === 'function' ? onOpenFile : () => {};
     this.user = user || {};
     this.hasGitIdentity = Boolean(hasGitIdentity);
     this.filterText = '';
     this._lastStatus = initialStatus || null;
-    this._contextEntry = null;
     this._branchMenuLoading = false;
-    this._branchMenuCurrent = null;
     bus.on('file:saved', () => this.refresh());
   }
 
+  /** Render the Git panel shell and load the current repository status. */
   mount(host) {
     this.host = host;
     host.innerHTML = '';
 
-    // Use the same toolbar structure and classes as the explorer panel
-    const toolbar = el('div');
-    toolbar.className = 'panel-toolbar';
-    this.pushBtn = tbBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push());
-    this.pullBtn = tbBtn('fa fa-cloud-download', this.i18n.t('git.pull'), () => this.pull());
+    const toolbar = el('div', 'panel-toolbar');
+    this.pushBtn = this._tbBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push());
+    this.pullBtn = this._tbBtn('fa fa-cloud-download', this.i18n.t('git.pull'), () => this.pull());
     toolbar.append(
-      tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
+      this._tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
       this.pushBtn,
       this.pullBtn,
-      tbBtn('fa fa-history', this.i18n.t('git.history'), () => this.onOpenHistory())
+      this._tbBtn('fa fa-history', this.i18n.t('git.history'), () => this.onOpenHistory())
     );
 
     this.identityWarning = null;
@@ -49,44 +47,29 @@ export class GitPanel {
     this.msg.rows = 2;
     this.msg.style.width = '100%';
 
-    const commitRow = el('div');
-    commitRow.style.display = 'flex'; commitRow.style.gap = '4px'; commitRow.style.marginTop = '4px';
-    commitRow.classList.add('panel-toolbar');
+    const commitRow = el('div', 'panel-toolbar');
+    commitRow.style.display = 'flex';
+    commitRow.style.gap = '4px';
+    commitRow.style.marginTop = '4px';
     this.commitBtn = btn(this.i18n.t('git.commit'), () => this.commit(false));
-    const amendBtn = btn(this.i18n.t('git.amend'), () => this.commit(true));
-    commitRow.append(this.commitBtn, amendBtn);
+    commitRow.append(this.commitBtn, btn(this.i18n.t('git.amend'), () => this.commit(true)));
 
-    this.body = el('div');
-    this.body.className = 'git-status-list';
+    this.body = el('div', 'git-status-list');
     this.filterWrap = null;
     this.filterInput = null;
-
     host.append(toolbar);
     if (this.identityWarning) host.append(this.identityWarning);
     host.append(this.msg, commitRow, this.body);
-    // Helper for toolbar buttons (matches FileTree)
-    function tbBtn(icon, title, onClick) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'tb-btn';
-      b.title = title;
-      b.setAttribute('aria-label', title);
-      b.append(Icon.render(icon));
-      b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-      return b;
-    }
+
     this._collapsed = { staged: false, changed: false, untracked: false };
     if (this._lastStatus) {
-      this.bus?.emit?.('git:status-updated', this._lastStatus);
-      this._updatePushButton(this._lastStatus);
-      this._updatePullButton(this._lastStatus);
-      this._updateCommitButton(this._lastStatus);
-      this.render(this._lastStatus);
+      this._applyStatus(this._lastStatus);
       return;
     }
     this.refresh();
   }
 
+  /** Refresh status from the Git API and re-render all status-dependent UI. */
   async refresh() {
     if (!this.body) return;
     this.body.textContent = '…';
@@ -98,10 +81,7 @@ export class GitPanel {
     }
   }
 
-  /**
-   * Store one git-status payload, fan it out through the event bus and refresh
-   * all branch/count related UI bits from that single source of truth.
-   */
+  /** Store one status payload, broadcast it and update buttons/list rendering. */
   _applyStatus(data) {
     this._lastStatus = data;
     this.bus?.emit?.('git:status-updated', data);
@@ -111,21 +91,14 @@ export class GitPanel {
     this.render(data);
   }
 
-  _updatePushButton(status) {
-    const ahead = Number(status?.ahead || 0);
-    this._updateSyncButton(this.pushBtn, this.i18n.t('git.push'), ahead);
-  }
+  _updatePushButton(status) { this._updateSyncButton(this.pushBtn, this.i18n.t('git.push'), Number(status?.ahead || 0)); }
+  _updatePullButton(status) { this._updateSyncButton(this.pullBtn, this.i18n.t('git.pull'), Number(status?.behind || 0)); }
 
-  _updatePullButton(status) {
-    const behind = Number(status?.behind || 0);
-    this._updateSyncButton(this.pullBtn, this.i18n.t('git.pull'), behind);
-  }
-
+  /** Promote push/pull buttons when there is work in that direction. */
   _updateSyncButton(button, baseLabel, count) {
     if (!button) return;
     const hasWork = count > 0;
     button.classList.toggle('primary', hasWork);
-
     let label = button.querySelector('.tb-btn-label');
     if (hasWork) {
       if (!label) {
@@ -143,19 +116,18 @@ export class GitPanel {
     }
   }
 
+  /** Promote the commit button when any file has staged or unstaged changes. */
   _updateCommitButton(status) {
     if (!this.commitBtn) return;
     const files = Array.isArray(status?.files) ? status.files : [];
-    const hasSomethingToCommit = files.some((f) => f && (f.untracked || f.changed || f.staged));
-    this.commitBtn.classList.toggle('primary', hasSomethingToCommit);
+    this.commitBtn.classList.toggle('primary', files.some((f) => f && (f.untracked || f.changed || f.staged)));
   }
 
   _isIdentityMissing() {
-    const missingName = (this.user?.name || '').trim() === '';
-    const missingEmail = (this.user?.email || '').trim() === '';
-    return !this.hasGitIdentity || missingName || missingEmail;
+    return !this.hasGitIdentity || (this.user?.name || '').trim() === '' || (this.user?.email || '').trim() === '';
   }
 
+  /** Render branch chooser, filter and changed-file groups for one status payload. */
   render(s) {
     const hadFilterFocus = document.activeElement === this.filterInput;
     const filterSelectionStart = hadFilterFocus ? this.filterInput.selectionStart : null;
@@ -181,11 +153,11 @@ export class GitPanel {
     });
     header.appendChild(this.branchButton);
     this.body.appendChild(header);
-
     this.body.appendChild(this._buildFilter());
 
     if (s.clean) {
-      const c = el('div'); c.textContent = this.i18n.t('git.no_changes');
+      const c = el('div');
+      c.textContent = this.i18n.t('git.no_changes');
       c.style.color = 'var(--ide-fg-muted)';
       this.body.appendChild(c);
       this._restoreFilterFocus(hadFilterFocus, filterSelectionStart, filterSelectionEnd);
@@ -215,53 +187,27 @@ export class GitPanel {
       header.style.alignItems = 'center';
       header.style.gap = '4px';
       header.style.marginTop = '8px';
-      // Collapsible arrow icon
       const arrow = document.createElement('span');
       arrow.className = 'fa';
       arrow.style.cursor = 'pointer';
       arrow.style.marginRight = '4px';
       arrow.classList.add(this._collapsed[key] ? 'fa-caret-right' : 'fa-caret-down');
-      arrow.addEventListener('click', () => {
-        this._collapsed[key] = !this._collapsed[key];
-        this.render(s);
-      });
-      header.appendChild(arrow);
+      arrow.addEventListener('click', () => { this._collapsed[key] = !this._collapsed[key]; this.render(s); });
       const h = document.createElement('h4');
       h.textContent = `${g.label} (${items.length})`;
       h.style.flex = '1';
       h.style.margin = '0';
       h.style.cursor = 'pointer';
-      h.addEventListener('click', () => {
-        this._collapsed[key] = !this._collapsed[key];
-        this.render(s);
-      });
-      header.appendChild(h);
+      h.addEventListener('click', () => { this._collapsed[key] = !this._collapsed[key]; this.render(s); });
+      header.append(arrow, h);
       const paths = items.map(f => f.path);
       if (key === 'staged') {
-        header.appendChild(iconBtn(
-          'fa fa-minus',
-          this.i18n.t('git.unstage_all') || 'Unstage all',
-          () => this._unstage(paths)
-        ));
+        header.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage_all') || 'Unstage all', () => this._unstage(paths)));
       } else {
-        header.appendChild(iconBtn(
-          'fa fa-plus',
-          this.i18n.t('git.stage_all') || 'Stage all',
-          () => this._stage(paths)
-        ));
-        if (key === 'untracked') {
-          header.appendChild(iconBtn(
-            'fa fa-trash-o',
-            this.i18n.t('git.delete_all_untracked') || 'Delete all untracked files',
-            () => this._deleteUntracked(paths)
-          ));
-        } else {
-          header.appendChild(iconBtn(
-            'fa fa-undo',
-            this.i18n.t('git.discard_all') || 'Discard all changes',
-            () => this._discard(paths)
-          ));
-        }
+        header.append(this._iconBtn('fa fa-plus', this.i18n.t('git.stage_all') || 'Stage all', () => this._stage(paths)));
+        header.append(key === 'untracked'
+          ? this._iconBtn('fa fa-trash-o', this.i18n.t('git.delete_all_untracked') || 'Delete all untracked files', () => this._deleteUntracked(paths))
+          : this._iconBtn('fa fa-undo', this.i18n.t('git.discard_all') || 'Discard all changes', () => this._discard(paths)));
       }
       this.body.appendChild(header);
       if (!this._collapsed[key]) {
@@ -277,20 +223,17 @@ export class GitPanel {
       empty.style.marginTop = '8px';
       this.body.appendChild(empty);
     }
-
     this._restoreFilterFocus(hadFilterFocus, filterSelectionStart, filterSelectionEnd);
   }
 
+  /** Build or reuse the quick filter input without losing its current value. */
   _buildFilter() {
     if (this.filterWrap && this.filterInput) {
       this.filterInput.value = this.filterText;
       return this.filterWrap;
     }
-
-    const wrap = document.createElement('div');
-    wrap.className = 'git-filter history-search';
+    const wrap = el('div', 'git-filter history-search');
     wrap.append(Icon.render('fa fa-search'));
-
     const input = document.createElement('input');
     input.type = 'search';
     input.className = 'git-filter-input history-search-input';
@@ -319,69 +262,40 @@ export class GitPanel {
     if (!hadFocus || !this.filterInput) return;
     this.filterInput.focus({ preventScroll: true });
     if (selectionStart !== null && selectionEnd !== null) {
-      try {
-        this.filterInput.setSelectionRange(selectionStart, selectionEnd);
-      } catch (e) {
-        // Ignore unsupported input selection errors.
-      }
+      try { this.filterInput.setSelectionRange(selectionStart, selectionEnd); } catch (e) {}
     }
   }
+  _normalizeFilter(value) { return String(value || '').trim().toLowerCase(); }
+  _matchesFilter(file, filter) { return !filter || String(file?.path || '').toLowerCase().includes(filter); }
 
-  _normalizeFilter(value) {
-    return String(value || '').trim().toLowerCase();
-  }
-
-  _matchesFilter(file, filter) {
-    if (!filter) return true;
-    return String(file?.path || '').toLowerCase().includes(filter);
-  }
-
+  /** Render one changed-file row with inline actions and shared popup menu. */
   _renderFile(f, group) {
     const row = el('div', 'history-file-row git-file-row');
     const status = this._buildStatusDescriptor(f, group);
-
-    const badge = document.createElement('span');
-    badge.className = `history-file-status git-file-status history-file-status-${status.kind}`;
+    const badge = el('span', `history-file-status git-file-status history-file-status-${status.kind}`, status.code);
     badge.title = status.label;
     badge.setAttribute('aria-label', status.label);
-    badge.textContent = status.code;
-    row.append(badge);
-
-    const link = document.createElement('span');
-    link.className = 'history-file-name git-file-name';
-    link.textContent = f.path;
+    const link = el('span', 'history-file-name git-file-name', f.path);
     link.title = this.i18n.t('git.view_diff') || 'View diff';
     link.addEventListener('click', () => this._openDiff(f.path, group === 'staged'));
-    row.append(link);
+    row.append(badge, link);
+    row.addEventListener('contextmenu', (e) => { e.preventDefault(); this._openMenuAt(e.clientX, e.clientY, f, group); });
 
-    row.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      this._openMenuAt(e.clientX, e.clientY, f, group);
-    });
-
-    const actions = document.createElement('span');
-    actions.className = 'history-file-actions git-file-actions';
-
-    if (group === 'staged') {
-      actions.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
-    } else {
+    const actions = el('span', 'history-file-actions git-file-actions');
+    if (group === 'staged') actions.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
+    else {
       actions.append(this._iconBtn('fa fa-plus', this.i18n.t('git.stage') || 'Stage', () => this._stage([f.path])));
-      if (group === 'untracked' || f?.untracked) {
-        actions.append(this._iconBtn('fa fa-trash-o', this.i18n.t('git.delete_untracked') || 'Delete untracked file', () => this._deleteUntracked([f.path])));
-      } else {
-        actions.append(this._iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
-      }
+      actions.append((group === 'untracked' || f?.untracked)
+        ? this._iconBtn('fa fa-trash-o', this.i18n.t('git.delete_untracked') || 'Delete untracked file', () => this._deleteUntracked([f.path]))
+        : this._iconBtn('fa fa-undo', this.i18n.t('git.discard') || 'Discard', () => this._discard([f.path])));
     }
-
     actions.append(this._menuBtn(f, group));
     row.append(actions);
     return row;
   }
 
   _buildStatusDescriptor(file, group) {
-    if (group === 'untracked' || file?.untracked) {
-      return { code: 'U', kind: 'A', label: this.i18n.t('git.untracked') || 'Untracked' };
-    }
+    if (group === 'untracked' || file?.untracked) return { code: 'U', kind: 'A', label: this.i18n.t('git.untracked') || 'Untracked' };
     const code = String(file?.worktree || file?.index || 'M').toUpperCase();
     const map = {
       M: { code: 'M', kind: 'M', label: this.i18n.t('git.changes') || 'Modified' },
@@ -395,75 +309,38 @@ export class GitPanel {
     return map[code] || map.M;
   }
 
-  _iconBtn(icon, title, onClick) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'tb-btn';
-    b.title = title;
-    b.setAttribute('aria-label', title);
-    b.append(Icon.render(icon));
-    b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-    return b;
-  }
+  _tbBtn(icon, title, onClick) { return iconButton(icon, title, onClick); }
+  _iconBtn(icon, title, onClick) { return iconButton(icon, title, onClick); }
 
   _menuBtn(file, group) {
     const title = this.i18n.t('files.more_actions');
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'tb-btn';
-    b.title = title;
-    b.setAttribute('aria-label', title);
-    b.append(Icon.render('fa fa-ellipsis-h'));
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this._openMenu(b, file, group);
-    });
+    const b = this._iconBtn('fa fa-ellipsis-h', title, (e) => { e?.stopPropagation?.(); this._openMenu(b, file, group); });
     return b;
   }
+  _openMenu(anchor, file, group) { PopupMenu.open(anchor, this._menuItemsForFile(file, group)); }
+  _openMenuAt(x, y, file, group) { PopupMenu.openAt(x, y, this._menuItemsForFile(file, group)); }
 
-  _openMenu(anchor, file, group) {
-    GitPopupMenu.open(anchor, this._menuItemsForFile(file, group));
-  }
-
-  _openMenuAt(x, y, file, group) {
-    GitPopupMenu.openAt(x, y, this._menuItemsForFile(file, group));
-  }
-
+  /** Build the same row-level menu for inline and right-click entry points. */
   _menuItemsForFile(file, group) {
     const isUntracked = group === 'untracked' || file?.untracked;
     const items = [
       { icon: 'fa fa-exchange', label: this.i18n.t('git.view_diff') || 'View diff', onClick: () => this._openDiff(file.path, group === 'staged') },
       { icon: 'fa fa-file-o', label: this.i18n.t('git.open_regular_editor') || 'Open in regular editor', onClick: () => this._openFile(file.path) },
+      { sep: true },
     ];
-
-    if (group === 'staged') {
-      items.push({ sep: true });
-      items.push({ icon: 'fa fa-minus', label: this.i18n.t('git.unstage') || 'Unstage', onClick: () => this._unstage([file.path]) });
-    } else {
-      items.push({ sep: true });
+    if (group === 'staged') items.push({ icon: 'fa fa-minus', label: this.i18n.t('git.unstage') || 'Unstage', onClick: () => this._unstage([file.path]) });
+    else {
       items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.stage') || 'Stage', onClick: () => this._stage([file.path]) });
-      if (isUntracked) {
-        items.push({ icon: 'fa fa-trash-o', label: this.i18n.t('git.delete_untracked') || 'Delete untracked file', onClick: () => this._deleteUntracked([file.path]) });
-      } else {
-        items.push({ icon: 'fa fa-undo', label: this.i18n.t('git.discard') || 'Discard', onClick: () => this._discard([file.path]) });
-      }
+      items.push(isUntracked
+        ? { icon: 'fa fa-trash-o', label: this.i18n.t('git.delete_untracked') || 'Delete untracked file', onClick: () => this._deleteUntracked([file.path]) }
+        : { icon: 'fa fa-undo', label: this.i18n.t('git.discard') || 'Discard', onClick: () => this._discard([file.path]) });
     }
-
     return items;
   }
 
-  _openFile(path) {
-    this.onOpenFile({ path, name: path.split('/').pop() });
-  }
+  _openFile(path) { this.onOpenFile({ path, name: path.split('/').pop() }); }
 
-  /**
-   * Delete one or more untracked files through the regular file API.
-   *
-   * Git cannot discard untracked files with `git checkout --`, so untracked
-   * rows expose a delete action instead. Every deleted path is announced over
-   * the shared `files:changed` bus event so the explorer and open tabs can
-   * refresh just like after a delete from the file tree.
-   */
+  /** Delete untracked files through the file API after confirmation. */
   async _deleteUntracked(paths) {
     const list = Array.isArray(paths) ? paths.filter(Boolean) : [paths].filter(Boolean);
     if (list.length === 0) return;
@@ -472,33 +349,23 @@ export class GitPanel {
       : (this.i18n.t('files.confirm_delete_multiple', { count: list.length }) || `Delete ${list.length} selected items?`);
     if (!window.confirm(message)) return;
     try {
-      for (const path of list) {
-        await this.api.delete('/files/delete', { path });
-      }
-      this.bus?.emit?.('files:changed', {
-        action: 'delete',
-        path: list.length === 1 ? list[0] : undefined,
-        items: list.map((path) => ({ path })),
-      });
+      for (const path of list) await this.api.delete('/files/delete', { path });
+      this.bus?.emit?.('files:changed', { action: 'delete', path: list.length === 1 ? list[0] : undefined, items: list.map((path) => ({ path })) });
       this.refresh();
-    } catch (e) {
-      this.toasts.error(e.message);
-    }
+    } catch (e) { this.toasts.error(e.message); }
   }
 
   async _openDiff(path, staged) {
     try {
       const diffData = await this.api.get('/git/diff', { path, staged: staged ? '1' : '0' });
-      if (this.onOpenDiff) {
-        this.onOpenDiff(path, staged, diffData);
-      }
-    } catch (e) {
-      this.toasts.error(e.message);
-    }
+      this.onOpenDiff?.(path, staged, diffData);
+    } catch (e) { this.toasts.error(e.message); }
   }
 
   async _stage(paths) { try { await this.api.post('/git/stage', { paths }); this.refresh(); } catch (e) { this.toasts.error(e.message); } }
   async _unstage(paths) { try { await this.api.post('/git/unstage', { paths }); this.refresh(); } catch (e) { this.toasts.error(e.message); } }
+
+  /** Discard changed files and close matching diff tabs through the event bus. */
   async _discard(paths) {
     const message = paths.length === 1
       ? `${this.i18n.t('git.confirm_discard_single') || 'Discard local changes to'} ${paths[0]}?`
@@ -506,12 +373,9 @@ export class GitPanel {
     if (!window.confirm(message)) return;
     try {
       await this.api.post('/git/discard', { paths });
-      for (const path of paths) {
-        this.bus?.emit?.('git:file-discarded', { path });
-      }
+      for (const path of paths) this.bus?.emit?.('git:file-discarded', { path });
       this.refresh();
-    }
-    catch (e) { this.toasts.error(e.message); }
+    } catch (e) { this.toasts.error(e.message); }
   }
 
   async commit(amend) {
@@ -525,58 +389,30 @@ export class GitPanel {
       this.refresh();
     } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
+  async push() { try { const resp = await this.api.post('/git/push', {}); this._injectConsole(resp); this.toasts.success('Pushed ✓'); this.refresh(); } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); } }
+  async pull() { try { const resp = await this.api.post('/git/pull', {}); this._injectConsole(resp); this.toasts.success('Pulled ✓'); this.refresh(); } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); } }
 
-  async push() {
-    try { const resp = await this.api.post('/git/push', {}); this._injectConsole(resp); this.toasts.success('Pushed ✓'); this.refresh(); }
-    catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
-  }
-
-  async pull() {
-    try { const resp = await this.api.post('/git/pull', {}); this._injectConsole(resp); this.toasts.success('Pulled ✓'); this.refresh(); }
-    catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
-  }
-
-  /**
-   * Open the branch chooser anchored to one of the branch-name buttons and fill
-   * it with local and remote refs fetched on demand from the Git API.
-   */
+  /** Open the shared branch chooser and populate it from `/git/branches`. */
   async openBranchMenu(anchor) {
     if (!anchor || this._branchMenuLoading) return;
-    this._branchMenuCurrent = anchor;
     this._branchMenuLoading = true;
-    const loadingLabel = this.i18n.t('git.loading_branches') || 'Loading branches…';
-    GitPopupMenu.open(anchor, [{ icon: 'fa fa-refresh', label: loadingLabel }]);
+    PopupMenu.open(anchor, [{ icon: 'fa fa-refresh', label: this.i18n.t('git.loading_branches') || 'Loading branches…' }]);
     try {
       const data = await this.api.get('/git/branches');
       const current = data?.current || this._lastStatus?.branch || null;
       const items = this._branchMenuItems(data, current);
-      GitPopupMenu.open(anchor, items.length ? items : [{ icon: 'fa fa-code-fork', label: this.i18n.t('git.no_branches') || 'No branches available' }]);
+      PopupMenu.open(anchor, items.length ? items : [{ icon: 'fa fa-code-fork', label: this.i18n.t('git.no_branches') || 'No branches available' }]);
     } catch (e) {
-      GitPopupMenu.open(anchor, [{ icon: 'fa fa-exclamation-triangle', label: e.message || (this.i18n.t('errors.generic') || 'Something went wrong.') }]);
+      PopupMenu.open(anchor, [{ icon: 'fa fa-exclamation-triangle', label: e.message || (this.i18n.t('errors.generic') || 'Something went wrong.') }]);
     } finally {
       this._branchMenuLoading = false;
     }
   }
 
-  /**
-   * Convert the `/git/branches` response into grouped popup-menu entries.
-   *
-   * Branch rows now open a submenu instead of checking out immediately. This
-   * keeps checkout, merge and delete discoverable in one place while preventing
-   * destructive branch deletion from happening without an explicit second click
-   * and confirmation prompt.
-   */
+  /** Convert branch API data into grouped menu entries with branch submenus. */
   _branchMenuItems(data, current) {
     const currentSuffix = this.i18n.t('git.current_branch_suffix') || ' (current)';
     const items = [];
-    const addCreateBranchAction = () => {
-      if (items.length > 0) items.push({ sep: true });
-      items.push({
-        icon: 'fa fa-plus',
-        label: this.i18n.t('git.create_branch') || 'Create branch',
-        onClick: () => this._promptCreateBranch(current || 'HEAD'),
-      });
-    };
     const addGroup = (label, branches = [], remote = false) => {
       const list = Array.isArray(branches) ? branches.filter(Boolean) : [];
       if (list.length === 0) return;
@@ -591,46 +427,23 @@ export class GitPanel {
         });
       }
     };
-
     addGroup(this.i18n.t('git.local_branches') || 'Local branches', data?.locals || [], false);
     addGroup(this.i18n.t('git.remote_branches') || 'Remote branches', data?.remotes || [], true);
-    addCreateBranchAction();
+    if (items.length > 0) items.push({ sep: true });
+    items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.create_branch') || 'Create branch', onClick: () => this._promptCreateBranch(current || 'HEAD') });
     return items;
   }
 
-  /**
-   * Build the action submenu for one branch row. Current local branches cannot
-   * be checked out or deleted, but their disabled actions stay visible so the
-   * branch menu has a predictable shape for all rows.
-   */
+  /** Build the action submenu for one branch row. */
   _branchActionItems(branch, { current = false, remote = false } = {}) {
     return [
-      {
-        icon: 'fa fa-check',
-        label: this.i18n.t('git.checkout_branch') || 'Checkout',
-        onClick: current ? undefined : () => this.checkoutBranch(branch),
-        disabled: current,
-      },
-      {
-        icon: 'fa fa-compress',
-        label: this.i18n.t('git.merge_branch') || 'Merge into current branch',
-        onClick: current ? undefined : () => this.mergeBranch(branch),
-        disabled: current,
-      },
+      { icon: 'fa fa-check', label: this.i18n.t('git.checkout_branch') || 'Checkout', onClick: current ? undefined : () => this.checkoutBranch(branch), disabled: current },
+      { icon: 'fa fa-compress', label: this.i18n.t('git.merge_branch') || 'Merge into current branch', onClick: current ? undefined : () => this.mergeBranch(branch), disabled: current },
       { sep: true },
-      {
-        icon: 'fa fa-trash-o',
-        label: this.i18n.t(remote ? 'git.delete_remote_branch' : 'git.delete_branch') || 'Delete branch',
-        onClick: current ? undefined : () => this.deleteBranch(branch, remote),
-        disabled: current,
-      },
+      { icon: 'fa fa-trash-o', label: this.i18n.t(remote ? 'git.delete_remote_branch' : 'git.delete_branch') || 'Delete branch', onClick: current ? undefined : () => this.deleteBranch(branch, remote), disabled: current },
     ];
   }
 
-  /**
-   * Check out one branch selected from the dropdown, surface the captured git
-   * output in the console and refresh the shared status afterwards.
-   */
   async checkoutBranch(branch) {
     if (!branch) return;
     try {
@@ -639,43 +452,25 @@ export class GitPanel {
       this.toasts.success((this.i18n.t('git.switched_branch') || 'Switched to branch') + ` ${branch}`);
       await this.refresh();
       this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
-    } catch (e) {
-      this._injectConsoleError(e);
-      this.toasts.error(e.message);
-    }
+    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
-  /**
-   * Merge the selected branch/ref into the currently checked out branch through
-   * the structured Git API and inject the exact CLI output into the console.
-   */
   async mergeBranch(branch) {
     if (!branch) return;
-    const message = (this.i18n.t('git.confirm_merge_branch', { branch }) || `Merge ${branch} into the current branch?`);
-    if (!window.confirm(message)) return;
+    if (!window.confirm(this.i18n.t('git.confirm_merge_branch', { branch }) || `Merge ${branch} into the current branch?`)) return;
     try {
       const resp = await this.api.post('/git/merge', { ref: branch });
       this._injectConsole(resp);
       this.toasts.success((this.i18n.t('git.branch_merged') || 'Merged branch') + ` ${branch} ✓`);
       await this.refresh();
       this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
-    } catch (e) {
-      this._injectConsoleError(e);
-      this.toasts.error(e.message);
-    }
+    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
-  /**
-   * Delete one local or remote branch after confirmation. Remote rows are sent
-   * as their full tracking ref (for example `origin/feature/x`) so the back end
-   * can delete the matching branch on that remote safely via argument arrays.
-   */
   async deleteBranch(branch, remote = false) {
     if (!branch) return;
     const key = remote ? 'git.confirm_delete_remote_branch' : 'git.confirm_delete_branch';
-    const fallback = remote
-      ? `Delete remote branch ${branch}? This removes it from the remote repository.`
-      : `Delete branch ${branch}?`;
+    const fallback = remote ? `Delete remote branch ${branch}? This removes it from the remote repository.` : `Delete branch ${branch}?`;
     if (!window.confirm(this.i18n.t(key, { branch }) || fallback)) return;
     try {
       const resp = await this.api.post('/git/delete-branch', { branch, remote });
@@ -683,34 +478,17 @@ export class GitPanel {
       this.toasts.success((this.i18n.t('git.branch_deleted') || 'Deleted branch') + ` ${branch} ✓`);
       await this.refresh();
       this.bus?.emit?.('git:branch-deleted', { branch, remote, response: resp, status: this._lastStatus });
-    } catch (e) {
-      this._injectConsoleError(e);
-      this.toasts.error(e.message);
-    }
+    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
-  /**
-   * Ask for a new branch name and create it from the selected start point. The
-   * new branch is checked out immediately because the back end uses
-   * `git checkout -b`, mirroring the workflow users know from desktop Git UIs.
-   */
   async _promptCreateBranch(startPoint = 'HEAD') {
-    const branch = window.prompt(
-      this.i18n.t('git.prompt_create_branch') || 'New branch name',
-      this._suggestBranchName(startPoint)
-    );
+    const branch = window.prompt(this.i18n.t('git.prompt_create_branch') || 'New branch name', this._suggestBranchName(startPoint));
     if (branch === null) return;
     const trimmed = String(branch).trim();
     if (!trimmed) return;
     await this._createBranch(trimmed, startPoint);
   }
-
-  _suggestBranchName(startPoint) {
-    const source = String(startPoint || '').trim();
-    if (!source || source === 'HEAD') return '';
-    return source.replace(/^origin\//, '').replace(/[^A-Za-z0-9._/-]+/g, '-');
-  }
-
+  _suggestBranchName(startPoint) { const source = String(startPoint || '').trim(); return (!source || source === 'HEAD') ? '' : source.replace(/^origin\//, '').replace(/[^A-Za-z0-9._/-]+/g, '-'); }
   async _createBranch(branch, startPoint = 'HEAD') {
     try {
       const payload = { branch, create: true };
@@ -720,23 +498,11 @@ export class GitPanel {
       this.toasts.success((this.i18n.t('git.created_branch') || 'Created branch') + ` ${branch}`);
       await this.refresh();
       this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
-    } catch (e) {
-      this._injectConsoleError(e);
-      this.toasts.error(e.message);
-    }
+    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
-  /** Surface the CLI output embedded in a structured git response in the console. */
-  _injectConsole(resp) {
-    const block = resp?.console;
-    if (block && this.bus) this.bus.emit('console:inject', block);
-  }
-
-  /** Surface the CLI output carried by a failed git request and open the console. */
-  _injectConsoleError(e) {
-    const block = e?.details?.console;
-    if (block && this.bus) this.bus.emit('console:inject', { ...block, ok: false, autoOpen: true });
-  }
+  _injectConsole(resp) { const block = resp?.console; if (block && this.bus) this.bus.emit('console:inject', block); }
+  _injectConsoleError(e) { const block = e?.details?.console; if (block && this.bus) this.bus.emit('console:inject', { ...block, ok: false, autoOpen: true }); }
 }
 
 function el(tag, cls, text) {
@@ -745,240 +511,23 @@ function el(tag, cls, text) {
   if (text !== undefined) e.textContent = text;
   return e;
 }
+
 function btn(text, onClick, title) {
   const b = document.createElement('button');
-  b.type = 'button'; b.textContent = text;
+  b.type = 'button';
+  b.textContent = text;
   if (title) b.title = title;
   b.addEventListener('click', onClick);
   return b;
 }
-function iconBtn(icon, title, onClick) {
+
+function iconButton(icon, title, onClick) {
   const b = document.createElement('button');
-  b.type = 'button'; b.title = title;
+  b.type = 'button';
+  b.className = 'tb-btn';
+  b.title = title;
   b.setAttribute('aria-label', title);
   b.append(Icon.render(icon));
-  b.addEventListener('click', onClick);
+  b.addEventListener('click', (event) => { event.stopPropagation(); onClick(event); });
   return b;
-}
-
-/**
- * Shared popup-menu controller that supports one nested submenu chain without
- * closing the parent menu. Branch and file menus therefore keep behaving like
- * one connected menu tree when the user moves the pointer into a submenu.
- */
-const GitPopupMenu = createPopupMenuController();
-
-/**
- * Build a popup-menu controller with support for anchored top-level menus and
- * hover/click driven submenus that stay open while the interaction remains in
- * the same menu tree.
- */
-function createPopupMenuController() {
-  return {
-    stack: [],
-    outsideHandler: null,
-    keyHandler: null,
-    resizeHandler: null,
-    scrollHandler: null,
-
-    open(anchor, items) {
-      const rect = anchor.getBoundingClientRect();
-      this.openAt(rect.right, rect.bottom + 2, items, { flipYFrom: rect.top - 2 });
-    },
-
-    openAt(x, y, items, options = {}) {
-      this.closeAll();
-      this._ensureGlobalListeners();
-      this._openLevel({ x, y, items, level: 0, parentButton: null, options });
-    },
-
-    closeAll() {
-      while (this.stack.length) {
-        const entry = this.stack.pop();
-        entry.menu.remove();
-      }
-      this._removeGlobalListeners();
-    },
-
-    closeFrom(level) {
-      while (this.stack.length > level) {
-        const entry = this.stack.pop();
-        entry.menu.remove();
-      }
-      if (this.stack.length === 0) this._removeGlobalListeners();
-    },
-
-    _openLevel({ x, y, items, level, parentButton, options = {} }) {
-      this.closeFrom(level);
-      const menu = this._renderMenu(items, level);
-      document.body.appendChild(menu);
-      const pos = this._positionMenu(menu, x, y, options);
-      menu.style.left = pos.left + 'px';
-      menu.style.top = pos.top + 'px';
-      this.stack.push({ menu, level, parentButton });
-    },
-
-    _renderMenu(items, level) {
-      const menu = document.createElement('div');
-      menu.className = 'codiware-popup-menu';
-      menu.setAttribute('role', 'menu');
-      menu.dataset.menuLevel = String(level);
-
-      menu.addEventListener('pointerleave', () => {
-        this._scheduleHoverSync();
-      });
-
-      for (const item of items) {
-        if (item.sep) {
-          const sep = document.createElement('div');
-          sep.className = 'menu-sep';
-          menu.appendChild(sep);
-          continue;
-        }
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'menu-item';
-        if (item.disabled) btn.classList.add('is-disabled');
-        btn.disabled = Boolean(item.disabled);
-        btn.setAttribute('role', 'menuitem');
-        btn.append(Icon.render(item.icon || ''));
-        const label = document.createElement('span');
-        label.textContent = item.label;
-        btn.appendChild(label);
-
-        if (Array.isArray(item.children) && item.children.length > 0) {
-          btn.classList.add('has-children');
-          btn.appendChild(Icon.render('fa fa-caret-right'));
-          btn.addEventListener('pointerenter', () => {
-            if (item.disabled) return;
-            this._openChildMenu(btn, item.children, level);
-          });
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (item.disabled) return;
-            this._openChildMenu(btn, item.children, level);
-          });
-        } else {
-          btn.addEventListener('pointerenter', () => {
-            this.closeFrom(level + 1);
-          });
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (item.disabled) return;
-            this.closeAll();
-            try { item.onClick?.(); } catch (err) { console.error(err); }
-          });
-        }
-
-        menu.appendChild(btn);
-      }
-
-      return menu;
-    },
-
-    _openChildMenu(button, items, parentLevel) {
-      const rect = button.getBoundingClientRect();
-      this._openLevel({
-        x: rect.right + 2,
-        y: rect.top,
-        items,
-        level: parentLevel + 1,
-        parentButton: button,
-        options: { flipYFrom: rect.bottom },
-      });
-    },
-
-    _positionMenu(menu, x, y, options) {
-      const mw = menu.offsetWidth;
-      const mh = menu.offsetHeight;
-      let left = Math.min(x, window.innerWidth - mw - 4);
-      if (left < 4) left = 4;
-      let top = y;
-      if (top + mh > window.innerHeight - 4) {
-        const flipYFrom = typeof options.flipYFrom === 'number' ? options.flipYFrom : (y - 4);
-        top = Math.max(4, flipYFrom - mh);
-      }
-      return { left, top };
-    },
-
-    _ensureGlobalListeners() {
-      if (!this.outsideHandler) {
-        this.outsideHandler = (e) => {
-          if (!this._containsNode(e.target)) this.closeAll();
-        };
-        document.addEventListener('mousedown', this.outsideHandler);
-      }
-      if (!this.keyHandler) {
-        this.keyHandler = (e) => { if (e.key === 'Escape') this.closeAll(); };
-        document.addEventListener('keydown', this.keyHandler);
-      }
-      if (!this.resizeHandler) {
-        this.resizeHandler = () => this.closeAll();
-        window.addEventListener('resize', this.resizeHandler);
-      }
-      if (!this.scrollHandler) {
-        this.scrollHandler = () => this.closeAll();
-        window.addEventListener('scroll', this.scrollHandler, true);
-      }
-    },
-
-    _removeGlobalListeners() {
-      if (this.outsideHandler) {
-        document.removeEventListener('mousedown', this.outsideHandler);
-        this.outsideHandler = null;
-      }
-      if (this.keyHandler) {
-        document.removeEventListener('keydown', this.keyHandler);
-        this.keyHandler = null;
-      }
-      if (this.resizeHandler) {
-        window.removeEventListener('resize', this.resizeHandler);
-        this.resizeHandler = null;
-      }
-      if (this.scrollHandler) {
-        window.removeEventListener('scroll', this.scrollHandler, true);
-        this.scrollHandler = null;
-      }
-    },
-
-    _containsNode(node) {
-      return this.stack.some((entry) => entry.menu.contains(node) || entry.parentButton?.contains?.(node));
-    },
-
-    _scheduleHoverSync() {
-      requestAnimationFrame(() => this._syncMenusToHover());
-    },
-
-    _syncMenusToHover() {
-      if (this.stack.length <= 1) {
-        const root = this.stack[0];
-        if (!root) return;
-        const hovered = Array.from(document.querySelectorAll(':hover'));
-        const overRoot = hovered.some((el) => root.menu.contains(el));
-        if (!overRoot) this.closeAll();
-        return;
-      }
-      const hovered = Array.from(document.querySelectorAll(':hover'));
-      let keepDepth = 1;
-      for (let i = 1; i < this.stack.length; i++) {
-        const entry = this.stack[i];
-        const parentButton = entry.parentButton;
-        const overParent = parentButton ? hovered.includes(parentButton) : false;
-        const overMenu = hovered.some((el) => entry.menu.contains(el));
-        if (overParent || overMenu) {
-          keepDepth = i + 1;
-        } else {
-          break;
-        }
-      }
-      const root = this.stack[0];
-      const overRoot = root ? hovered.some((el) => root.menu.contains(el)) : false;
-      if (!overRoot && keepDepth <= 1) {
-        this.closeAll();
-        return;
-      }
-      this.closeFrom(keepDepth);
-    },
-  };
 }

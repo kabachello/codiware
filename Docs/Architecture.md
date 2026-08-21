@@ -346,6 +346,8 @@ The front-end is a plain JavaScript SPA using native modules where practical and
 
 The UI follows the [styleguide](Styleguide.md). 
 
+To ensure consistent UX across all parts of the IDE, a centralized library of reusable [UI components](Components/index.md) is to be used and constantly developed. For every UI control, required in more than in one place, the use/creation of a component should be considered. Whenever a new UI component is created (e.g. a popup menu), the entire code should be searched for existing implementations of its patterns - we should clean up code soon after introducing a new component, preferably immediately.
+
 ### Folder structure
 
 ```text

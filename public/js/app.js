@@ -1,3 +1,5 @@
+import './core/PopupMenu.js';
+
 let Icon = null;
 
 function withCacheBust(path) {
@@ -432,6 +434,7 @@ async function main() {
   // Expose minimal extension API on window for late-loading plugins.
   window.Codiware = {
     api, bus, state, settings, i18n, toasts,
+    popupMenu: window.CodiwarePopupMenu,
     registerEditor: (d) => registry.register(d),
     openFile: (entry) => tabs.open(entry),
   };

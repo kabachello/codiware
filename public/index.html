@@ -11,7 +11,7 @@
       var b = window.CODIWARE_BOOT || {};
       var base = (b.url_base || '/').replace(/\/$/, '');
       var assetsApp = base + b.url_to_app.replace(/\/$/, '');
-      var assetsNpm = base + b.url_to_npm.replace(/\/$/, ''); 
+      var assetsNpm = base + b.url_to_npm.replace(/\/$/, '');
       var assetVersion = b.cache_bust || '';
 
       function css(href, id, disabled) {
@@ -39,7 +39,7 @@
     (function () {
       var s = document.createElement('script');
       s.type = 'module';
-      s.src = window.CODIWARE_ASSET_BASE_APP + '/js/app.js?v=' + window.CODIWARE_BOOT?.cache_bust || '';
+      s.src = (window.CODIWARE_ASSET_BASE_APP + '/js/app.js?v=' + (window.CODIWARE_BOOT && window.CODIWARE_BOOT.cache_bust || ''));
       document.body.appendChild(s);
     })();
   </script>

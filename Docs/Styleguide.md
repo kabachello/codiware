@@ -22,7 +22,13 @@ Highlight colors must have a high contrast to regular colors to help people with
 
 Colors inside of editors do not necessarily need to change with the theme. If the editor library natively supports themes itself, we can link our themes to library themes in its configuration. If the editor does not have its own themes, we do not have to restyle it.
 
-## Layout
+## UI components
+
+To ensure UX consistency, reusable UI components (JavaScript libraries) must be used or implemented whenever possible. These components may be self-developed or included from thrid-party open source libraries. It is important, that all parts of the IDE use them consistently and do not re-implement components every time.
+
+Available UI components are described in the [components section](Components.md).
+
+## Global Layout
 
 The layout is similar to Visual Studio Code:
 
@@ -117,7 +123,9 @@ Branch switching in Git should use the same discoverable interaction wherever th
 
 If a branch chooser offers branch-management actions such as `Create branch`, they belong into that same chooser instead of a separate dialog entry point, so users always find branch selection and branch creation in one place.
 
-Popup menus must close predictably again. Clicking outside, pressing `Esc`, scrolling, resizing or moving the pointer fully away from an open menu tree should dismiss the menu. Nested submenus may stay open only while the pointer remains inside the active menu path.
+### Popup and context menus
+
+Popup menus must use the shared [PopupMenu.js](Components/PopupMenu.md) controller instead of feature-local menu implementations. The shared controller guarantees one active menu tree at a time, consistent icon/label/separator markup, nested submenu support and touch-safe behaviour. Submenus open on mouse hover for desktop users, but on touch or pen input a tap on the parent row only opens the submenu and must never activate the first child action automatically. Popup menus must close predictably again. Clicking or tapping outside, pressing `Esc`, scrolling, resizing or moving the mouse pointer fully away from an open menu tree should dismiss the menu. Nested submenus may stay open only while the pointer remains inside the active menu path.
 
 ### Console output blocks
 
