@@ -5,8 +5,8 @@ import { Icon } from './Icon.js';
  *
  * The controller is intentionally DOM-only and has no dependencies on panels
  * such as Git, history, file tree or tabs. It accepts menu item descriptors:
- * `{ icon, label, onClick, disabled, children }` plus separator items
- * `{ sep: true }`.
+ * `{ icon, label, onClick, disabled, children }`, section headings
+ * `{ heading: true, label }` plus separator items `{ sep: true }`.
  *
  * Touch handling is explicit: hover opens submenus only for real mouse
  * pointers, while tapping a submenu parent only opens its child menu and never
@@ -82,6 +82,14 @@ export function createPopupMenuController() {
           const sep = document.createElement('div');
           sep.className = 'menu-sep';
           menu.appendChild(sep);
+          continue;
+        }
+        if (item.heading) {
+          const heading = document.createElement('div');
+          heading.className = 'menu-heading';
+          heading.setAttribute('role', 'presentation');
+          heading.textContent = item.label || '';
+          menu.appendChild(heading);
           continue;
         }
         const btn = document.createElement('button');

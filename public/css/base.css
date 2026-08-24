@@ -738,6 +738,14 @@ textarea { font-family: var(--ide-font-mono); }
   padding: 4px 0;
   font-size: var(--ide-fs);
 }
+.codiware-popup-menu .menu-heading {
+  padding: 6px 10px 3px;
+  color: var(--ide-fg-muted);
+  font-size: var(--ide-fs-sm);
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: default;
+}
 .codiware-popup-menu .menu-item {
   display: flex; align-items: center; gap: 8px;
   width: 100%;
