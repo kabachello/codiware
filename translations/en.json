@@ -63,6 +63,8 @@
   "git.commit": "Commit",
   "git.amend": "Amend",
   "git.push": "Push",
+  "git.push_branch": "Push branch",
+  "git.branch_pushed": "Branch pushed",
   "git.pull": "Pull",
   "git.history": "History",
   "git.branch": "Branch",

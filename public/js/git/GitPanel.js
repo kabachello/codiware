@@ -113,16 +113,23 @@ export class GitPanel {
       upstream: payload.upstream ?? null,
       ahead: Number(payload.ahead || 0),
       behind: Number(payload.behind || 0),
+      unpublished: Boolean(payload.unpublished),
+      publish_remote: payload.publish_remote ?? null,
       clean: files.length === 0,
       files,
     };
   }
 
-  _updatePushButton(status) { this._updateSyncButton(this.pushBtn, this.i18n.t('git.push'), Number(status?.ahead || 0)); }
+  /** Promote unpublished branches as publishable even before Git reports ahead. */
+  _updatePushButton(status) {
+    const unpublished = Boolean(status?.unpublished);
+    const label = unpublished ? (this.i18n.t('git.push_branch') || 'Push branch') : this.i18n.t('git.push');
+    this._updateSyncButton(this.pushBtn, label, unpublished ? 1 : Number(status?.ahead || 0), { showCount: !unpublished });
+  }
   _updatePullButton(status) { this._updateSyncButton(this.pullBtn, this.i18n.t('git.pull'), Number(status?.behind || 0)); }
 
   /** Promote push/pull buttons when there is work in that direction. */
-  _updateSyncButton(button, baseLabel, count) {
+  _updateSyncButton(button, baseLabel, count, { showCount = true } = {}) {
     if (!button) return;
     const hasWork = count > 0;
     button.classList.toggle('primary', hasWork);
@@ -133,9 +140,10 @@ export class GitPanel {
         label.className = 'tb-btn-label';
         button.append(label);
       }
-      label.textContent = `${baseLabel} (${count})`;
-      button.title = `${baseLabel} (${count})`;
-      button.setAttribute('aria-label', `${baseLabel} (${count})`);
+      const text = showCount ? `${baseLabel} (${count})` : baseLabel;
+      label.textContent = text;
+      button.title = text;
+      button.setAttribute('aria-label', text);
     } else {
       if (label) label.remove();
       button.title = baseLabel;
@@ -427,7 +435,15 @@ export class GitPanel {
       this.refresh();
     } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
-  async push() { try { const resp = await this.api.post('/git/push', {}); this._injectConsole(resp); this.toasts.success('Pushed ✓'); this.refresh(); } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); } }
+  async push() {
+    const publishingBranch = Boolean(this._lastStatus?.unpublished);
+    try {
+      const resp = await this.api.post('/git/push', {});
+      this._injectConsole(resp);
+      this.toasts.success((publishingBranch ? (this.i18n.t('git.branch_pushed') || 'Branch pushed') : 'Pushed') + ' ✓');
+      this.refresh();
+    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
+  }
   async pull() { try { const resp = await this.api.post('/git/pull', {}); this._injectConsole(resp); this.toasts.success('Pulled ✓'); this.refresh(); } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); } }
 
   /** Open the shared branch chooser and populate it from `/git/branches`. */
@@ -455,11 +471,11 @@ export class GitPanel {
       const list = Array.isArray(branches) ? branches.filter(Boolean) : [];
       if (list.length === 0) return;
       if (items.length > 0) items.push({ sep: true });
-      items.push({ icon: remote ? 'fa fa-cloud' : 'fa fa-tag', label, disabled: true });
+      items.push({ heading: true, label });
       for (const name of list) {
         const isCurrent = !remote && name === current;
         items.push({
-          icon: isCurrent ? 'fa fa-check' : 'fa fa-code-fork',
+          icon: isCurrent ? 'fa fa-bullseye' : 'fa fa-code-fork',
           label: isCurrent ? `${name}${currentSuffix}` : name,
           children: this._branchActionItems(name, { current: isCurrent, remote }),
         });

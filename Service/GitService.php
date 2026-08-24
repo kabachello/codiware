@@ -58,14 +58,18 @@ final class GitService
      * keeps diff, stage and delete actions identical for new files no matter
      * whether their parent folder was already tracked by Git.
      *
-     * @return array{branch:?string,upstream:?string,ahead:int,behind:int,clean:bool,files:array<int,array{path:string,index:string,worktree:string,staged:bool,changed:bool,untracked:bool,conflict:bool,renamed_from:?string}>}
+     * The returned publication state marks local branches without an upstream as
+     * `unpublished`. The front-end uses this to promote the push button as
+     * "Push branch", while `push()` uses the same state to run `git push -u`.
+     *
+     * @return array<string,mixed>
      */
     public function status(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
         // -z separator avoids quoting issues for paths with spaces/utf-8.
         $out = $this->run($root, ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z']);
-        return $this->parseStatusV2($out);
+        return $this->enrichPublicationState($root, $this->parseStatusV2($out));
     }
 
     /**
@@ -84,7 +88,7 @@ final class GitService
      * remote ref directly. This avoids detached HEAD states while still letting
      * callers use the remote name they see in the dropdown.
      *
-     * @return array{status:array{branch:?string,upstream:?string,ahead:int,behind:int,clean:bool,files:array<int,array{path:string,index:string,worktree:string,staged:bool,changed:bool,untracked:bool,conflict:bool,renamed_from:?string}>},switched:bool,target_branch:?string,console:?array{command:string,output:string,exit_code:int,ok:bool}}
+     * @return array{status:array<string,mixed>,switched:bool,target_branch:?string,console:?array{command:string,output:string,exit_code:int,ok:bool}}
      */
     public function ensureBranch(WorkspaceRoot $root, ?string $requestedBranch): array
     {
@@ -254,10 +258,26 @@ final class GitService
         return ['message' => trim($console['output']), 'console' => $console];
     }
 
+    /**
+     * Push the active branch, publishing it with an upstream when needed.
+     *
+     * Branches created inside the IDE start as local-only branches. For those
+     * branches `git status --branch` reports no upstream, so a plain `git push`
+     * would fail. In that state the service pushes with `-u <remote> <branch>`
+     * (preferring `origin`) so the local branch is published and future pushes
+     * can use the regular upstream-aware command again.
+     */
     public function push(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
-        $console = $this->consoleCapture($root, ['push']);
+        $status = $this->status($root);
+        $branch = trim((string)($status['branch'] ?? ''));
+        $remote = trim((string)($status['publish_remote'] ?? ''));
+        $args = ['push'];
+        if (($status['unpublished'] ?? false) === true && $branch !== '' && $remote !== '') {
+            $args = ['push', '-u', $remote, $branch];
+        }
+        $console = $this->consoleCapture($root, $args);
         if (!$console['ok']) {
             throw $this->consoleFailure('push', $console);
         }
@@ -655,6 +675,40 @@ final class GitService
     }
 
     /**
+     * Add branch publication metadata to the parsed porcelain status.
+     *
+     * Git reports ahead/behind counters only when the current branch has an
+     * upstream. A newly created local branch has no upstream yet, so the UI
+     * would otherwise see `ahead: 0` and keep the push button passive even after
+     * commits exist. This derived state lets the UI and push command treat that
+     * case as publishable work.
+     *
+     * @param array<string,mixed> $status
+     * @return array<string,mixed>
+     */
+    private function enrichPublicationState(WorkspaceRoot $root, array $status): array
+    {
+        $branch = trim((string)($status['branch'] ?? ''));
+        $upstream = trim((string)($status['upstream'] ?? ''));
+        $unpublished = $branch !== '' && $upstream === '';
+        $status['unpublished'] = $unpublished;
+        $status['publish_remote'] = $unpublished ? $this->defaultRemote($root) : null;
+        return $status;
+    }
+
+    /**
+     * Return the remote used when publishing a branch, preferring `origin`.
+     */
+    private function defaultRemote(WorkspaceRoot $root): ?string
+    {
+        $remotes = array_values(array_filter(array_map('trim', explode("\n", $this->run($root, ['remote'])))));
+        if ($remotes === []) {
+            return null;
+        }
+        return in_array('origin', $remotes, true) ? 'origin' : $remotes[0];
+    }
+
+    /**
      * Decide whether a checkout target is a local branch or a remote-tracking
      * ref and map remote refs like `origin/1.x-dev` to their local tracking
      * branch name (`1.x-dev`).
@@ -869,7 +923,7 @@ final class GitService
                 } elseif (str_starts_with($rec, '# branch.upstream ')) {
                     $upstream = trim(substr($rec, 18));
                 } elseif (str_starts_with($rec, '# branch.ab ')) {
-                    if (preg_match('/\+(-?\d+)\s+-(-?\d+)/', $rec, $m) === 1) {
+                    if (preg_match('/\+(-?\d+)\s+-(\d+)/', $rec, $m) === 1) {
                         $ahead = (int)$m[1];
                         $behind = (int)$m[2];
                     }

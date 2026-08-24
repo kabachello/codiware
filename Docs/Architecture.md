@@ -255,14 +255,14 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/git/status?root=` | Changed, staged, untracked, conflicted files; branch; ahead/behind counters. |
+| `GET` | `/git/status?root=` | Changed, staged, untracked, conflicted files; branch; upstream, ahead/behind counters and unpublished-branch metadata. |
 | `GET` | `/git/diff?root=&path=&staged=` | Returns old/new content and diff metadata for Monaco diff editor. |
 | `POST` | `/git/discard` | Discards one or more files. Later supports optional hunk-level discard. |
 | `POST` | `/git/stage` | Stages one or more files. |
 | `POST` | `/git/unstage` | Unstages one or more files. |
 | `POST` | `/git/commit` | Commits staged changes with message and configured author name/email. |
 | `POST` | `/git/amend` | Amends the last commit. |
-| `POST` | `/git/push` | Pushes the current branch. |
+| `POST` | `/git/push` | Pushes the current branch; local branches without upstream are published via `git push -u <remote> <branch>`. |
 | `GET` | `/git/branches?root=` | Lists local/remote branches and current branch. |
 | `POST` | `/git/checkout` | Checks out an existing branch or creates a new branch. |
 | `POST` | `/git/delete-branch` | Deletes one local branch or one remote branch selected in the branch chooser. |
@@ -281,7 +281,7 @@ The branch name shown at the top of the Git panel and in the footer status bar a
 
 Selecting a remote branch from that chooser must attach the user to a real local branch instead of checking out the remote ref verbatim. The back end therefore maps a remote entry like `origin/feature/demo` to the local branch `feature/demo` and performs a tracked checkout. This prevents the UI from falling into detached HEAD after a remote branch was chosen while still preserving the remote name in the menu.
 
-The shared branch chooser also includes a `Create branch` action. It asks for the new branch name and calls `/git/checkout` with `create: true`, optionally passing a `start_point` so the same flow can create branches either from the current `HEAD` or from a commit selected in history.
+The shared branch chooser also includes a `Create branch` action. It asks for the new branch name and calls `/git/checkout` with `create: true`, optionally passing a `start_point` so the same flow can create branches either from the current `HEAD` or from a commit selected in history. Newly created branches start without an upstream; status marks them as `unpublished`, the Git panel labels the promoted push action `Push branch`, and the first push publishes the branch with `git push -u` so later pushes use the regular `Push` mode again.
 
 The history panel reuses the same menu language as other Codiware lists: each commit row now supports a right-click context menu and the selected-commit details pane exposes the same three-dot menu. Both entry points open one shared commit-action menu offering cherry-pick, revert, merge, reset (with a submenu for soft/mixed/hard), and create-branch-from-commit. All actions stay in the structured Git API world so the UI can refresh status and inject the captured CLI output into the console after each operation.
 
