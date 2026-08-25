@@ -432,6 +432,7 @@ export class GitPanel {
       this._injectConsole(resp);
       this.msg.value = '';
       this.toasts.success((amend ? 'Amended' : 'Committed') + ' ✓');
+      this._emitGitOperation(amend ? 'amend' : 'commit', resp, { amend });
       this.refresh();
     } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
@@ -441,10 +442,19 @@ export class GitPanel {
       const resp = await this.api.post('/git/push', {});
       this._injectConsole(resp);
       this.toasts.success((publishingBranch ? (this.i18n.t('git.branch_pushed') || 'Branch pushed') : 'Pushed') + ' ✓');
+      this._emitGitOperation('push', resp, { publishingBranch });
       this.refresh();
     } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
-  async pull() { try { const resp = await this.api.post('/git/pull', {}); this._injectConsole(resp); this.toasts.success('Pulled ✓'); this.refresh(); } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); } }
+  async pull() {
+    try {
+      const resp = await this.api.post('/git/pull', {});
+      this._injectConsole(resp);
+      this.toasts.success('Pulled ✓');
+      this._emitGitOperation('pull', resp);
+      this.refresh();
+    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
+  }
 
   /** Open the shared branch chooser and populate it from `/git/branches`. */
   async openBranchMenu(anchor) {
@@ -552,7 +562,13 @@ export class GitPanel {
       this.toasts.success((this.i18n.t('git.created_branch') || 'Created branch') + ` ${branch}`);
       await this.refresh();
       this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
+      this._emitGitOperation('create-branch', resp, { branch, startPoint, status: this._lastStatus });
     } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
+  }
+
+  /** Broadcast completed repository-changing operations to optional panels. */
+  _emitGitOperation(operation, response, extra = {}) {
+    this.bus?.emit?.('git:operation-completed', { operation, response, source: 'git-panel', ...extra });
   }
 
   _injectConsole(resp) { const block = resp?.console; if (block && this.bus) this.bus.emit('console:inject', block); }

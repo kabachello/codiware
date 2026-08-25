@@ -8,6 +8,7 @@ const ROW_H = 28;
 const DOT_R = 4;
 const GRAPH_COLORS = ['#2563eb', '#16a34a', '#db2777', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#65a30d', '#c026d3', '#0d9488', '#ea580c', '#4f46e5'];
 const HISTORY_LIMIT = 200;
+const AUTO_REFRESH_OPERATIONS = new Set(['commit', 'amend', 'push', 'pull', 'create-branch', 'reset']);
 
 export class HistoryPanel {
   constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenFile }) {
@@ -23,6 +24,8 @@ export class HistoryPanel {
     this.search = '';
     this._searchTimer = null;
     this.graphWidth = 60;
+    this._refreshPromise = null;
+    this.bus?.on?.('git:operation-completed', (payload) => this.refreshAfterGitOperation(payload));
   }
 
   _t(key, fallback) {
@@ -37,7 +40,7 @@ export class HistoryPanel {
     host.classList.add('history-panel');
     const toolbar = document.createElement('div');
     toolbar.className = 'panel-toolbar';
-    toolbar.append(this._buildSearch(), this._tbBtn('fa fa-refresh', this._t('actions.refresh', 'Refresh'), () => this.refresh()));
+    toolbar.append(this._tbBtn('fa fa-refresh', this._t('actions.refresh', 'Refresh'), () => this.refresh()), this._buildSearch());
     const split = document.createElement('div');
     split.className = 'history-split';
     this.graphPane = document.createElement('div');
@@ -108,19 +111,39 @@ export class HistoryPanel {
     return b;
   }
 
+  /** Refresh an already mounted or previously opened history panel after Git changed repository history. */
+  async refreshAfterGitOperation(payload) {
+    if (!this._matchesAutoRefreshOperation(payload?.operation)) return;
+    if (!this._loaded && !this.host) return;
+    await this.refresh();
+  }
+
+  /** Check whether one Git operation is expected to change visible history data. */
+  _matchesAutoRefreshOperation(operation) {
+    return AUTO_REFRESH_OPERATIONS.has(String(operation || '').toLowerCase());
+  }
+
   /** Fetch commit history, recompute lanes and render the graph pane. */
   async refresh() {
     if (!this.graphPane) return;
+    if (this._refreshPromise) return this._refreshPromise;
     this.graphPane.textContent = '…';
-    try {
-      const params = { limit: HISTORY_LIMIT };
-      if (this.search) params.search = this.search;
-      const data = await this.api.get('/git/history', params);
-      this.commits = Array.isArray(data?.commits) ? data.commits : [];
-      this._loaded = true;
-      this._graph = computeGraph(this.commits);
-      this._renderGraph();
-    } catch (e) { this.graphPane.textContent = e.message; }
+    this._refreshPromise = (async () => {
+      try {
+        const params = { limit: HISTORY_LIMIT };
+        if (this.search) params.search = this.search;
+        const data = await this.api.get('/git/history', params);
+        this.commits = Array.isArray(data?.commits) ? data.commits : [];
+        this._loaded = true;
+        this._graph = computeGraph(this.commits);
+        this._renderGraph();
+      } catch (e) {
+        this.graphPane.textContent = e.message;
+      } finally {
+        this._refreshPromise = null;
+      }
+    })();
+    return this._refreshPromise;
   }
 
   /** Render the commit rows and attach shared PopupMenu context menus. */
@@ -319,12 +342,12 @@ export class HistoryPanel {
     } catch (e) { this.toasts.error(e.message); }
   }
 
-  async _cherryPick(commit) { if (window.confirm(this._t('history.confirm_cherry_pick', 'Cherry-pick this commit into the current branch?'))) await this._runCommitAction('/git/cherry-pick', { commit }, this._t('history.cherry_pick_done', 'Cherry-picked commit')); }
-  async _revert(commit) { if (window.confirm(this._t('history.confirm_revert', 'Revert this commit on the current branch?'))) await this._runCommitAction('/git/revert', { commit }, this._t('history.revert_done', 'Reverted commit')); }
-  async _merge(commit) { if (window.confirm(this._t('history.confirm_merge', 'Merge the selected commit into the current branch?'))) await this._runCommitAction('/git/merge', { commit }, this._t('history.merge_done', 'Merged into current branch')); }
+  async _cherryPick(commit) { if (window.confirm(this._t('history.confirm_cherry_pick', 'Cherry-pick this commit into the current branch?'))) await this._runCommitAction('/git/cherry-pick', { commit }, this._t('history.cherry_pick_done', 'Cherry-picked commit'), 'cherry-pick'); }
+  async _revert(commit) { if (window.confirm(this._t('history.confirm_revert', 'Revert this commit on the current branch?'))) await this._runCommitAction('/git/revert', { commit }, this._t('history.revert_done', 'Reverted commit'), 'revert'); }
+  async _merge(commit) { if (window.confirm(this._t('history.confirm_merge', 'Merge the selected commit into the current branch?'))) await this._runCommitAction('/git/merge', { commit }, this._t('history.merge_done', 'Merged into current branch'), 'merge'); }
   async _reset(commit, mode) {
     const fallback = mode === 'hard' ? 'Hard reset the current branch to this commit? This will discard local changes and move branch history.' : `Reset the current branch to this commit using ${mode} mode?`;
-    if (window.confirm(this._t(`history.confirm_reset_${mode}`, fallback))) await this._runCommitAction('/git/reset', { commit, mode }, this._t(`history.reset_${mode}_done`, `Reset (${mode}) completed`));
+    if (window.confirm(this._t(`history.confirm_reset_${mode}`, fallback))) await this._runCommitAction('/git/reset', { commit, mode }, this._t(`history.reset_${mode}_done`, `Reset (${mode}) completed`), 'reset');
   }
 
   async _promptCreateBranch(startPoint) {
@@ -340,16 +363,18 @@ export class HistoryPanel {
       this._injectConsole(resp);
       this.toasts.success(this._t('git.created_branch', 'Created branch') + ` ${branch}`);
       this.bus?.emit?.('git:branch-changed', { branch, startPoint, response: resp });
+      this.bus?.emit?.('git:operation-completed', { operation: 'create-branch', branch, startPoint, response: resp, source: 'history-panel' });
       await this.refresh();
     } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
   }
 
-  async _runCommitAction(path, payload, successMessage) {
+  async _runCommitAction(path, payload, successMessage, operation = 'history-action') {
     try {
       const resp = await this.api.post(path, payload);
       this._injectConsole(resp);
       if (successMessage) this.toasts.success(successMessage + ' ✓');
       this.bus?.emit?.('git:history-action', { path, payload, response: resp });
+      this.bus?.emit?.('git:operation-completed', { operation, path, payload, response: resp, source: 'history-panel' });
       this.bus?.emit?.('git:branch-changed', { response: resp });
       await this.refresh();
     } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
