@@ -8,7 +8,7 @@ const ROW_H = 28;
 const DOT_R = 4;
 const GRAPH_COLORS = ['#2563eb', '#16a34a', '#db2777', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#65a30d', '#c026d3', '#0d9488', '#ea580c', '#4f46e5'];
 const HISTORY_LIMIT = 200;
-const AUTO_REFRESH_OPERATIONS = new Set(['commit', 'amend', 'push', 'pull', 'create-branch', 'reset']);
+const AUTO_REFRESH_OPERATIONS = new Set(['commit', 'amend', 'push', 'pull', 'fetch', 'create-branch', 'reset']);
 
 export class HistoryPanel {
   constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenFile }) {
@@ -137,6 +137,12 @@ export class HistoryPanel {
         this._loaded = true;
         this._graph = computeGraph(this.commits);
         this._renderGraph();
+        if (this.selected && this.commits.some((commit) => commit.hash === this.selected)) {
+          await this._loadDetails(this.selected);
+        } else if (this.selected) {
+          this.selected = null;
+          this._renderEmptyDetails();
+        }
       } catch (e) {
         this.graphPane.textContent = e.message;
       } finally {

@@ -263,6 +263,7 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 | `POST` | `/git/commit` | Commits staged changes with message and configured author name/email. |
 | `POST` | `/git/amend` | Amends the last commit. |
 | `POST` | `/git/push` | Pushes the current branch; local branches without upstream are published via `git push -u <remote> <branch>`. |
+| `POST` | `/git/fetch` | Fetches all remotes and tags and prunes deleted remote-tracking refs without changing the current branch. |
 | `GET` | `/git/branches?root=` | Lists local/remote branches and current branch. |
 | `POST` | `/git/checkout` | Checks out an existing branch or creates a new branch. |
 | `POST` | `/git/delete-branch` | Deletes one local branch or one remote branch selected in the branch chooser. |
@@ -282,6 +283,8 @@ The branch name shown at the top of the Git panel and in the footer status bar a
 Selecting a remote branch from that chooser must attach the user to a real local branch instead of checking out the remote ref verbatim. The back end therefore maps a remote entry like `origin/feature/demo` to the local branch `feature/demo` and performs a tracked checkout. This prevents the UI from falling into detached HEAD after a remote branch was chosen while still preserving the remote name in the menu.
 
 The shared branch chooser also includes a `Create branch` action. It asks for the new branch name and calls `/git/checkout` with `create: true`, optionally passing a `start_point` so the same flow can create branches either from the current `HEAD` or from a commit selected in history. Newly created branches start without an upstream; status marks them as `unpublished`, the Git panel labels the promoted push action `Push branch`, and the first push publishes the branch with `git push -u` so later pushes use the regular `Push` mode again.
+
+The Git toolbar provides an explicit remote-sync action between Pull and History. It runs `git fetch --all --tags --prune`, injects the captured output into the console, refreshes status and any loaded history panel, and therefore updates remote branch tips, tags and deleted remote refs without checking out or merging another branch. Commit details calculate containment across both local and remote-tracking branches so users can see every known branch containing a selected commit.
 
 The history panel reuses the same menu language as other Codiware lists: each commit row now supports a right-click context menu and the selected-commit details pane exposes the same three-dot menu. Both entry points open one shared commit-action menu offering cherry-pick, revert, merge, reset (with a submenu for soft/mixed/hard), and create-branch-from-commit. All actions stay in the structured Git API world so the UI can refresh status and inject the captured CLI output into the console after each operation.
 

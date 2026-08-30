@@ -66,6 +66,8 @@
   "git.push_branch": "Push branch",
   "git.branch_pushed": "Branch pushed",
   "git.pull": "Pull",
+  "git.fetch_all": "Update remote branches and tags",
+  "git.fetch_all_done": "Remote branches and tags updated",
   "git.history": "History",
   "git.branch": "Branch",
   "git.select_branch": "Select branch",

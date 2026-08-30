@@ -295,6 +295,21 @@ final class GitService
     }
 
     /**
+     * Refresh all remote-tracking branches and tags without changing the
+     * checked-out branch. Pruning removes stale remote branch refs so history
+     * and commit containment information reflect the current remote state.
+     */
+    public function fetch(WorkspaceRoot $root): array
+    {
+        $this->requireRepo($root);
+        $console = $this->consoleCapture($root, ['fetch', '--all', '--tags', '--prune']);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('fetch', $console);
+        }
+        return ['message' => trim($console['output']), 'console' => $console];
+    }
+
+    /**
      * @return array{current:?string,locals:string[],remotes:string[]}
      */
     public function branches(WorkspaceRoot $root): array
@@ -545,23 +560,23 @@ final class GitService
     }
 
     /**
-     * List the local branches that contain the given commit, i.e. branches from
-     * whose tip the commit is reachable (`git branch --contains`). Used by the
-     * details pane to show where a commit currently lives.
+     * List local and remote-tracking branches that contain the given commit.
+     * Symbolic remote HEAD aliases are omitted because they duplicate a real
+     * remote branch and do not represent an independently useful branch.
      *
      * @return string[]
      */
     public function commitBranches(WorkspaceRoot $root, string $commit): array
     {
-        $out = $this->run($root, ['branch', '--contains', $commit, '--format=%(refname:short)']);
+        $out = $this->run($root, ['branch', '--all', '--contains', $commit, '--format=%(refname:short)']);
         $branches = [];
         foreach (explode("\n", trim($out)) as $line) {
             $name = trim($line);
-            if ($name !== '') {
+            if ($name !== '' && !str_ends_with($name, '/HEAD')) {
                 $branches[] = $name;
             }
         }
-        return $branches;
+        return array_values(array_unique($branches));
     }
 
     /**

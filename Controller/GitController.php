@@ -95,6 +95,11 @@ final class GitController
         return $this->responses->ok($this->git->pull($this->root($request)));
     }
 
+    public function fetch(ServerRequestInterface $request): ResponseInterface
+    {
+        return $this->responses->ok($this->git->fetch($this->root($request)));
+    }
+
     public function branches(ServerRequestInterface $request): ResponseInterface
     {
         return $this->responses->ok($this->git->branches($this->root($request)));
