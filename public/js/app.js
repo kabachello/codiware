@@ -404,6 +404,11 @@ async function main() {
         historyPanel.mount(host);
       },
     });
+    bus.on('git:open-file-history', ({ path } = {}) => {
+      if (!path) return;
+      bottomPanels.activate('history', { expand: true });
+      historyPanel?.openFileHistory(path);
+    });
   }
 
   // Toolbar: theme toggle + bottom panel toggle + save

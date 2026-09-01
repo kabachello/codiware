@@ -376,6 +376,7 @@ export class GitPanel {
     const items = [
       { icon: 'fa fa-exchange', label: this.i18n.t('git.view_diff') || 'View diff', onClick: () => this._openDiff(file.path, group === 'staged') },
       { icon: 'fa fa-file-o', label: this.i18n.t('git.open_regular_editor') || 'Open in regular editor', onClick: () => this._openFile(file.path) },
+      { icon: 'fa fa-history', label: this.i18n.t('git.open_file_history') || 'Open Git history', onClick: () => this.bus?.emit?.('git:open-file-history', { path: file.path }) },
       { sep: true },
     ];
     if (group === 'staged') items.push({ icon: 'fa fa-minus', label: this.i18n.t('git.unstage') || 'Unstage', onClick: () => this._unstage([file.path]) });

@@ -271,7 +271,7 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 | `POST` | `/git/revert` | Reverts one commit into the current branch. |
 | `POST` | `/git/merge` | Merges one selected ref or commit into the current branch. |
 | `POST` | `/git/reset` | Resets the current branch to one commit using `soft`, `mixed` or `hard` mode. |
-| `GET` | `/git/history?root=&limit=&after=` | Returns commit list with files changed and graph metadata. |
+| `GET` | `/git/history?root=&limit=&after=&path=` | Returns commit history; optional `path` restricts it to commits touching one validated workspace file. |
 | `GET` | `/git/show?root=&commit=&path=` | Returns a file at a commit for history diffs. |
 
 For future multi-root workspaces, the Git panel should show one repository selector per Git-enabled root. The primary workspace root is selected by default; roots outside Git repositories are omitted from the selector.
@@ -287,6 +287,8 @@ The shared branch chooser also includes a `Create branch` action. It asks for th
 The Git toolbar provides an explicit remote-sync action between Pull and History. It runs `git fetch --all --tags --prune`, injects the captured output into the console, refreshes status and any loaded history panel, and therefore updates remote branch tips, tags and deleted remote refs without checking out or merging another branch. Commit details calculate containment across both local and remote-tracking branches so users can see every known branch containing a selected commit.
 
 The history panel reuses the same menu language as other Codiware lists: each commit row now supports a right-click context menu and the selected-commit details pane exposes the same three-dot menu. Both entry points open one shared commit-action menu offering cherry-pick, revert, merge, reset (with a submenu for soft/mixed/hard), and create-branch-from-commit. All actions stay in the structured Git API world so the UI can refresh status and inject the captured CLI output into the console after each operation.
+
+File rows in the explorer and Git status panel expose `Open Git history`. The action opens and expands the shared history bottom panel with a server-side path filter. A visible file chip below the history toolbar identifies the active path and provides a one-click remove action that restores repository-wide history. File-filtered results hide graph lanes because restricting the commit walk can make the remaining rows non-contiguous.
 
 ### Search
 

@@ -212,8 +212,16 @@ final class GitController
         $limit = max(1, min(500, (int)($q['limit'] ?? 100)));
         $skip = max(0, (int)($q['skip'] ?? 0));
         $search = trim((string)($q['search'] ?? ''));
+        $path = trim((string)($q['path'] ?? ''));
+        if ($path !== '') {
+            // File-history paths use the same workspace isolation and deny rules
+            // as file APIs. The file may currently be deleted, therefore only
+            // its existing parent is required here.
+            $path = $this->guard->relativize($root, $this->guard->resolveInside($root, $path, false));
+        }
         return $this->responses->ok([
-            'commits' => $this->git->history($root, $limit, $skip, $search),
+            'commits' => $this->git->history($root, $limit, $skip, $search, $path),
+            'path' => $path !== '' ? $path : null,
         ]);
     }
 

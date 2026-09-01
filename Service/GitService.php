@@ -458,7 +458,7 @@ final class GitService
      *
      * @return array<int,array{hash:string,parents:string[],author:string,email:string,date:int,committer:string,commit_date:int,subject:string,refs:array<int,array{type:string,name:string,current:bool}>}>
      */
-    public function history(WorkspaceRoot $root, int $limit, int $skip = 0, string $search = ''): array
+    public function history(WorkspaceRoot $root, int $limit, int $skip = 0, string $search = '', string $path = ''): array
     {
         $this->requireRepo($root);
         $us = "\x1f"; // field separator (git %x1f)
@@ -469,6 +469,14 @@ final class GitService
         // the listing chronological while still never showing a parent before
         // its child, matching the date column in the panel.
         $args = ['log', '--all', '--date-order', '--max-count=' . $limit, '--skip=' . $skip, '--pretty=format:' . $format];
+        $path = trim(str_replace('\\', '/', $path), '/');
+        if ($path !== '') {
+            // The explicit `--` keeps a path beginning with a dash out of Git's
+            // option parser. Keep `--all` so file history follows the same
+            // repository-wide scope as the regular history panel.
+            $args[] = '--';
+            $args[] = $path;
+        }
         $out = $this->run($root, $args);
         $lines = $out === '' ? [] : explode("\n", $out);
         $rows = [];

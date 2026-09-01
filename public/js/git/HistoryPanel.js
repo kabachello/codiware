@@ -22,6 +22,7 @@ export class HistoryPanel {
     this.selected = null;
     this._loaded = false;
     this.search = '';
+    this.filePath = '';
     this._searchTimer = null;
     this.graphWidth = 60;
     this._refreshPromise = null;
@@ -41,6 +42,9 @@ export class HistoryPanel {
     const toolbar = document.createElement('div');
     toolbar.className = 'panel-toolbar';
     toolbar.append(this._tbBtn('fa fa-refresh', this._t('actions.refresh', 'Refresh'), () => this.refresh()), this._buildSearch());
+    this.filterBar = document.createElement('div');
+    this.filterBar.className = 'history-filter-bar';
+    this._renderFileFilter();
     const split = document.createElement('div');
     split.className = 'history-split';
     this.graphPane = document.createElement('div');
@@ -52,7 +56,7 @@ export class HistoryPanel {
     this.detailsPane.className = 'history-details-pane';
     this._renderEmptyDetails();
     split.append(this.graphPane, this.splitter, this.detailsPane);
-    host.append(toolbar, split);
+    host.append(toolbar, this.filterBar, split);
     this.splitEl = split;
     attachSplitter(this.splitter, {
       orientation: 'vertical',
@@ -91,6 +95,46 @@ export class HistoryPanel {
     this.searchInput = input;
     wrap.append(input);
     return wrap;
+  }
+
+  /** Apply a visible, independently removable file-history filter. */
+  async openFileHistory(path) {
+    const normalized = String(path || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!normalized) return;
+    const pending = this._refreshPromise;
+    this.filePath = normalized;
+    this.selected = null;
+    this._renderFileFilter();
+    // Opening the panel mounts it and starts its initial unfiltered request.
+    // Wait for that request before issuing the path-filtered refresh.
+    if (pending) await pending;
+    await this.refresh();
+  }
+
+  async clearFileHistory() {
+    if (!this.filePath) return;
+    const pending = this._refreshPromise;
+    this.filePath = '';
+    this.selected = null;
+    this._renderFileFilter();
+    if (pending) await pending;
+    await this.refresh();
+  }
+
+  _renderFileFilter() {
+    if (!this.filterBar) return;
+    this.filterBar.replaceChildren();
+    this.filterBar.hidden = !this.filePath;
+    if (!this.filePath) return;
+    const chip = document.createElement('span');
+    chip.className = 'history-filter-chip';
+    chip.append(Icon.render('fa fa-file-o'));
+    const label = document.createElement('span');
+    label.textContent = this._t('history.file_filter', 'File') + ': ' + this.filePath;
+    label.title = this.filePath;
+    const remove = this._tbBtn('fa fa-times', this._t('history.remove_file_filter', 'Remove file filter'), () => this.clearFileHistory());
+    chip.append(label, remove);
+    this.filterBar.append(chip);
   }
 
   _applySearch(value) {
@@ -132,6 +176,7 @@ export class HistoryPanel {
       try {
         const params = { limit: HISTORY_LIMIT };
         if (this.search) params.search = this.search;
+        if (this.filePath) params.path = this.filePath;
         const data = await this.api.get('/git/history', params);
         this.commits = Array.isArray(data?.commits) ? data.commits : [];
         this._loaded = true;
@@ -158,13 +203,13 @@ export class HistoryPanel {
     pane.innerHTML = '';
     if (!this.commits.length) {
       pane.classList.add('is-empty');
-      pane.textContent = this.search ? this._t('history.no_matches', 'No matching commits') : this._t('history.empty', 'No commits');
+      pane.textContent = (this.search || this.filePath) ? this._t('history.no_matches', 'No matching commits') : this._t('history.empty', 'No commits');
       return;
     }
     pane.classList.remove('is-empty');
     const graph = this._graph || computeGraph(this.commits);
     const graphWidth = Math.max(1, graph.cols) * LANE_W;
-    const showLanes = !this.search;
+    const showLanes = !this.search && !this.filePath;
     const table = document.createElement('div');
     table.className = 'history-table';
     table.setAttribute('role', 'list');

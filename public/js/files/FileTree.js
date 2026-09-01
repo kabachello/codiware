@@ -1196,6 +1196,8 @@ export class FileTree {
     }
 
     return [
+      { icon: 'fa fa-history', label: t('git.open_file_history'), onClick: () => this.bus?.emit?.('git:open-file-history', { path: entry.path }) },
+      { sep: true },
       { icon: 'fa fa-clipboard', label: t('files.copy_relative_path'), onClick: () => this._copyPathToClipboard(entry.path) },
       { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
       { icon: 'fa fa-i-cursor', label: t('files.rename'), onClick: () => this._renamePrompt(entry) },
