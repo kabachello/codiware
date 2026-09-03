@@ -188,6 +188,62 @@ final class GitService
     }
 
     /**
+     * Return the last committed author and author time for every line of a text
+     * file. `--line-porcelain` repeats metadata for each result line, which
+     * keeps parsing deterministic across Git versions and operating systems.
+     * Lines Git attributes to the working tree are marked as uncommitted.
+     *
+     * @return array<int,array{line:int,commit:string,author:string,email:string,time:int,summary:string,uncommitted:bool}>
+     */
+    public function blame(WorkspaceRoot $root, string $path): array
+    {
+        $this->requireRepo($root);
+        $normalizedPath = trim(str_replace('\\', '/', $path), '/');
+        if ($normalizedPath === '') {
+            throw new CodiwareException('path is required.', 'bad_request', 400);
+        }
+
+        $out = $this->run($root, ['blame', '--line-porcelain', '--', $normalizedPath]);
+        $result = [];
+        $current = null;
+        foreach (explode("\n", $out) as $line) {
+            // Boundary commits may be prefixed with `^`. If that header is
+            // skipped, its following metadata/tab line is accidentally applied
+            // to the previous record and every visible annotation is displaced.
+            // Accept CRLF output as well so parsing is identical on Windows.
+            if (preg_match('/^\^?([0-9a-f]{40,64})\s+\d+\s+(\d+)(?:\s+\d+)?\r?$/i', $line, $match) === 1) {
+                $current = [
+                    'line' => (int)$match[2],
+                    'commit' => $match[1],
+                    'author' => '',
+                    'email' => '',
+                    'time' => 0,
+                    'summary' => '',
+                    'uncommitted' => preg_match('/^0+$/', $match[1]) === 1,
+                ];
+                continue;
+            }
+            if ($current === null) {
+                continue;
+            }
+            if (str_starts_with($line, 'author ')) {
+                $current['author'] = substr($line, 7);
+            } elseif (str_starts_with($line, 'author-mail ')) {
+                $current['email'] = trim(substr($line, 12), '<>');
+            } elseif (str_starts_with($line, 'author-time ')) {
+                $current['time'] = (int)substr($line, 12);
+            } elseif (str_starts_with($line, 'summary ')) {
+                $current['summary'] = substr($line, 8);
+            } elseif (str_starts_with($line, "\t")) {
+                $result[] = $current;
+                $current = null;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * @param string[] $paths
      */
     public function stage(WorkspaceRoot $root, array $paths): void

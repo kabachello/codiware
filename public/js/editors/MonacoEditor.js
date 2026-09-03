@@ -76,6 +76,9 @@ export class MonacoEditor {
     this._outlineWidth = this._restoreOutlineWidth();
     this._outlineCollapsed = this._restoreOutlineCollapsed();
     this._outlinePanelResponsiveDefaultApplied = false;
+    this._blameEnabled = false;
+    this._blameLoading = false;
+    this._blameLines = new Map();
 
     host.innerHTML = '';
     host.style.position = 'relative';
@@ -347,6 +350,8 @@ export class MonacoEditor {
       scrollBeyondLastLine: false,
       fontSize: 13,
       renderWhitespace: 'selection',
+      lineNumbers: (lineNumber) => this._formatLineNumber(lineNumber),
+      lineNumbersMinChars: 4,
     };
 
     this._loadingSuppressed = true; // Suppress change events during editor creation
@@ -364,8 +369,30 @@ export class MonacoEditor {
     this._editor.onDidChangeModelContent(() => {
       if (this._loadingSuppressed) return; // Ignore changes during load
       this._dirty = true;
+      if (this._blameEnabled) {
+        // Attribution belongs to the saved working-tree snapshot. Turn it off
+        // as soon as editing changes line positions so stale authors are never
+        // shown beside newly edited text.
+        this._blameEnabled = false;
+        this._blameLines.clear();
+        this._editor.updateOptions({ lineNumbersMinChars: 4 });
+        this._editor.render(true);
+      }
       this._bus.emit('change', this);
     });
+
+    // Monaco contributes this action to its native editor context menu. Blame
+    // text replaces the regular line-number labels, matching the familiar
+    // left-hand annotation view of desktop IDEs without obscuring source text.
+    if (this.ctx?.boot?.features?.git !== false && this.ctx?.boot?.workspace?.is_git) {
+      this._editor.addAction({
+        id: 'codiware.git-blame',
+        label: this.ctx?.i18n?.t('git.blame') || 'Git blame',
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: 2,
+        run: () => this.toggleGitBlame(),
+      });
+    }
 
     // Scope the save shortcut to this editor instance. Using `addCommand`
     // registers the keybinding on Monaco's shared keybinding service, so with
@@ -412,6 +439,57 @@ export class MonacoEditor {
     this._monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs');
   }
 
+  _formatLineNumber(lineNumber) {
+    if (!this._blameEnabled) return String(lineNumber);
+    const blame = this._blameLines.get(lineNumber);
+    if (!blame) return `${lineNumber}  —`;
+    if (blame.uncommitted) {
+      return `${lineNumber}  ${this.ctx?.i18n?.t('git.blame_uncommitted') || 'Not committed'}`;
+    }
+    const author = (blame.author || blame.email || '—').replace(/\s+/g, ' ').slice(0, 16);
+    // A fixed-width, single-line date avoids locale-specific commas and spaces
+    // making Monaco's line-number label overflow into neighbouring gutter text.
+    const date = blame.time > 0
+      ? new Date(blame.time * 1000).toLocaleString([], {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+        hour12: false,
+      }).replace(',', '')
+      : '—';
+    return `${lineNumber}  ${author} · ${date}`;
+  }
+
+  async toggleGitBlame() {
+    if (!this._editor || this._blameLoading) return;
+    if (this._blameEnabled) {
+      this._blameEnabled = false;
+      this._blameLines.clear();
+      this._editor.updateOptions({ lineNumbersMinChars: 4 });
+      this._editor.render(true);
+      return;
+    }
+
+    const path = this._pendingMeta?.path;
+    if (!path) return;
+    if (this._dirty) {
+      this.ctx?.toasts?.info(this.ctx?.i18n?.t('git.blame_save_first') || 'Save the file before showing Git blame.');
+      return;
+    }
+    this._blameLoading = true;
+    try {
+      const result = await this.ctx.api.get('/git/blame', { path });
+      this._blameLines = new Map((result?.lines || []).map((line) => [Number(line.line), line]));
+      this._blameEnabled = true;
+      // Reserve enough room for line number, author and localized date. Monaco
+      // measures this value in digit widths rather than CSS pixels.
+      this._editor.updateOptions({ lineNumbersMinChars: 44 });
+      this._editor.render(true);
+    } catch (error) {
+      this.ctx?.toasts?.error(error?.message || this.ctx?.i18n?.t('git.blame_failed') || 'Could not load Git blame');
+    } finally {
+      this._blameLoading = false;
+    }
+  }
+
   load(content, meta) {
     const str = String(content ?? '');
     // Detect original line endings (CRLF or LF) from the content
@@ -419,8 +497,11 @@ export class MonacoEditor {
     this._originalEol = hasCRLF ? '\r\n' : '\n';
     this._pendingContent = str;
     this._pendingMeta = meta || null;
+    this._blameEnabled = false;
+    this._blameLines.clear();
 
     if (this._editor) {
+      this._editor.updateOptions({ lineNumbersMinChars: 4 });
       // Suppress change events during load to prevent false dirty state
       this._loadingSuppressed = true;
       this._editor.setValue(str);

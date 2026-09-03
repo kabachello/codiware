@@ -48,6 +48,25 @@ final class GitController
         return $this->responses->ok($this->git->diff($root, $path, $staged));
     }
 
+    /** Return per-line attribution for a workspace text file. */
+    public function blame(ServerRequestInterface $request): ResponseInterface
+    {
+        $root = $this->root($request);
+        $path = trim((string)($request->getQueryParams()['path'] ?? ''));
+        if ($path === '') {
+            throw new CodiwareException('path is required.', 'bad_request', 400);
+        }
+        $path = $this->guard->relativize($root, $this->guard->resolveInside($root, $path));
+        if (!is_file($root->path . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $path))) {
+            throw new CodiwareException('Git blame requires a file.', 'bad_request', 400);
+        }
+
+        return $this->responses->ok([
+            'path' => $path,
+            'lines' => $this->git->blame($root, $path),
+        ]);
+    }
+
     public function stage(ServerRequestInterface $request): ResponseInterface
     {
         [$root, $paths] = $this->rootAndPaths($request);

@@ -257,6 +257,7 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 |---|---|---|
 | `GET` | `/git/status?root=` | Changed, staged, untracked, conflicted files; branch; upstream, ahead/behind counters and unpublished-branch metadata. |
 | `GET` | `/git/diff?root=&path=&staged=` | Returns old/new content and diff metadata for Monaco diff editor. |
+| `GET` | `/git/blame?root=&path=` | Returns the last committed author, time and commit metadata for every line of a validated text file. |
 | `POST` | `/git/discard` | Discards one or more files. Later supports optional hunk-level discard. |
 | `POST` | `/git/stage` | Stages one or more files. |
 | `POST` | `/git/unstage` | Unstages one or more files. |
@@ -416,6 +417,8 @@ All editor tabs show unsaved state, restore from the previous browser session, a
 In addition to single-tab closing via the close icon or middle click, `TabManager` provides a right-click context menu on tab headers with bulk actions for closing all tabs, tabs to the left, tabs to the right, all other tabs, and only unpinned tabs. Tabs can be pinned from the same context menu or from the inline pin icon in the tab itself. Pinned tabs persist per repository, stay grouped at the start of the tab bar and are protected from the dedicated `Close unpinned tabs` bulk action. Drag-reordering is intentionally limited to the current group so users cannot accidentally drag an unpinned tab into the pinned block or vice versa.
 
 `TabManager.open()` also accepts an optional explicit editor override. This is used by cross-feature navigation flows like workspace search, which must open a file in a raw code editor regardless of the file type's normal preferred editor.
+
+The Monaco context menu includes a toggleable `Git blame` action for Git workspaces. It requests structured per-line attribution from `/git/blame` and temporarily widens/replaces Monaco's line-number labels with the line number, author and author date. Toggling the action again restores normal line numbers; working-tree-only lines are explicitly labelled as not committed.
 
 ### Extensibility Model
 

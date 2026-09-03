@@ -146,7 +146,7 @@ async function main() {
   registry.register(diffEditorDescriptor);
 
   // Editor context (shared by all editors).
-  const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {}, settings };
+  const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {}, settings, toasts };
 
   // Build chrome.
   const root = document.getElementById('codiware-root');
