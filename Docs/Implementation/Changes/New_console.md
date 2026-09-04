@@ -32,6 +32,7 @@ The current Codiware console is a minimal request/response shell:
 - [ ] Git-panel buttons keep calling the structured `/git/*` JSON endpoints; the CLI output embedded in those responses is **injected** into the console, and the panel auto-opens the console when a command fails.
 - [ ] Git/CLI failures still log PHP exceptions server-side (unchanged) while the captured CLI output is surfaced to the user via the console.
 - [ ] All existing command logs remain visible for the lifetime of the open editor session.
+- [ ] Terminal output can be selected with the pointer and copied with Ctrl/Cmd+C or the shared right-click menu; the menu also offers Select all.
 - [ ] Installs and runs after `composer install` with **no `npm install` / build step** (xterm is loaded from `vendor/npm-asset/xterm--xterm`).
 
 ### Who uses it
@@ -203,7 +204,7 @@ Port ExFace's proven streaming pieces into framework-neutral Codiware classes: a
 
 **1.5 xterm front-end shell (Medium).**
 - `ConsoleClient.js` transport: `POST /console/run` read via `fetch()` + `ReadableStream` reader, pushing chunks to a callback; `AbortController` to cancel (= stop). Plus `GET /console/presets`.
-- Rebuild `ConsolePanel.js`: instantiate xterm `Terminal`, load `xterm.css`, fit-to-container, write streamed chunks verbatim (ANSI preserved), input line with history (Up/Down), running/finished/failed status in the header, **no exit-code line**. Implement both `run()` (stream) and `inject()` (echo a pre-executed `console` block). *Dependency: 1.4.*
+- Rebuild `ConsolePanel.js`: instantiate xterm `Terminal`, load `xterm.css`, fit-to-container, write streamed chunks verbatim (ANSI preserved), input line with history (Up/Down), running/finished/failed status in the header, **no exit-code line**. Implement both `run()` (stream) and `inject()` (echo a pre-executed `console` block). Terminal text selection uses xterm's logical selection; Ctrl/Cmd+C and a shared `PopupMenu` context menu copy it, with a hidden-textarea fallback for restricted iframe clipboard access. *Dependency: 1.4.*
 
 ### Phase 2: Core functionality — central hub + Git integration
 

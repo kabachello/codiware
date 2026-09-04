@@ -105,6 +105,7 @@
   "git.view_diff": "View diff",
   "git.open_regular_editor": "Open in regular editor",
   "git.open_file_history": "Open Git history",
+  "git.open_with_blame": "Open with Git blame",
   "git.blame": "Git blame",
   "git.blame_uncommitted": "Not committed",
   "git.blame_failed": "Could not load Git blame",
@@ -135,6 +136,10 @@
   "console.idle": "Idle",
   "console.running": "Running…",
   "console.failed": "Failed",
+  "console.copy": "Copy",
+  "console.select_all": "Select all",
+  "console.copied": "Console text copied to clipboard",
+  "console.copy_failed": "Could not copy console text",
   "console.welcome": "Codiware console. Type an allowed command and press Enter.",
 
   "history.title": "Git history",

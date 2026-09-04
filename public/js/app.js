@@ -252,6 +252,9 @@ async function main() {
         fileIcons: boot.file_icons || {},
         filterMinChars: boot.files?.filter_min_chars,
         onOpen: (entry) => tabs.open(entry),
+        onOpenBlame: boot.features?.git !== false && workspace.is_git
+          ? (entry) => tabs.openWithGitBlame(entry)
+          : null,
       });
       fileTree.refresh();
     },

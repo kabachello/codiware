@@ -1,4 +1,5 @@
 import { Icon } from '../core/Icon.js';
+import { PopupMenu } from '../core/PopupMenu.js';
 
 /**
  * Default icon mapping used when no `fileIcons` config is passed in. The
@@ -280,13 +281,14 @@ class DirectoryPickerDialog {
  * duplicate, download, upload to folder, etc.).
  */
 export class FileTree {
-  constructor({ host, api, i18n, toasts, bus, onOpen, fileIcons, settings, filterMinChars }) {
+  constructor({ host, api, i18n, toasts, bus, onOpen, onOpenBlame, fileIcons, settings, filterMinChars }) {
     this.host = host;
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts || { error: (m) => console.error(m), success: () => {} };
     this.bus = bus;
     this.onOpen = onOpen;
+    this.onOpenBlame = onOpenBlame;
     this.settings = settings || null;
     this.fileIcons = {
       ...DEFAULT_FILE_ICONS,
@@ -1197,6 +1199,9 @@ export class FileTree {
 
     return [
       { icon: 'fa fa-history', label: t('git.open_file_history'), onClick: () => this.bus?.emit?.('git:open-file-history', { path: entry.path }) },
+      ...(entry.is_text === true && typeof this.onOpenBlame === 'function'
+        ? [{ icon: 'fa fa-users', label: t('git.open_with_blame'), onClick: () => this.onOpenBlame(entry) }]
+        : []),
       { sep: true },
       { icon: 'fa fa-clipboard', label: t('files.copy_relative_path'), onClick: () => this._copyPathToClipboard(entry.path) },
       { icon: 'fa fa-clone', label: t('files.duplicate'), onClick: () => this._duplicate(entry) },
@@ -1527,87 +1532,4 @@ export class FileTree {
   }
 }
 
-/**
- * Minimal popup menu anchored to a button. One instance is shown at a time:
- * opening a new menu closes any previous one. Closes on outside click,
- * Escape, scroll, or window resize.
- */
-const PopupMenu = {
-  current: null,
 
-  open(anchor, items) {
-    const rect = anchor.getBoundingClientRect();
-    PopupMenu.openAt(rect.right, rect.bottom + 2, items, { flipYFrom: rect.top - 2 });
-  },
-
-  openAt(x, y, items, options = {}) {
-    PopupMenu.close();
-    const menu = document.createElement('div');
-    menu.className = 'codiware-popup-menu';
-    menu.setAttribute('role', 'menu');
-    for (const item of items) {
-      if (item.sep) {
-        const sep = document.createElement('div');
-        sep.className = 'menu-sep';
-        menu.appendChild(sep);
-        continue;
-      }
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'menu-item';
-      btn.setAttribute('role', 'menuitem');
-      btn.append(Icon.render(item.icon || ''));
-      const label = document.createElement('span');
-      label.textContent = item.label;
-      btn.appendChild(label);
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        PopupMenu.close();
-        try { item.onClick?.(); } catch (err) { console.error(err); }
-      });
-      menu.appendChild(btn);
-    }
-    document.body.appendChild(menu);
-
-    // Position near cursor/anchor; flip and clamp to keep the menu on-screen.
-    const mw = menu.offsetWidth;
-    const mh = menu.offsetHeight;
-    let left = Math.min(x, window.innerWidth - mw - 4);
-    if (left < 4) left = 4;
-    let top = y;
-    if (top + mh > window.innerHeight - 4) {
-      const flipYFrom = typeof options.flipYFrom === 'number' ? options.flipYFrom : (y - 4);
-      top = Math.max(4, flipYFrom - mh);
-    }
-    menu.style.left = left + 'px';
-    menu.style.top = top + 'px';
-
-    const outside = (e) => {
-      if (!menu.contains(e.target)) PopupMenu.close();
-    };
-    const onKey = (e) => { if (e.key === 'Escape') PopupMenu.close(); };
-    const onScroll = () => PopupMenu.close();
-    setTimeout(() => document.addEventListener('mousedown', outside), 0);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onScroll);
-    window.addEventListener('scroll', onScroll, true);
-
-    PopupMenu.current = {
-      menu,
-      cleanup: () => {
-        document.removeEventListener('mousedown', outside);
-        document.removeEventListener('keydown', onKey);
-        window.removeEventListener('resize', onScroll);
-        window.removeEventListener('scroll', onScroll, true);
-      },
-    };
-  },
-
-  close() {
-    const c = PopupMenu.current;
-    if (!c) return;
-    PopupMenu.current = null;
-    c.cleanup();
-    c.menu.remove();
-  },
-};

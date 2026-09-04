@@ -418,7 +418,7 @@ In addition to single-tab closing via the close icon or middle click, `TabManage
 
 `TabManager.open()` also accepts an optional explicit editor override. This is used by cross-feature navigation flows like workspace search, which must open a file in a raw code editor regardless of the file type's normal preferred editor.
 
-The Monaco context menu includes a toggleable `Git blame` action for Git workspaces. It requests structured per-line attribution from `/git/blame` and temporarily widens/replaces Monaco's line-number labels with the line number, author and author date. Toggling the action again restores normal line numbers; working-tree-only lines are explicitly labelled as not committed.
+The Monaco context menu includes a toggleable `Git blame` action for Git workspaces. It requests structured per-line attribution from `/git/blame` and temporarily widens/replaces Monaco's line-number labels with the line number, author and author date. Toggling the action again restores normal line numbers; working-tree-only lines are explicitly labelled as not committed. The explorer exposes an `Open with Git blame` action for server-detected text files in Git workspaces. It forces Monaco even when the file normally uses a specialized editor and enables blame immediately; binary files and folders never expose this action.
 
 ### Extensibility Model
 
@@ -562,7 +562,7 @@ The file tree supports:
 - Lazy loading.
 - Clear indication of opened files.
 - Persisted expanded/collapsed branches per workspace.
-- Right-click context menu for create, rename, duplicate, delete, copy, move, upload, download, and reveal actions.
+- Right-click context menu for create, rename, duplicate, delete, copy, move, upload, download, history, and opening text files directly in Monaco with Git blame enabled.
 - Drag-to-move and ctrl-drag-to-copy.
 - Drag-and-drop upload for files and zip archives with subfolders.
 - Explicit duplicate actions for files and folders that first ask for the target sibling name, prefilled with an `_copy` style suggestion, and then perform a regular copy.

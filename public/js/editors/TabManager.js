@@ -42,11 +42,11 @@ export class TabManager {
     if (!this.settings || this._restoring) return;
     const open = [];
     for (const record of this.tabs.values()) {
-      if (record.isDiff) continue;
+      if (record.isDiff || record.transient) continue;
       open.push({ path: record.entry.path, name: record.entry.name, pinned: !!record.pinned });
     }
     const activeRecord = this.active ? this.tabs.get(this.active) : null;
-    const active = activeRecord && !activeRecord.isDiff ? activeRecord.key : null;
+    const active = activeRecord && !activeRecord.isDiff && !activeRecord.transient ? activeRecord.key : null;
     this.settings.setRepo('openTabs', { open, active });
   }
 
@@ -88,6 +88,9 @@ export class TabManager {
     if (this.tabs.has(key)) {
       if (options.pinned) this.setPinned(key, true);
       this.activate(key);
+      if (options.showGitBlame) {
+        await this.tabs.get(key)?.editor?.showGitBlame?.();
+      }
       return;
     }
 
@@ -126,7 +129,19 @@ export class TabManager {
     this.host.appendChild(editorHost);
 
     const editor = descriptor.create(editorHost, this.ctx);
-    const record = { key, entry, tabEl, editorHost, editor, descriptor, dirty: false, dirtyBtn, pinBtn, pinned: false };
+    const record = {
+      key,
+      entry,
+      tabEl,
+      editorHost,
+      editor,
+      descriptor,
+      dirty: false,
+      dirtyBtn,
+      pinBtn,
+      pinned: false,
+      transient: options.transient === true,
+    };
 
     if (typeof editor.on === 'function') {
       editor.on('change', () => {
@@ -162,6 +177,32 @@ export class TabManager {
 
     if (options.pinned) this.setPinned(key, true, { focus: false });
     this.activate(key);
+    if (options.showGitBlame) {
+      await editor.showGitBlame?.();
+    }
+  }
+
+  /**
+   * Open a text file in Monaco and enable its blame annotations immediately.
+   * Reuse the regular file tab when it is already a Monaco tab; specialized
+   * editor tabs (for example Markdown WYSIWYG) remain open alongside a
+   * transient Monaco blame tab instead of being replaced unexpectedly.
+   */
+  async openWithGitBlame(entry) {
+    const regular = this.tabs.get(entry.path);
+    if (regular?.descriptor?.id === 'codiware.monaco') {
+      this.activate(regular.key);
+      await regular.editor?.showGitBlame?.();
+      return;
+    }
+
+    return this.open(entry, {
+      editorId: 'codiware.monaco',
+      key: `blame:${entry.path}`,
+      label: entry.name || entry.path.split('/').pop(),
+      showGitBlame: true,
+      transient: true,
+    });
   }
 
   /**
@@ -665,8 +706,11 @@ export class TabManager {
     if (!path && path !== '') return;
     const prefix = path === '' ? '' : path + '/';
     const toClose = [];
-    for (const key of this.tabs.keys()) {
-      if (key === path || key.startsWith(prefix)) toClose.push(key);
+    for (const [key, record] of this.tabs.entries()) {
+      const entryPath = record?.entry?.path;
+      if (entryPath === path || (typeof entryPath === 'string' && entryPath.startsWith(prefix))) {
+        toClose.push(key);
+      }
     }
     for (const key of toClose) {
       this._closeRecord(key, { skipPrompt: true, persist: false, activateFallback: false });

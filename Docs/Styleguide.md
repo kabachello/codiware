@@ -115,7 +115,7 @@ Each list item inside a sidebar has its own small toolbar, displayed on the righ
 
 The Inline toolbar can show up to 2 most important buttons and the three-dot menu. The menu will hold all buttons, that did not fit.
 
-List items in sidebar trees also support a right-click context menu. This context menu must expose the same item-level actions as the inline toolbar/menu for that item.
+List items in sidebar trees also support a right-click context menu. This context menu must expose the same item-level actions as the inline toolbar/menu for that item. In Git workspaces, text-file menus provide an `Open with Git blame` shortcut that forces Monaco and displays attribution immediately; the shortcut must not be shown for folders or server-detected binary files.
 
 The same rule applies to changed-file rows in the Git panel: the three-dot menu and the right-click menu must expose the same row-level actions.
 

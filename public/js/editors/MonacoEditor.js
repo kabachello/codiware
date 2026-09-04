@@ -120,7 +120,7 @@ export class MonacoEditor {
     this._loading.style.opacity = '0.7';
     host.appendChild(this._loading);
 
-    this._init().catch((e) => {
+    this._initPromise = this._init().catch((e) => {
       this._loading.textContent = 'Failed to load editor: ' + (e?.message || e);
       this._loading.style.color = 'var(--ide-danger, #c0392b)';
       console.error('[codiware] Monaco load failed:', e);
@@ -456,6 +456,18 @@ export class MonacoEditor {
       }).replace(',', '')
       : '—';
     return `${lineNumber}  ${author} · ${date}`;
+  }
+
+  /**
+   * Ensure blame is visible, including when the explorer requests it while
+   * Monaco is still loading. Unlike the context-menu toggle this method is
+   * idempotent, so reopening an existing blame tab never hides annotations.
+   */
+  async showGitBlame() {
+    await this._initPromise;
+    if (!this._blameEnabled) {
+      await this.toggleGitBlame();
+    }
   }
 
   async toggleGitBlame() {
