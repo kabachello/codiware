@@ -15,6 +15,7 @@
  * failure is reflected through the header status badge and the prompt marker.
  */
 import { Icon } from '../core/Icon.js';
+import { PopupMenu } from '../core/PopupMenu.js';
 import { ConsoleClient } from './ConsoleClient.js';
 
 const XTERM_JS = '/xterm--xterm/lib/xterm.js';
@@ -169,10 +170,37 @@ export class ConsolePanel {
       fontFamily: 'var(--ide-font-mono), monospace',
       fontSize: 13,
       scrollback: 5000,
+      rightClickSelectsWord: true,
       theme,
     });
     this.term.open(this.termEl);
     this._fit();
+
+    // xterm draws its output on a canvas, so the browser's regular text
+    // context menu cannot reliably copy it. Provide explicit terminal actions
+    // and also populate keyboard copy events from xterm's logical selection.
+    this.termEl.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      PopupMenu.openAt(event.clientX, event.clientY, [
+        {
+          icon: 'fa fa-copy',
+          label: this._t('console.copy', 'Copy'),
+          disabled: !this.term?.hasSelection?.(),
+          onClick: () => this._copySelection(),
+        },
+        {
+          icon: 'fa fa-i-cursor',
+          label: this._t('console.select_all', 'Select all'),
+          onClick: () => this.term?.selectAll?.(),
+        },
+      ]);
+    });
+    this.termEl.addEventListener('copy', (event) => {
+      const selection = this.term?.getSelection?.() || '';
+      if (!selection || !event.clipboardData) return;
+      event.preventDefault();
+      event.clipboardData.setData('text/plain', selection);
+    });
 
     this._resizeObserver = new ResizeObserver(() => {
       if (this._fitRaf) cancelAnimationFrame(this._fitRaf);
@@ -381,15 +409,42 @@ export class ConsolePanel {
       + '\x1b[' + (after.length + removed) + 'D');
   }
 
+  /** Copy xterm's logical selection, including a fallback for restricted iframes. */
+  async _copySelection() {
+    const selection = this.term?.getSelection?.() || '';
+    if (!selection) return false;
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(selection);
+        copied = true;
+      }
+    } catch { /* restricted iframe: use the legacy selection fallback below */ }
+    if (!copied) {
+      const helper = document.createElement('textarea');
+      helper.value = selection;
+      helper.setAttribute('readonly', '');
+      helper.style.position = 'fixed';
+      helper.style.opacity = '0';
+      document.body.appendChild(helper);
+      helper.select();
+      try { copied = document.execCommand('copy'); } catch { copied = false; }
+      helper.remove();
+      this.term?.focus?.();
+    }
+    if (copied) {
+      this.toasts?.success?.(this._t('console.copied', 'Console text copied to clipboard'));
+      return true;
+    }
+    this.toasts?.error?.(this._t('console.copy_failed', 'Could not copy console text'));
+    return false;
+  }
+
   /** Ctrl+C: copy the active selection if any, otherwise cancel the line. */
   _copyOrCancel() {
     if (this.term?.hasSelection?.()) {
-      const sel = this.term.getSelection();
-      if (sel) {
-        try { navigator.clipboard?.writeText(sel); } catch { /* clipboard blocked */ }
-        this.term.clearSelection();
-        return;
-      }
+      this._copySelection();
+      return;
     }
     this._cancelLine();
   }
