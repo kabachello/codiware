@@ -412,6 +412,11 @@ async function main() {
       bottomPanels.activate('history', { expand: true });
       historyPanel?.openFileHistory(path);
     });
+    bus.on('git:open-commit-history', ({ commit } = {}) => {
+      if (!commit) return;
+      bottomPanels.activate('history', { expand: true });
+      historyPanel?.openCommit(commit);
+    });
   }
 
   // Toolbar: theme toggle + bottom panel toggle + save

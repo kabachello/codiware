@@ -1226,6 +1226,39 @@ textarea { font-family: var(--ide-font-mono); }
   position: relative;
 }
 
+/* Blame labels in Monaco's line-number gutter act as links into Git history. */
+.monaco-editor-container.is-blame-enabled .line-numbers {
+  cursor: pointer !important;
+  text-align: left !important;
+  white-space: pre;
+}
+.monaco-blame-tooltip {
+  position: fixed;
+  z-index: 12000;
+  width: max-content;
+  max-width: 340px;
+  padding: 7px 9px;
+  border: 1px solid var(--ide-border);
+  border-radius: var(--ide-radius);
+  background: var(--ide-panel-bg, var(--ide-bg));
+  color: var(--ide-fg);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  font-size: var(--ide-fs-sm);
+}
+.monaco-blame-tooltip[hidden] { display: none; }
+.monaco-blame-tooltip strong,
+.monaco-blame-tooltip span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.monaco-blame-tooltip span {
+  margin-top: 3px;
+  color: var(--ide-fg-muted);
+  font-family: var(--ide-font-mono);
+  font-size: 11px;
+}
+
 .monaco-outline-splitter {
   min-width: 0;
 }

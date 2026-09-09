@@ -48,6 +48,9 @@ const OUTLINE_PANEL_MIN_WIDTH = 120;
 const OUTLINE_PANEL_MAX_WIDTH = 280;
 const OUTLINE_PANEL_STRIP_WIDTH = 36;
 const OUTLINE_PANEL_MOBILE_BREAKPOINT = 768;
+const BLAME_GUTTER_CHARS = 44;
+const BLAME_LINE_NUMBER_CHARS = 6;
+const BLAME_LINE_NUMBER_LEFT_PADDING = ' ';
 
 function detectLanguage(path) {
   if (!path) return 'plaintext';
@@ -79,6 +82,8 @@ export class MonacoEditor {
     this._blameEnabled = false;
     this._blameLoading = false;
     this._blameLines = new Map();
+    this._blameMouseDisposables = [];
+    this._blameTooltip = null;
 
     host.innerHTML = '';
     host.style.position = 'relative';
@@ -375,6 +380,8 @@ export class MonacoEditor {
         // shown beside newly edited text.
         this._blameEnabled = false;
         this._blameLines.clear();
+        this._hideBlameTooltip();
+        this._container.classList.remove('is-blame-enabled');
         this._editor.updateOptions({ lineNumbersMinChars: 4 });
         this._editor.render(true);
       }
@@ -393,6 +400,8 @@ export class MonacoEditor {
         run: () => this.toggleGitBlame(),
       });
     }
+
+    this._bindBlameMouseInteraction();
 
     // Scope the save shortcut to this editor instance. Using `addCommand`
     // registers the keybinding on Monaco's shared keybinding service, so with
@@ -439,23 +448,99 @@ export class MonacoEditor {
     this._monaco.editor.setTheme(isDark ? 'vs-dark' : 'vs');
   }
 
+  /**
+   * Make committed blame annotations discoverable and link them to history.
+   * Monaco exposes gutter hits through its mouse target API, so no fragile
+   * querying or mutation of Monaco's generated DOM is required.
+   */
+  _bindBlameMouseInteraction() {
+    if (!this._editor || !this._monaco) return;
+    const isBlameTarget = (event) => event?.target?.type === this._monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS;
+    const blameFor = (event) => {
+      if (!this._blameEnabled || !isBlameTarget(event)) return null;
+      const line = Number(event?.target?.position?.lineNumber || 0);
+      const blame = this._blameLines.get(line);
+      return blame && !blame.uncommitted && blame.commit ? blame : null;
+    };
+
+    this._blameMouseDisposables.push(
+      this._editor.onMouseMove((event) => {
+        const blame = blameFor(event);
+        if (!blame) {
+          this._hideBlameTooltip();
+          return;
+        }
+        this._showBlameTooltip(blame, event.event?.browserEvent);
+      }),
+      this._editor.onMouseLeave(() => this._hideBlameTooltip()),
+      this._editor.onMouseDown((event) => {
+        const blame = blameFor(event);
+        if (!blame) return;
+        event.event?.preventDefault?.();
+        event.event?.stopPropagation?.();
+        this._hideBlameTooltip();
+        this.ctx?.bus?.emit('git:open-commit-history', { commit: blame.commit });
+      })
+    );
+  }
+
+  _showBlameTooltip(blame, browserEvent) {
+    if (!this._blameTooltip) {
+      this._blameTooltip = document.createElement('div');
+      this._blameTooltip.className = 'monaco-blame-tooltip';
+      this._blameTooltip.setAttribute('role', 'tooltip');
+      document.body.appendChild(this._blameTooltip);
+    }
+    const subject = String(blame.summary || '').trim();
+    const commitLabel = this.ctx?.i18n?.t('history.commit') || 'Commit';
+    const clickHint = this.ctx?.i18n?.t('git.blame_open_history') || 'Click to show this commit in Git history';
+    this._blameTooltip.replaceChildren();
+    const title = document.createElement('strong');
+    title.textContent = subject || `${commitLabel} ${String(blame.commit).slice(0, 8)}`;
+    const meta = document.createElement('span');
+    meta.textContent = `${String(blame.commit).slice(0, 8)} · ${clickHint}`;
+    this._blameTooltip.append(title, meta);
+    const x = Number(browserEvent?.clientX || 0);
+    const y = Number(browserEvent?.clientY || 0);
+    this._blameTooltip.style.left = `${Math.min(x + 12, Math.max(8, window.innerWidth - 360))}px`;
+    this._blameTooltip.style.top = `${Math.min(y + 16, Math.max(8, window.innerHeight - 90))}px`;
+    this._blameTooltip.hidden = false;
+  }
+
+  _hideBlameTooltip() {
+    if (this._blameTooltip) this._blameTooltip.hidden = true;
+  }
+
   _formatLineNumber(lineNumber) {
     if (!this._blameEnabled) return String(lineNumber);
+
     const blame = this._blameLines.get(lineNumber);
-    if (!blame) return `${lineNumber}  —`;
-    if (blame.uncommitted) {
-      return `${lineNumber}  ${this.ctx?.i18n?.t('git.blame_uncommitted') || 'Not committed'}`;
+    let attribution = '—';
+    if (blame?.uncommitted) {
+      attribution = this.ctx?.i18n?.t('git.blame_uncommitted') || 'Not committed';
+    } else if (blame) {
+      const author = (blame.author || blame.email || '—').replace(/\s+/g, ' ').slice(0, 16);
+      // A fixed-width, single-line date avoids locale-specific commas and spaces
+      // making Monaco's line-number label overflow into neighbouring gutter text.
+      const date = blame.time > 0
+        ? new Date(blame.time * 1000).toLocaleString([], {
+          year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+          hour12: false,
+        }).replace(',', '')
+        : '—';
+      attribution = `${author} · ${date}`;
     }
-    const author = (blame.author || blame.email || '—').replace(/\s+/g, ' ').slice(0, 16);
-    // A fixed-width, single-line date avoids locale-specific commas and spaces
-    // making Monaco's line-number label overflow into neighbouring gutter text.
-    const date = blame.time > 0
-      ? new Date(blame.time * 1000).toLocaleString([], {
-        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-        hour12: false,
-      }).replace(',', '')
-      : '—';
-    return `${lineNumber}  ${author} · ${date}`;
+
+    // Monaco renders the complete label in one gutter element. A fixed-width
+    // text layout keeps the line number at the left edge while attribution is
+    // aligned against the right edge, making both columns easy to scan.
+    // Keep one monospace character (about 8px at the configured editor font
+    // size) before the number. This mirrors Monaco's normal gutter breathing
+    // room instead of placing blame-mode line numbers against the outer edge.
+    const numberColumn = (BLAME_LINE_NUMBER_LEFT_PADDING + String(lineNumber))
+      .padEnd(BLAME_LINE_NUMBER_CHARS, ' ');
+    const attributionWidth = BLAME_GUTTER_CHARS - BLAME_LINE_NUMBER_CHARS;
+    return numberColumn + attribution.slice(0, attributionWidth).padStart(attributionWidth, ' ');
   }
 
   /**
@@ -475,6 +560,8 @@ export class MonacoEditor {
     if (this._blameEnabled) {
       this._blameEnabled = false;
       this._blameLines.clear();
+      this._hideBlameTooltip();
+      this._container.classList.remove('is-blame-enabled');
       this._editor.updateOptions({ lineNumbersMinChars: 4 });
       this._editor.render(true);
       return;
@@ -491,9 +578,10 @@ export class MonacoEditor {
       const result = await this.ctx.api.get('/git/blame', { path });
       this._blameLines = new Map((result?.lines || []).map((line) => [Number(line.line), line]));
       this._blameEnabled = true;
+      this._container.classList.add('is-blame-enabled');
       // Reserve enough room for line number, author and localized date. Monaco
       // measures this value in digit widths rather than CSS pixels.
-      this._editor.updateOptions({ lineNumbersMinChars: 44 });
+      this._editor.updateOptions({ lineNumbersMinChars: BLAME_GUTTER_CHARS });
       this._editor.render(true);
     } catch (error) {
       this.ctx?.toasts?.error(error?.message || this.ctx?.i18n?.t('git.blame_failed') || 'Could not load Git blame');
@@ -511,6 +599,8 @@ export class MonacoEditor {
     this._pendingMeta = meta || null;
     this._blameEnabled = false;
     this._blameLines.clear();
+    this._hideBlameTooltip();
+    this._container.classList.remove('is-blame-enabled');
 
     if (this._editor) {
       this._editor.updateOptions({ lineNumbersMinChars: 4 });
@@ -564,6 +654,12 @@ export class MonacoEditor {
     try { this._gotoUnsub?.(); } catch {}
     try { this._themeObserver?.disconnect(); } catch {}
     try { this._outlinePanel?.dispose(); } catch {}
+    for (const disposable of this._blameMouseDisposables) {
+      try { disposable?.dispose?.(); } catch {}
+    }
+    this._blameMouseDisposables = [];
+    try { this._blameTooltip?.remove(); } catch {}
+    this._blameTooltip = null;
     try { this._editor?.dispose(); } catch {}
     this._editor = null;
     this._model = null;

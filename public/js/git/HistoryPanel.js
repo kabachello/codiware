@@ -121,6 +121,33 @@ export class HistoryPanel {
     await this.refresh();
   }
 
+  /**
+   * Reveal one commit requested by another feature, such as Monaco blame.
+   * Existing search/file filters are cleared because they may hide the target.
+   * Very old commits can fall outside the bounded graph request; their details
+   * are still loaded directly so navigation remains reliable.
+   */
+  async openCommit(commit) {
+    const hash = String(commit || '').trim();
+    if (!hash) return;
+    if (this._refreshPromise) await this._refreshPromise;
+
+    const filtersChanged = this.search !== '' || this.filePath !== '';
+    this.search = '';
+    this.filePath = '';
+    this.selected = null;
+    if (this.searchInput) this.searchInput.value = '';
+    this._renderFileFilter();
+    if (filtersChanged || !this._loaded) await this.refresh();
+    else this._renderGraph();
+
+    this.selected = hash;
+    const row = this.graphPane?.querySelector(`.history-row[data-hash="${cssEscape(hash)}"]`);
+    row?.classList.add('is-selected');
+    row?.scrollIntoView?.({ block: 'center' });
+    await this._loadDetails(hash);
+  }
+
   _renderFileFilter() {
     if (!this.filterBar) return;
     this.filterBar.replaceChildren();
