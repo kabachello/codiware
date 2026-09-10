@@ -35,6 +35,276 @@ function normalizeRelativeDir(path) {
 }
 
 /**
+ * Persistent upload dialog supporting files, ZIP archives and complete folder
+ * trees without adding a front-end dependency. Dropped folders are traversed
+ * through the File System Entry API where the browser exposes it.
+ */
+class UploadDialog {
+  constructor({ i18n, toasts, targetPath, onUpload }) {
+    this.i18n = i18n;
+    this.toasts = toasts;
+    this.targetPath = normalizeRelativeDir(targetPath);
+    this.onUpload = onUpload;
+    this.modal = null;
+    this.busy = false;
+    this.onKeyDown = this._onKeyDown.bind(this);
+  }
+
+  open() {
+    this._buildShell();
+    document.body.appendChild(this.modal);
+    document.addEventListener('keydown', this.onKeyDown);
+    this.fileBtn.focus();
+  }
+
+  _buildShell() {
+    const overlay = document.createElement('div');
+    overlay.className = 'codiware-modal-overlay';
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay && !this.busy) this.close();
+    });
+
+    const dialog = document.createElement('div');
+    dialog.className = 'codiware-modal codiware-upload-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+
+    const header = document.createElement('div');
+    header.className = 'codiware-modal-header';
+    const title = document.createElement('div');
+    title.className = 'codiware-modal-title';
+    title.textContent = this.i18n.t('files.upload_dialog_title');
+    header.appendChild(title);
+
+    const body = document.createElement('div');
+    body.className = 'codiware-modal-body';
+    const target = document.createElement('div');
+    target.className = 'codiware-upload-target';
+    const targetPath = this.targetPath || this.i18n.t('files.workspace_root');
+    const targetTemplate = this.i18n.t('files.upload_target');
+    const placeholderPosition = targetTemplate.indexOf('{path}');
+    if (placeholderPosition >= 0) {
+      target.append(
+        document.createTextNode(targetTemplate.slice(0, placeholderPosition)),
+        Object.assign(document.createElement('strong'), { textContent: targetPath }),
+        document.createTextNode(targetTemplate.slice(placeholderPosition + '{path}'.length)),
+      );
+    } else {
+      target.textContent = this.i18n.t('files.upload_target', { path: targetPath });
+    }
+
+    this.dropZone = document.createElement('div');
+    this.dropZone.className = 'codiware-upload-dropzone';
+    this.dropZone.tabIndex = 0;
+    const dropIcon = Icon.render('fa fa-cloud-upload');
+    const dropTitle = document.createElement('strong');
+    dropTitle.textContent = this.i18n.t('files.upload_drop_title');
+    const dropHint = document.createElement('span');
+    dropHint.textContent = this.i18n.t('files.upload_drop_hint');
+    this.dropZone.append(dropIcon, dropTitle, dropHint);
+    for (const eventName of ['dragenter', 'dragover']) {
+      this.dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        if (!this.busy) this.dropZone.classList.add('is-dragover');
+      });
+    }
+    this.dropZone.addEventListener('dragleave', (event) => {
+      if (!this.dropZone.contains(event.relatedTarget)) this.dropZone.classList.remove('is-dragover');
+    });
+    this.dropZone.addEventListener('drop', async (event) => {
+      event.preventDefault();
+      this.dropZone.classList.remove('is-dragover');
+      if (this.busy) return;
+      const files = await this._filesFromDrop(event.dataTransfer);
+      await this._startUpload(files);
+    });
+
+    const buttons = document.createElement('div');
+    buttons.className = 'codiware-upload-browse';
+    this.fileBtn = this._browseButton('fa fa-file-o', 'files.upload_choose_files', false);
+    this.folderBtn = this._browseButton('fa fa-folder-open-o', 'files.upload_choose_folder', true);
+    buttons.append(this.fileBtn, this.folderBtn);
+
+    const option = document.createElement('label');
+    option.className = 'codiware-upload-option';
+    this.extractCheckbox = document.createElement('input');
+    this.extractCheckbox.type = 'checkbox';
+    this.extractCheckbox.checked = true;
+    option.append(this.extractCheckbox, document.createTextNode(this.i18n.t('files.upload_extract_zip')));
+
+    this.status = document.createElement('div');
+    this.status.className = 'codiware-upload-status';
+    this.status.setAttribute('aria-live', 'polite');
+
+    this.history = document.createElement('section');
+    this.history.className = 'codiware-upload-history';
+    this.history.hidden = true;
+    const historyTitle = document.createElement('div');
+    historyTitle.className = 'codiware-upload-history-title';
+    historyTitle.textContent = this.i18n.t('files.upload_history_title');
+    this.historyList = document.createElement('ul');
+    this.historyList.className = 'codiware-upload-history-list';
+    this.history.append(historyTitle, this.historyList);
+
+    body.append(target, this.dropZone, buttons, option, this.status, this.history);
+
+    const footer = document.createElement('div');
+    footer.className = 'codiware-modal-footer';
+    this.closeBtn = document.createElement('button');
+    this.closeBtn.type = 'button';
+    this.closeBtn.className = 'tb-btn';
+    this.closeBtn.textContent = this.i18n.t('actions.close');
+    this.closeBtn.addEventListener('click', () => this.close());
+    footer.appendChild(this.closeBtn);
+
+    dialog.append(header, body, footer);
+    overlay.appendChild(dialog);
+    this.modal = overlay;
+  }
+
+  _browseButton(icon, translationKey, directory) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.append(Icon.render(icon), document.createTextNode(this.i18n.t(translationKey)));
+    button.addEventListener('click', () => {
+      if (this.busy) return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      if (directory) {
+        input.setAttribute('webkitdirectory', '');
+        input.setAttribute('directory', '');
+      }
+      input.hidden = true;
+      input.addEventListener('change', async () => {
+        const files = Array.from(input.files || []).map((file) => ({
+          file,
+          relativePath: file.webkitRelativePath || file.name,
+        }));
+        input.remove();
+        await this._startUpload(files);
+      });
+      document.body.appendChild(input);
+      input.click();
+    });
+    return button;
+  }
+
+  async _filesFromDrop(dataTransfer) {
+    const items = Array.from(dataTransfer?.items || []);
+    const entries = items.map((item) => item.webkitGetAsEntry?.()).filter(Boolean);
+    if (entries.length === 0) {
+      return Array.from(dataTransfer?.files || []).map((file) => ({ file, relativePath: file.name }));
+    }
+    const files = [];
+    for (const entry of entries) {
+      await this._readEntry(entry, '', files);
+    }
+    return files;
+  }
+
+  async _readEntry(entry, parentPath, files) {
+    const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+    if (entry.isFile) {
+      const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+      files.push({ file, relativePath });
+      return;
+    }
+    if (!entry.isDirectory) return;
+    const reader = entry.createReader();
+    while (true) {
+      const children = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+      if (children.length === 0) break;
+      for (const child of children) {
+        await this._readEntry(child, relativePath, files);
+      }
+    }
+  }
+
+  async _startUpload(files) {
+    if (!Array.isArray(files) || files.length === 0) {
+      this.status.textContent = this.i18n.t('files.upload_no_files');
+      return;
+    }
+    this._setBusy(true);
+    this.status.textContent = this.i18n.t('files.upload_in_progress', { count: files.length });
+    try {
+      await this.onUpload(files, { extractZip: this.extractCheckbox.checked });
+      this.status.textContent = this.i18n.t('files.upload_ready_for_more');
+      this._appendUploadHistory(files);
+    } catch (error) {
+      this.status.textContent = this.i18n.t('files.upload_failed') + ': ' + error.message;
+      this.toasts.error(this.status.textContent);
+    } finally {
+      this._setBusy(false);
+    }
+  }
+
+  /**
+   * Add the successfully uploaded top-level selections to the persistent list.
+   * Folder uploads contain one File per descendant, so they are consolidated
+   * into one folder row with a file count instead of flooding the dialog.
+   */
+  _appendUploadHistory(files) {
+    const items = new Map();
+    for (const item of files) {
+      const file = item?.file instanceof File ? item.file : item;
+      const relativePath = String(item?.relativePath || file?.webkitRelativePath || file?.name || '')
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '');
+      if (relativePath === '') continue;
+      const parts = relativePath.split('/').filter(Boolean);
+      const isFolder = parts.length > 1;
+      const key = `${isFolder ? 'folder' : 'file'}:${parts[0]}`;
+      const current = items.get(key) || { name: parts[0], type: isFolder ? 'folder' : 'file', count: 0 };
+      current.count += 1;
+      items.set(key, current);
+    }
+
+    for (const item of items.values()) {
+      const row = document.createElement('li');
+      row.className = 'codiware-upload-history-item';
+      row.append(Icon.render(item.type === 'folder' ? 'fa fa-folder' : 'fa fa-file-o'));
+      const name = document.createElement('span');
+      name.className = 'codiware-upload-history-name';
+      name.textContent = item.name;
+      name.title = item.name;
+      row.appendChild(name);
+      if (item.type === 'folder') {
+        const count = document.createElement('span');
+        count.className = 'codiware-upload-history-count';
+        count.textContent = this.i18n.t('files.upload_history_file_count', { count: item.count });
+        row.appendChild(count);
+      }
+      this.historyList.appendChild(row);
+    }
+    if (items.size > 0) this.history.hidden = false;
+  }
+
+  _setBusy(busy) {
+    this.busy = busy;
+    this.dropZone.classList.toggle('is-busy', busy);
+    this.fileBtn.disabled = busy;
+    this.folderBtn.disabled = busy;
+    this.extractCheckbox.disabled = busy;
+    this.closeBtn.disabled = busy;
+  }
+
+  _onKeyDown(event) {
+    if (event.key === 'Escape' && !this.busy) {
+      event.preventDefault();
+      this.close();
+    }
+  }
+
+  close() {
+    if (this.busy) return;
+    this.modal?.remove();
+    document.removeEventListener('keydown', this.onKeyDown);
+  }
+}
+
+/**
  * Modal directory picker used by bulk move so users choose a target folder
  * from the workspace tree instead of typing a free-form path.
  */
@@ -1413,47 +1683,34 @@ export class FileTree {
   }
 
   _uploadInto(targetPath) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.style.display = 'none';
-    input.addEventListener('change', async () => {
-      const files = Array.from(input.files || []);
-      document.body.removeChild(input);
-      if (files.length === 0) return;
-      await this._uploadFiles(targetPath, files);
+    const dialog = new UploadDialog({
+      i18n: this.i18n,
+      toasts: this.toasts,
+      targetPath,
+      onUpload: (files, options) => this._uploadFiles(targetPath, files, options),
     });
-    document.body.appendChild(input);
-    input.click();
+    dialog.open();
   }
 
-  async _uploadFiles(targetPath, files) {
+  async _uploadFiles(targetPath, files, { extractZip = true } = {}) {
     const fd = new FormData();
-    let i = 0;
-    let hasZip = false;
-    for (const file of files) {
-      fd.append('file' + (i++), file, file.name);
-      if (/\.zip$/i.test(file.name)) hasZip = true;
-    }
-    // If a single .zip was selected, offer to extract it on the server.
-    let extract = false;
-    if (hasZip && files.length === 1) {
-      extract = window.confirm(
-        `"${files[0].name}" is a ZIP archive. Extract it into the target folder?`
-      );
-    }
-    try {
-      const res = await this.api.request('POST', '/files/upload', {
-        query: { path: targetPath, extract: extract ? 1 : 0 },
-        body: fd,
-      });
-      const count = Array.isArray(res?.uploaded) ? res.uploaded.length : files.length;
-      this.toasts.success?.(this.i18n.t('files.uploaded', { count }));
-      await this.refresh();
-      this.bus?.emit?.('files:changed', { action: 'upload', path: targetPath });
-    } catch (e) {
-      this.toasts.error(this.i18n.t('files.upload_failed') + ': ' + e.message);
-    }
+    files.forEach((item, index) => {
+      const file = item?.file instanceof File ? item.file : item;
+      const relativePath = String(item?.relativePath || file.webkitRelativePath || file.name).replace(/\\/g, '/');
+      const key = 'file' + index;
+      fd.append(key, file, file.name);
+      fd.append('relative_' + key, relativePath);
+    });
+
+    const res = await this.api.request('POST', '/files/upload', {
+      query: { path: targetPath, extract: extractZip ? 1 : 0 },
+      body: fd,
+    });
+    const count = Array.isArray(res?.uploaded) ? res.uploaded.length : files.length;
+    this.toasts.success?.(this.i18n.t('files.uploaded', { count }));
+    await this.refresh();
+    this.bus?.emit?.('files:changed', { action: 'upload', path: targetPath });
+    return res;
   }
 
   /**

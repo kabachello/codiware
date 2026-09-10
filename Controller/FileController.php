@@ -159,6 +159,8 @@ final class FileController
         if ($uploaded === []) {
             throw new CodiwareException('No files uploaded.', 'no_files', 400);
         }
+        $fields = $request->getParsedBody();
+        $fields = is_array($fields) ? $fields : [];
 
         $results = [];
         foreach ($uploaded as $key => $entry) {
@@ -174,8 +176,10 @@ final class FileController
                     throw new CodiwareException('Cannot create temp file.', 'temp_failed', 500);
                 }
                 $file->moveTo($tmp);
+                $relativePath = $fields['relative_' . (string)$key] ?? null;
                 $results[] = $this->files->saveUpload($root, $target, [
                     'name' => $file->getClientFilename() ?? 'upload',
+                    'relative_path' => is_scalar($relativePath) ? (string)$relativePath : '',
                     'tmp_name' => $tmp,
                     'size' => (int)($file->getSize() ?? 0),
                     'error' => $file->getError(),

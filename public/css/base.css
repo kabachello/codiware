@@ -843,6 +843,86 @@ textarea { font-family: var(--ide-font-mono); }
   min-height: 160px;
 }
 
+.codiware-upload-target,
+.codiware-upload-status {
+  margin-bottom: 10px;
+  color: var(--ide-fg-muted);
+  font-size: var(--ide-fs-sm);
+}
+.codiware-upload-dropzone {
+  min-height: 190px;
+  border: 2px dashed var(--ide-border);
+  border-radius: calc(var(--ide-radius) * 2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  background: color-mix(in srgb, var(--ide-panel-bg, var(--ide-bg)) 90%, var(--ide-accent));
+  transition: border-color 0.12s, background 0.12s;
+}
+.codiware-upload-dropzone > .ide-icon { font-size: 32px; color: var(--ide-accent); }
+.codiware-upload-dropzone > span:last-child { color: var(--ide-fg-muted); }
+.codiware-upload-dropzone.is-dragover {
+  border-color: var(--ide-accent);
+  border-style: solid;
+  background: color-mix(in srgb, var(--ide-accent) 14%, var(--ide-bg));
+}
+.codiware-upload-dropzone.is-busy { opacity: 0.65; cursor: progress; }
+.codiware-upload-browse {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.codiware-upload-browse button { display: inline-flex; align-items: center; gap: 6px; }
+.codiware-upload-option { display: flex; align-items: center; gap: 6px; }
+.codiware-upload-status { min-height: 18px; margin: 10px 0 0; }
+.codiware-upload-history {
+  margin-top: 10px;
+  border-top: 1px solid var(--ide-border);
+  padding-top: 10px;
+}
+.codiware-upload-history[hidden] { display: none; }
+.codiware-upload-history-title {
+  margin-bottom: 6px;
+  font-size: var(--ide-fs-sm);
+  font-weight: 600;
+}
+.codiware-upload-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.codiware-upload-history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: var(--ide-radius);
+  background: var(--ide-row-hover);
+}
+.codiware-upload-history-item > .ide-icon { flex: 0 0 auto; }
+.codiware-upload-history-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.codiware-upload-history-count {
+  flex: 0 0 auto;
+  color: var(--ide-fg-muted);
+  font-size: var(--ide-fs-sm);
+}
+
 .panel-section { padding: 6px 4px; }
 .panel-section h4 { margin: 8px 4px 4px; font-size: var(--ide-fs-sm); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ide-fg-muted); }
 

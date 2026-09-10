@@ -386,7 +386,11 @@ final class FileService
      * zero-padded `<stem>_NN.<ext>` (e.g. `image_01.png`, `image_02.png`) by
      * picking the lowest number not yet taken in the target directory.
      *
-     * @param array{name:string,tmp_name:string,size:int,error:int} $uploaded
+     * Browser folder uploads may additionally provide `relative_path`; every
+     * segment is validated and the contained directory hierarchy is recreated
+     * below `$targetDir`.
+     *
+     * @param array{name:string,relative_path?:string,tmp_name:string,size:int,error:int} $uploaded
      */
     public function saveUpload(WorkspaceRoot $root, string $targetDir, array $uploaded, bool $extractZip = false, bool $autoName = false): array
     {
@@ -397,12 +401,20 @@ final class FileService
         if (($uploaded['size'] ?? 0) > $max) {
             throw new CodiwareException('Upload exceeds maximum size.', 'too_large', 413, ['max_bytes' => $max]);
         }
-        $name = $this->sanitizeName((string)$uploaded['name']);
+        $relativeUploadPath = $this->normalizeUploadRelativePath((string)($uploaded['relative_path'] ?? ''));
+        $name = $this->sanitizeName($relativeUploadPath !== '' ? basename($relativeUploadPath) : (string)$uploaded['name']);
         $relTarget = trim($targetDir, '/');
+        if ($relativeUploadPath !== '' && str_contains($relativeUploadPath, '/')) {
+            $relativeDirectory = dirname($relativeUploadPath);
+            $relTarget = $relTarget === '' ? $relativeDirectory : $relTarget . '/' . $relativeDirectory;
+        }
 
         if ($extractZip && str_ends_with(strtolower($name), '.zip')) {
             $dirRel = $relTarget;
-            $absDir = $this->guard->resolveInside($root, $dirRel);
+            $absDir = $this->guard->resolveInside($root, $dirRel, mustExist: false);
+            if (!is_dir($absDir) && !@mkdir($absDir, 0775, true) && !is_dir($absDir)) {
+                throw new CodiwareException('Cannot create destination directory.', 'mkdir_failed', 500, ['path' => $dirRel]);
+            }
             $zip = new \ZipArchive();
             if ($zip->open($uploaded['tmp_name']) !== true) {
                 throw new CodiwareException('Invalid zip archive.', 'bad_zip', 400);
@@ -499,6 +511,34 @@ final class FileService
         $name = basename($name);
         $name = preg_replace('/[\x00-\x1F]/', '', $name) ?? '';
         return $name !== '' ? $name : 'upload';
+    }
+
+    /**
+     * Validate and normalize a browser-provided relative path from a folder
+     * upload. Absolute paths, traversal and control characters are rejected;
+     * `PathGuard` subsequently applies workspace deny rules to the full target.
+     */
+    private function normalizeUploadRelativePath(string $path): string
+    {
+        $path = str_replace('\\', '/', trim($path));
+        if ($path === '') {
+            return '';
+        }
+        if (str_starts_with($path, '/') || preg_match('/^[A-Za-z]:\//', $path) === 1) {
+            throw new CodiwareException('Absolute upload paths are not allowed.', 'path_denied', 400);
+        }
+        $segments = explode('/', $path);
+        $normalized = [];
+        foreach ($segments as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..' || preg_match('/[\x00-\x1F]/', $segment) === 1) {
+                throw new CodiwareException('Unsafe relative upload path.', 'path_denied', 400, ['path' => $path]);
+            }
+            $normalized[] = $segment;
+        }
+        return implode('/', $normalized);
     }
 
     /**

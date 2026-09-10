@@ -235,7 +235,9 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 | `DELETE` | `/files/delete?root=&path=` | Deletes file or directory. |
 | `GET` | `/files/download?root=&path=` | Downloads a file or streams a folder as zip. |
 | `GET` | `/files/download?root=&paths[]=` | Downloads multiple selected top-level items as one zip while preserving their relative paths. |
-| `POST` | `/files/upload?root=&path=` | Uploads one or more files. Zip uploads can be extracted with subfolders. |
+| `POST` | `/files/upload?root=&path=` | Uploads one or more files. Zip uploads can be extracted with subfolders. Multipart fields named `relative_{fileKey}` preserve browser-supplied folder paths. |
+
+The explorer upload action opens a persistent modal drop area rather than the browser picker directly. Users can drop files, ZIP archives or complete folders, or use separate browse buttons for files and folders. Upload starts immediately, preserves relative folder paths and leaves the dialog open for additional batches. Successfully uploaded top-level files and folders remain visible in a cumulative list below the status message for as long as the dialog stays open; folder selections are consolidated into one row with their contained file count. ZIP extraction is an explicit option in the dialog. The implementation uses native browser file/directory APIs and therefore needs no additional upload library or build step.
 
 The explorer panel exposes duplicate for both files and folders via the row action menu and right-click context menu. The UI asks for the new sibling name first and pre-fills it with an `_copy` style suggestion for familiarity with the legacy IDE. After confirmation, the front-end performs a regular `/files/copy` call to that explicit target path. The `/files/duplicate` endpoint remains available for future non-interactive duplication flows and for consumers that prefer automatic `(copy)` naming.
 
@@ -564,7 +566,7 @@ The file tree supports:
 - Persisted expanded/collapsed branches per workspace.
 - Right-click context menu for create, rename, duplicate, delete, copy, move, upload, download, history, and opening text files directly in Monaco with Git blame enabled.
 - Drag-to-move and ctrl-drag-to-copy.
-- Drag-and-drop upload for files and zip archives with subfolders.
+- A persistent upload dialog with drag-and-drop and browse actions for files, ZIP archives and complete folders; relative folder paths are retained, multiple batches can be uploaded without closing the dialog, and successful top-level selections remain listed for the current dialog session.
 - Explicit duplicate actions for files and folders that first ask for the target sibling name, prefilled with an `_copy` style suggestion, and then perform a regular copy.
 - A toggleable multi-selection mode with checkboxes for safe bulk actions in the explorer.
 - Bulk move, delete and download actions that operate on the top-level selected items only so selecting a folder and one of its children does not trigger duplicate work.
