@@ -2,6 +2,7 @@
 import { Icon } from '../core/Icon.js';
 import { PopupMenu } from '../core/PopupMenu.js';
 import { attachSplitter } from '../layout/Splitter.js';
+import { GitToasts } from './GitToasts.js';
 
 const LANE_W = 14;
 const ROW_H = 28;
@@ -439,26 +440,30 @@ export class HistoryPanel {
     try {
       const resp = await this.api.post('/git/checkout', { branch, create: true, start_point: startPoint });
       this._injectConsole(resp);
-      this.toasts.success(this._t('git.created_branch', 'Created branch') + ` ${branch}`);
+      this.toasts.success(GitToasts.success('create-branch', resp, { label: `Created branch ${branch}`, detail: false }));
       this.bus?.emit?.('git:branch-changed', { branch, startPoint, response: resp });
       this.bus?.emit?.('git:operation-completed', { operation: 'create-branch', branch, startPoint, response: resp, source: 'history-panel' });
       await this.refresh();
-    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
+    } catch (e) { this._showGitError(e, 'create branch'); }
   }
 
   async _runCommitAction(path, payload, successMessage, operation = 'history-action') {
     try {
       const resp = await this.api.post(path, payload);
       this._injectConsole(resp);
-      if (successMessage) this.toasts.success(successMessage + ' ✓');
+      if (successMessage) this.toasts.success(GitToasts.success(operation, resp, { label: successMessage, detail: false }));
       this.bus?.emit?.('git:history-action', { path, payload, response: resp });
       this.bus?.emit?.('git:operation-completed', { operation, path, payload, response: resp, source: 'history-panel' });
       this.bus?.emit?.('git:branch-changed', { response: resp });
       await this.refresh();
-    } catch (e) { this._injectConsoleError(e); this.toasts.error(e.message); }
+    } catch (e) { this._showGitError(e, operation); }
   }
   _injectConsole(resp) { const block = resp?.console; if (block && this.bus) this.bus.emit('console:inject', block); }
   _injectConsoleError(e) { const block = e?.details?.console; if (block && this.bus) this.bus.emit('console:inject', { ...block, ok: false, autoOpen: true }); }
+  _showGitError(error, operation) {
+    this._injectConsoleError(error);
+    this.toasts.error(GitToasts.error(error, operation));
+  }
 }
 
 const STATUS_LABELS = { A: 'Added', M: 'Modified', D: 'Deleted', R: 'Renamed', C: 'Copied', T: 'Type changed' };

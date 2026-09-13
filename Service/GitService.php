@@ -307,11 +307,18 @@ final class GitService
             'GIT_COMMITTER_NAME' => $authorName,
             'GIT_COMMITTER_EMAIL' => $authorEmail,
         ];
+        $branch = trim((string)($this->status($root)['branch'] ?? ''));
         $console = $this->consoleCapture($root, $args, $env);
         if (!$console['ok']) {
             throw $this->consoleFailure('commit', $console);
         }
-        return ['message' => trim($console['output']), 'console' => $console];
+        return [
+            'operation' => $amend ? 'amend' : 'commit',
+            'branch' => $branch !== '' ? $branch : null,
+            'commits' => 1,
+            'message' => trim($console['output']),
+            'console' => $console,
+        ];
     }
 
     /**
@@ -333,21 +340,51 @@ final class GitService
         if (($status['unpublished'] ?? false) === true && $branch !== '' && $remote !== '') {
             $args = ['push', '-u', $remote, $branch];
         }
+        $commits = max(0, (int)($status['ahead'] ?? 0));
+        if (($status['unpublished'] ?? false) === true) {
+            // With no upstream there is no ahead counter. Count commits that
+            // are not reachable from any known remote ref; if the repository
+            // has no remote refs yet this correctly counts the published history.
+            $remoteRefs = trim($this->run($root, ['for-each-ref', '--format=%(refname)', 'refs/remotes']));
+            $countArgs = $remoteRefs === ''
+                ? ['rev-list', '--count', 'HEAD']
+                : ['rev-list', '--count', 'HEAD', '--not', '--remotes'];
+            $commits = max(0, (int)trim($this->run($root, $countArgs)));
+        }
         $console = $this->consoleCapture($root, $args);
         if (!$console['ok']) {
             throw $this->consoleFailure('push', $console);
         }
-        return ['message' => trim($console['output']), 'console' => $console];
+        return [
+            'operation' => 'push',
+            'branch' => $branch !== '' ? $branch : null,
+            'commits' => $commits,
+            'message' => trim($console['output']),
+            'console' => $console,
+        ];
     }
 
     public function pull(WorkspaceRoot $root): array
     {
         $this->requireRepo($root);
+        $beforeStatus = $this->status($root);
+        $branch = trim((string)($beforeStatus['branch'] ?? ''));
+        $beforeHead = trim($this->run($root, ['rev-parse', 'HEAD']));
         $console = $this->consoleCapture($root, ['pull']);
         if (!$console['ok']) {
             throw $this->consoleFailure('pull', $console);
         }
-        return ['message' => trim($console['output']), 'console' => $console];
+        $afterHead = trim($this->run($root, ['rev-parse', 'HEAD']));
+        $commits = $beforeHead === $afterHead
+            ? 0
+            : max(0, (int)trim($this->run($root, ['rev-list', '--count', $beforeHead . '..' . $afterHead])));
+        return [
+            'operation' => 'pull',
+            'branch' => $branch !== '' ? $branch : null,
+            'commits' => $commits,
+            'message' => trim($console['output']),
+            'console' => $console,
+        ];
     }
 
     /**
