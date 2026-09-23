@@ -461,6 +461,10 @@ export class GitPanel {
       this._injectConsole(resp);
       this.toasts.success(GitToasts.success('pull', resp, { branch: this._lastStatus?.branch }));
       this._emitGitOperation('pull', resp);
+      // Pull may add, remove or rename files without going through the file
+      // APIs. Notify the explorer so its lazy tree is rebuilt while preserving
+      // the user's expanded folders.
+      this.bus?.emit?.('files:changed', { action: 'git-pull' });
       this.refresh();
     } catch (e) { this._showGitError(e, 'pull'); }
   }
