@@ -272,6 +272,13 @@ final class FileService
         $src = $this->guard->resolveInside($root, $from);
         $dst = $this->guard->resolveInside($root, $to, mustExist: false);
         if (file_exists($dst)) {
+            // On case-insensitive filesystems a case-only target resolves to the
+            // source entry itself. Rename through a temporary sibling because
+            // a direct rename may be treated as a no-op by the filesystem.
+            if ($src !== $dst && $this->isSameFilesystemEntry($src, $dst)) {
+                $this->renameChangingCase($src, $dst);
+                return ['from' => $from, 'to' => $this->guard->relativize($root, $dst)];
+            }
             throw new CodiwareException('Destination already exists.', 'exists', 409, ['to' => $to]);
         }
         $parent = dirname($dst);
@@ -611,6 +618,57 @@ final class FileService
         }
         $nonPrintable = preg_match_all('/[\x00-\x08\x0E-\x1F]/', $bytes);
         return $nonPrintable < (strlen($bytes) * 0.02);
+    }
+
+    /**
+     * Determine whether two existing path spellings refer to one filesystem
+     * entry. This is used only after both paths passed through PathGuard.
+     */
+    private function isSameFilesystemEntry(string $first, string $second): bool
+    {
+        $firstReal = realpath($first);
+        $secondReal = realpath($second);
+        if ($firstReal !== false && $secondReal !== false) {
+            if ($firstReal === $secondReal) {
+                return true;
+            }
+            if (DIRECTORY_SEPARATOR === '\\' && strcasecmp($firstReal, $secondReal) === 0) {
+                return true;
+            }
+        }
+
+        $firstStat = @stat($first);
+        $secondStat = @stat($second);
+        return $firstStat !== false
+            && $secondStat !== false
+            && (int)($firstStat['ino'] ?? 0) !== 0
+            && (int)($firstStat['dev'] ?? -1) === (int)($secondStat['dev'] ?? -2)
+            && (int)$firstStat['ino'] === (int)$secondStat['ino'];
+    }
+
+    /**
+     * Apply a case-only rename reliably on case-insensitive filesystems.
+     *
+     * Moving through a unique sibling forces the directory entry to be
+     * recreated with the requested spelling. If the second move fails, the
+     * original name is restored before reporting the error.
+     */
+    private function renameChangingCase(string $src, string $dst): void
+    {
+        $parent = dirname($src);
+        do {
+            $temporary = $parent . DIRECTORY_SEPARATOR . '.codiware-rename-' . bin2hex(random_bytes(8));
+        } while (file_exists($temporary));
+
+        if (!@rename($src, $temporary)) {
+            throw new CodiwareException('Cannot move.', 'move_failed', 500);
+        }
+        if (@rename($temporary, $dst)) {
+            return;
+        }
+
+        @rename($temporary, $src);
+        throw new CodiwareException('Cannot move.', 'move_failed', 500);
     }
 
     private function rrmdir(string $dir): void
