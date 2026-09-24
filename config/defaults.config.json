@@ -26,7 +26,7 @@
   "CONSOLE.ENABLED": true,
   "CONSOLE.TIMEOUT_SECONDS": 300,
   "CONSOLE.ALLOW_PATTERNS": [
-    "^git\\s+(status|log|diff|show|clean|fetch|remote|branch|checkout|merge|rebase|pull|tag)\\b"
+    "^git\\s+(status|log|diff|show|clean|fetch|remote|branch|checkout|merge|rebase|pull|tag|push)\\b"
   ],
   "CONSOLE.PRESETS": [
     { "label": "Git status", "command": "git status --short --branch" },
