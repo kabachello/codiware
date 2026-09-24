@@ -624,6 +624,29 @@ textarea { font-family: var(--ide-font-mono); }
   cursor: progress;
 }
 .file-tree-overlay[hidden] { display: none; }
+.filesystem-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 4px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, #b45309 35%, var(--ide-border));
+  border-left-width: 3px;
+  border-radius: var(--ide-radius);
+  background: color-mix(in srgb, var(--ide-highlight) 55%, transparent);
+  white-space: normal;
+  cursor: default;
+  line-height: 1.35;
+}
+.filesystem-warning > .ide-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+.filesystem-warning strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
 .file-tree-overlay .file-tree-spinner {
   position: absolute;
   top: 40px;

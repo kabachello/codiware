@@ -98,18 +98,48 @@ final class CodiwareMiddleware implements MiddlewareInterface
             }
             return ($match['handler'])($request, $match['params']);
         } catch (CodiwareException $e) {
-            $this->logger->info(
-                'Codiware request rejected: ' . $e->getMessage(),
-                ['exception' => $e, 'code' => $e->errorCode, 'http_status' => $e->httpStatus]
-            );
+            $context = ['exception' => $e, 'code' => $e->errorCode, 'http_status' => $e->httpStatus];
+            if (str_starts_with($e->errorCode, 'workspace_')) {
+                $context += $this->workspaceDiagnostics((string)($e->details['workspace'] ?? ''));
+            }
+            $this->logger->error('Codiware request rejected: ' . $e->getMessage(), $context);
             return $this->responses->error($e->httpStatus, $e->errorCode, $e->getMessage(), $e->details);
         } catch (\Throwable $e) {
-            $this->logger->error(
+            $this->logger->critical(
                 'Codiware request failed: ' . $e->getMessage(),
                 ['exception' => $e]
             );
             return $this->responses->serverError('Internal server error.');
         }
+    }
+
+    /**
+     * Add server-only filesystem diagnostics for administrators. These values
+     * are never copied into the HTTP response because paths and process-account
+     * information may be sensitive.
+     *
+     * @return array<string,mixed>
+     */
+    private function workspaceDiagnostics(string $workspace): array
+    {
+        $base = $this->config->baseFolder();
+        $candidate = $base === null
+            ? $workspace
+            : rtrim($base, '/\\') . DIRECTORY_SEPARATOR
+                . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $workspace);
+        $parent = dirname($candidate);
+
+        return [
+            'workspace' => $workspace,
+            'workspace_path' => $candidate,
+            'php_process_user' => getenv('USERNAME') ?: getenv('USER') ?: get_current_user() ?: 'unknown',
+            'exists' => file_exists($candidate),
+            'is_directory' => is_dir($candidate),
+            'is_readable' => is_readable($candidate),
+            'is_writable' => is_writable($candidate),
+            'parent_exists' => is_dir($parent),
+            'parent_readable' => is_readable($parent),
+        ];
     }
 
     /**
@@ -147,7 +177,7 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $searchService = new SearchService($this->pathGuard);
         $consoleService = new ConsoleService($this->config, $this->logger, [$gitColorNormalizer]);
 
-        $shell = new ShellController($this->responses, $this->config, $this->workspaces, $gitService, $this->basePath, $this->user);
+        $shell = new ShellController($this->responses, $this->config, $this->workspaces, $gitService, $this->basePath, $this->user, $this->logger);
         $assets = new AssetController($this->responses);
         $configCtl = new ConfigController($this->responses, $this->config, $translations, $this->user, $this->basePath);
         $files = new FileController($this->responses, $this->workspaces, $this->pathGuard, $fileService);

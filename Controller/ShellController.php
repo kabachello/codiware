@@ -9,8 +9,10 @@ use kabachello\Codiware\Exception\CodiwareException;
 use kabachello\Codiware\Http\Responses;
 use kabachello\Codiware\Service\GitService;
 use kabachello\Codiware\Workspace\WorkspaceResolver;
+use kabachello\Codiware\Workspace\WorkspaceRoot;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Serves the SPA shell HTML for `GET {basePath}/repo/{workspacePath...}`.
@@ -27,7 +29,8 @@ final class ShellController
         private readonly WorkspaceResolver $resolver,
         private readonly GitService        $git,
         private readonly string            $urlToApi,
-        private readonly UserContext       $user
+        private readonly UserContext       $user,
+        private readonly LoggerInterface   $logger
     ) {
     }
 
@@ -41,10 +44,35 @@ final class ShellController
                 400
             );
         }
-        $root = $this->resolver->resolve($workspacePath);
+        $workspaceError = null;
+        try {
+            $root = $this->resolver->resolve($workspacePath);
+        } catch (CodiwareException $e) {
+            // Keep the SPA available for filesystem setup problems so the
+            // explorer can explain the issue instead of returning a bare JSON
+            // error page. API calls still fail with the same stable error code.
+            $workspaceError = [
+                'code' => $e->errorCode,
+                'message' => $e->getMessage(),
+            ];
+            $this->logger->error(
+                'Codiware cannot open the requested workspace. Check that the folder exists and grant the PHP/web-server account read and write permissions.',
+                $this->workspaceDiagnostics($workspacePath, $e)
+            );
+            $root = new WorkspaceRoot($workspacePath, '', $workspacePath);
+        }
+        $workspaceWarning = $workspaceError === null && !$root->toArray()['is_writable']
+            ? ['code' => 'workspace_not_writable', 'message' => 'The workspace folder is read-only.']
+            : null;
+        if ($workspaceWarning !== null) {
+            $this->logger->warning(
+                'Codiware workspace is read-only. Grant the PHP/web-server account write permissions to enable editing.',
+                $this->workspaceDiagnostics($workspacePath)
+            );
+        }
         $requestedBranch = trim((string)($request->getQueryParams()['branch'] ?? ''));
         $branchBootstrap = null;
-        if ($this->git->isRepository($root)) {
+        if ($workspaceError === null && $this->git->isRepository($root)) {
             $branchBootstrap = $this->git->ensureBranch($root, $requestedBranch !== '' ? $requestedBranch : null);
         }
         $extensions = [];
@@ -59,6 +87,8 @@ final class ShellController
             'url_to_npm' => $this->config->get('URL_TO_NPM'),
             'workspace' => $root->toArray(),
             'workspace_path' => $workspacePath,
+            'workspace_error' => $workspaceError,
+            'workspace_warning' => $workspaceWarning,
             'requested_branch' => $requestedBranch,
             'git' => [
                 'initial_status' => $branchBootstrap['status'] ?? null,
@@ -107,6 +137,36 @@ final class ShellController
             'Cache-Control' => 'no-store',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    /**
+     * Build detailed diagnostics for the host log. None of these values are
+     * included in the browser boot payload.
+     *
+     * @return array<string,mixed>
+     */
+    private function workspaceDiagnostics(string $workspacePath, ?\Throwable $exception = null): array
+    {
+        $base = $this->config->baseFolder();
+        $candidate = $base === null
+            ? $workspacePath
+            : rtrim($base, '/\\') . DIRECTORY_SEPARATOR
+                . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $workspacePath);
+        $context = [
+            'workspace' => $workspacePath,
+            'workspace_path' => $candidate,
+            'php_process_user' => getenv('USERNAME') ?: getenv('USER') ?: get_current_user() ?: 'unknown',
+            'exists' => file_exists($candidate),
+            'is_directory' => is_dir($candidate),
+            'is_readable' => is_readable($candidate),
+            'is_writable' => is_writable($candidate),
+            'parent_exists' => is_dir(dirname($candidate)),
+            'parent_readable' => is_readable(dirname($candidate)),
+        ];
+        if ($exception !== null) {
+            $context['exception'] = $exception;
+        }
+        return $context;
     }
 
     /**

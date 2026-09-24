@@ -220,5 +220,15 @@
   "tabs.close_others": "Close other tabs",
 
   "errors.generic": "Something went wrong.",
-  "errors.unauthorized": "Not authorised."
+  "errors.unauthorized": "Not authorised.",
+  "errors.workspace_not_found_title": "Workspace folder not found",
+  "errors.workspace_not_found": "The requested folder does not exist. Check the app installation or the link used to open Codiware.",
+  "errors.workspace_access_denied_title": "Workspace folder is not accessible",
+  "errors.workspace_access_denied": "Codiware cannot read this folder. Ask an administrator to check the web server account's folder permissions.",
+  "errors.workspace_not_writable_title": "Workspace folder is read-only",
+  "errors.workspace_not_writable": "Files can be viewed, but changes cannot be saved. Ask an administrator to grant the web server account write permission.",
+  "errors.workspace_not_directory_title": "Workspace is not a folder",
+  "errors.workspace_not_directory": "The configured workspace path does not point to a folder.",
+  "errors.workspace_not_allowed_title": "Workspace is not available",
+  "errors.workspace_not_allowed": "The requested folder is outside the workspaces available to Codiware."
 }

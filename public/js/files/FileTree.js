@@ -868,6 +868,10 @@ export class FileTree {
   }
 
   async refresh() {
+    if (this.workspaceError) {
+      this._renderWorkspaceError(this.workspaceError);
+      return;
+    }
     this.rowByPath.clear();
     this.selectedPaths = new Set(Array.from(this.selectedPaths).filter((path) => typeof path === 'string'));
     // Keep the tree filtered across refreshes triggered by saving a file or
@@ -883,6 +887,47 @@ export class FileTree {
     await this._restoreExpansion();
     this._pruneSelection();
     this._syncSelectionUi();
+  }
+
+  /**
+   * Lock explorer actions and render a persistent, non-technical workspace
+   * error supplied by shell bootstrap. Sensitive paths remain server-side.
+   */
+  setWorkspaceError(error) {
+    this.workspaceError = error || null;
+    this._renderWorkspaceError(this.workspaceError);
+  }
+
+  setWorkspaceWarning(warning) {
+    if (!warning || !this.rootUl) return;
+    this.workspaceWarning = warning;
+    this._renderWorkspaceNotice(warning, false);
+  }
+
+  _renderWorkspaceError(error) {
+    if (!this.rootUl || !error) return;
+    this.rootUl.replaceChildren();
+    this.host.classList.add('has-workspace-error');
+    this.toolbarEl?.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+    if (this.filterInput) this.filterInput.disabled = true;
+
+    this._renderWorkspaceNotice(error, true);
+  }
+
+  _renderWorkspaceNotice(error, blocking) {
+    const box = document.createElement('div');
+    box.className = 'filesystem-warning';
+    box.classList.toggle('is-blocking', blocking);
+    const icon = Icon.render(error.code === 'workspace_not_found' ? 'fa fa-folder-open-o' : 'fa fa-exclamation-triangle');
+    const content = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = this.i18n.t(`errors.${error.code}_title`);
+    const message = document.createElement('div');
+    message.textContent = this.i18n.t(`errors.${error.code}`);
+    content.append(title, message);
+    box.append(icon, content);
+    if (blocking) this.rootUl.appendChild(box);
+    else this.treeWrap?.prepend(box);
   }
 
   // ---- Quick-search filter ---------------------------------------------

@@ -43,30 +43,43 @@ final class WorkspaceResolver
             );
         }
 
-        // Try explicit allowed roots first - exact alias or absolute path prefix match.
-        foreach ($this->allowedRoots() as $root) {
-            if ($root->alias === $workspacePath) {
-                return $root;
+        // Resolve an explicitly configured alias without silently dropping an
+        // inaccessible path. The distinction is important for the shell: it can
+        // show "not found" separately from "permission denied".
+        $configured = (array)($this->config->get('ALLOWED_ROOTS', []) ?? []);
+        $baseFolder = $this->config->baseFolder();
+        foreach ($configured as $entry) {
+            if (is_string($entry)) {
+                $entry = ['alias' => $entry, 'path' => $entry, 'label' => $entry];
             }
+            if (!is_array($entry)) {
+                continue;
+            }
+            $alias = (string)($entry['alias'] ?? '');
+            if ($alias !== $workspacePath) {
+                continue;
+            }
+            $rawPath = (string)($entry['path'] ?? '');
+            if ($rawPath === '') {
+                break;
+            }
+            return $this->resolveCandidate(
+                $workspacePath,
+                $this->absolutize($rawPath, $baseFolder),
+                (string)($entry['label'] ?? $alias),
+                null
+            );
         }
 
         // Try resolving under BASE_FOLDER, e.g. vendor/exface/core.
-        $baseFolder = $this->config->baseFolder();
         if ($baseFolder !== null) {
             $candidate = $baseFolder . DIRECTORY_SEPARATOR
                 . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $workspacePath);
-            $real = realpath($candidate);
-            if ($real !== false && is_dir($real) && $this->isUnder($real, $baseFolder)) {
-                return new WorkspaceRoot(
-                    alias: $workspacePath,
-                    path: $real,
-                    label: $workspacePath
-                );
-            }
+            return $this->resolveCandidate($workspacePath, $candidate, $workspacePath, $baseFolder);
         }
 
         throw new CodiwareException(
-            'Workspace "' . $workspacePath . '" is not in the allowed roots.',
+            'The requested workspace is not allowed.',
             'workspace_not_allowed',
             403,
             ['workspace' => $workspacePath]
@@ -112,6 +125,51 @@ final class WorkspaceResolver
     public function rootByAlias(string $alias): WorkspaceRoot
     {
         return $this->resolve($alias);
+    }
+
+    /**
+     * Validate a configured workspace while keeping client-facing diagnostics
+     * deliberately generic. Absolute paths and OS account details belong in
+     * the host log, not in API responses.
+     */
+    private function resolveCandidate(string $alias, string $candidate, string $label, ?string $baseFolder): WorkspaceRoot
+    {
+        if (!file_exists($candidate)) {
+            throw new CodiwareException(
+                'The workspace folder does not exist.',
+                'workspace_not_found',
+                404,
+                ['workspace' => $alias]
+            );
+        }
+        if (!is_dir($candidate)) {
+            throw new CodiwareException(
+                'The workspace path is not a folder.',
+                'workspace_not_directory',
+                400,
+                ['workspace' => $alias]
+            );
+        }
+
+        $real = realpath($candidate);
+        if ($real === false || @scandir($candidate) === false) {
+            throw new CodiwareException(
+                'Codiware does not have permission to access the workspace folder.',
+                'workspace_access_denied',
+                403,
+                ['workspace' => $alias]
+            );
+        }
+        if ($baseFolder !== null && !$this->isUnder($real, $baseFolder)) {
+            throw new CodiwareException(
+                'The requested workspace is not allowed.',
+                'workspace_not_allowed',
+                403,
+                ['workspace' => $alias]
+            );
+        }
+
+        return new WorkspaceRoot($alias, $real, $label);
     }
 
     private function absolutize(string $path, ?string $baseFolder): string

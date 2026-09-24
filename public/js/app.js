@@ -256,7 +256,11 @@ async function main() {
           ? (entry) => tabs.openWithGitBlame(entry)
           : null,
       });
-      fileTree.refresh();
+      if (boot.workspace_error) fileTree.setWorkspaceError(boot.workspace_error);
+      else {
+        if (boot.workspace_warning) fileTree.setWorkspaceWarning(boot.workspace_warning);
+        fileTree.refresh();
+      }
     },
   });
   bus.on('files:changed', () => {

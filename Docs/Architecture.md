@@ -113,6 +113,8 @@ GET {basePath}/repo/{workspacePath...}
 
 The resolved workspace id becomes the namespace for local browser state: opened tabs, panel sizes, tree expansion, added secondary roots, editor preferences, and selected theme.
 
+Workspace startup distinguishes a missing directory, an inaccessible directory, an invalid non-directory path and a path outside the allow-list. For these failures the server still returns the normal IDE shell with a safe error code in boot metadata, allowing the explorer panel to display an actionable warning instead of an empty screen. A readable but non-writable workspace opens normally with a read-only warning. Absolute paths, process-account details and permission probes are written only to the configured server logger and are never exposed to the browser.
+
 Future multi-root support uses the same resolver. The initial `repo/{workspacePath}` remains the primary workspace; optional secondary roots can be added from the allowed root menu and persisted per primary workspace.
 
 When a Git workspace is opened, the shell also evaluates the optional `?branch=` query parameter before the SPA starts. If the parameter is missing, the current branch is kept as-is. If it is present and differs from the current branch, the server performs the checkout during shell bootstrap and injects both the resulting git status and the checkout console block into the boot payload. This lets external links open a repository directly on a specific branch without forcing the client to do an extra round trip after rendering.
@@ -738,7 +740,7 @@ All controllers return a consistent JSON error shape for API failures:
 }
 ```
 
-The front-end displays recoverable API errors as colored toast messages. Server exceptions are passed to the configured logger as throwables in the log context under the `exception` key:
+The front-end displays recoverable API errors as colored toast messages. Workspace resolution errors are additionally rendered persistently in the explorer while the rest of the IDE layout remains available. Server exceptions are passed to the configured logger as throwables in the log context under the `exception` key. Workspace diagnostics also record the absolute candidate path, effective PHP process user and read/write checks in the server log only:
 
 ```php
 $logger->error($message, ['exception' => $throwable]);

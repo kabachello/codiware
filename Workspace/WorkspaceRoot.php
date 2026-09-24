@@ -16,7 +16,7 @@ final class WorkspaceRoot
     }
 
     /**
-     * @return array{alias:string,path:string,label:string,is_git:bool}
+     * @return array{alias:string,path:string,label:string,is_git:bool,is_readable:bool,is_writable:bool}
      */
     public function toArray(): array
     {
@@ -24,7 +24,9 @@ final class WorkspaceRoot
             'alias' => $this->alias,
             'path' => $this->path,
             'label' => $this->label,
-            'is_git' => is_dir($this->path . DIRECTORY_SEPARATOR . '.git'),
+            'is_git' => $this->path !== '' && is_dir($this->path . DIRECTORY_SEPARATOR . '.git'),
+            'is_readable' => $this->path !== '' && is_readable($this->path),
+            'is_writable' => $this->path !== '' && is_writable($this->path),
         ];
     }
 }
