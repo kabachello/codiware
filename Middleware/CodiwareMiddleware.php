@@ -98,13 +98,13 @@ final class CodiwareMiddleware implements MiddlewareInterface
             }
             return ($match['handler'])($request, $match['params']);
         } catch (CodiwareException $e) {
-            $this->logger->info(
+            $this->logger->notice(
                 'Codiware request rejected: ' . $e->getMessage(),
                 ['exception' => $e, 'code' => $e->errorCode, 'http_status' => $e->httpStatus]
             );
             return $this->responses->error($e->httpStatus, $e->errorCode, $e->getMessage(), $e->details);
         } catch (\Throwable $e) {
-            $this->logger->error(
+            $this->logger->critical(
                 'Codiware request failed: ' . $e->getMessage(),
                 ['exception' => $e]
             );
