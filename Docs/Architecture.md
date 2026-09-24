@@ -299,11 +299,11 @@ File rows in the explorer and Git status panel expose `Open Git history`. The ac
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/search?root=&path=&pattern=&q=&regex=&caseSensitive=` | Searches all allowed files under a root/path. Returns grouped findings with line and preview context. |
+| `GET` | `/search?root=&path=&q=&regex=&case=&limit=&offset=` | Searches allowed files under a root/path in path order. Returns one page of grouped findings with line and preview context plus `has_more` and `next_offset`. The page size defaults to configurable `SEARCH.RESULTS_PER_PAGE` (100). |
 | `POST` | `/search/replace/preview` | Calculates replacements without writing files. |
 | `POST` | `/search/replace` | Applies replacements to all or selected findings. |
 
-The search panel stays open while files are opened from results. Opening a result focuses the main editor at the matching line. Search results intentionally force the Monaco code editor, even for file types that normally open in a specialized editor such as Markdown WYSIWYG, because search operates on raw file text and line/column navigation must stay precise and reliable.
+The search panel stays open while files are opened from results. Opening a result focuses the main editor at the matching line. Search results intentionally force the Monaco code editor, even for file types that normally open in a specialized editor such as Markdown WYSIWYG, because search operates on raw file text and line/column navigation must stay precise and reliable. To keep large result sets responsive, the server sorts candidate files by path and returns at most `SEARCH.RESULTS_PER_PAGE` findings per request. A link below the current findings loads and appends the next page.
 
 ### Console
 
@@ -619,6 +619,7 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
     "vendor/*/*/.git/config"
   ],
   "MAX_UPLOAD_BYTES": 52428800,
+  "SEARCH.RESULTS_PER_PAGE": 100,
   "THEME.DEFAULT": "light",
   "THEME.ALLOW_USER_OVERRIDE": true,
   "THEME.SKIN": null,

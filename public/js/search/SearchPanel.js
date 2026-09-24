@@ -3,6 +3,9 @@ export class SearchPanel {
   constructor({ api, i18n, toasts, bus, onOpenLine }) {
     this.api = api; this.i18n = i18n; this.toasts = toasts; this.bus = bus;
     this.onOpenLine = onOpenLine;
+    this.nextOffset = 0;
+    this.loading = false;
+    this.searchParams = null;
   }
 
   mount(host) {
@@ -35,16 +38,32 @@ export class SearchPanel {
   }
 
   async run() {
-    const q = this.q.value;
-    if (!q) return;
+    if (!this.q.value || this.loading) return;
+    this.nextOffset = 0;
+    this.searchParams = {
+      q: this.q.value,
+      regex: this.regex.input.checked ? 1 : 0,
+      case: this.cs.input.checked ? 1 : 0,
+    };
     this.results.textContent = '…';
+    await this._loadPage(false);
+  }
+
+  async _loadPage(append) {
+    if (this.loading) return;
+    this.loading = true;
     try {
       const data = await this.api.get('/search', {
-        q, regex: this.regex.input.checked ? 1 : 0, case: this.cs.input.checked ? 1 : 0,
+        ...this.searchParams,
+        offset: this.nextOffset,
       });
-      this._renderResults(data);
+      this.nextOffset = Number(data.next_offset ?? (this.nextOffset + data.total_matches));
+      this._renderResults(data, append);
     } catch (e) {
-      this.results.textContent = e.message;
+      if (!append) this.results.textContent = e.message;
+      else this.toasts.error(e.message);
+    } finally {
+      this.loading = false;
     }
   }
 
@@ -62,14 +81,18 @@ export class SearchPanel {
     } catch (e) { this.toasts.error(e.message); }
   }
 
-  _renderResults(data) {
-    this.results.innerHTML = '';
-    if (!data.results.length) {
+  _renderResults(data, append = false) {
+    this.results.querySelector('.search-load-more')?.remove();
+    if (!append) this.results.innerHTML = '';
+    if (!data.results.length && !append) {
       this.results.textContent = this.i18n.t('search.no_results');
       return;
     }
-    const header = el('div');
-    header.textContent = `${data.total_matches} match(es) in ${data.total_files} file(s)${data.truncated ? ' (truncated)' : ''}`;
+    const header = el('div', 'search-results-summary');
+    header.textContent = format(this.i18n.t('search.page_summary'), {
+      matches: data.total_matches,
+      files: data.total_files,
+    });
     header.style.color = 'var(--ide-fg-muted)';
     header.style.marginBottom = '4px';
     this.results.appendChild(header);
@@ -94,6 +117,13 @@ export class SearchPanel {
         this.results.appendChild(line);
       }
     }
+
+    if (data.has_more) {
+      const more = btn(this.i18n.t('search.load_more'), () => this._loadPage(true));
+      more.className = 'search-load-more';
+      more.style.marginTop = '8px';
+      this.results.appendChild(more);
+    }
   }
 }
 
@@ -104,6 +134,9 @@ function input(type, placeholder) {
   i.type = type; i.placeholder = placeholder || '';
   i.style.width = '100%'; i.style.marginBottom = '4px';
   return i;
+}
+function format(template, values) {
+  return String(template).replace(/\{(\w+)\}/g, (_, key) => values[key] ?? `{${key}}`);
 }
 function checkbox(label) {
   const wrap = document.createElement('label');

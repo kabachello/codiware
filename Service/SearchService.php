@@ -25,16 +25,17 @@ final class SearchService
     }
 
     /**
-     * @return array{query:string,regex:bool,case_sensitive:bool,total_matches:int,total_files:int,truncated:bool,results:array<int,array{path:string,matches:array<int,array{line:int,column:int,text:string,match:string}>}>}
+     * @return array{query:string,regex:bool,case_sensitive:bool,total_matches:int,total_files:int,truncated:bool,has_more:bool,next_offset:?int,results:array<int,array{path:string,matches:array<int,array{line:int,column:int,text:string,match:string}>}>}
      */
     public function search(
         WorkspaceRoot $root,
         string $query,
-        bool $regex = false,
-        bool $caseSensitive = false,
-        ?string $subPath = null,
-        int $maxResults = 1000,
-        int $maxFiles = 500
+        bool $regex,
+        bool $caseSensitive,
+        ?string $subPath,
+        int $maxResults,
+        int $maxFiles = 500,
+        int $offset = 0
     ): array {
         if ($query === '') {
             throw new CodiwareException('Search query must not be empty.', 'bad_request', 400);
@@ -45,7 +46,9 @@ final class SearchService
 
         $results = [];
         $totalMatches = 0;
+        $matchesSeen = 0;
         $filesScanned = 0;
+        $hasMore = false;
         $truncated = false;
 
         foreach ($this->walkFiles($base) as $abs) {
@@ -83,6 +86,13 @@ final class SearchService
                 $stripped = rtrim($line, "\r\n");
                 if (preg_match_all($pattern, $stripped, $m, PREG_OFFSET_CAPTURE) > 0) {
                     foreach ($m[0] as $hit) {
+                        if ($matchesSeen++ < $offset) {
+                            continue;
+                        }
+                        if ($totalMatches >= $maxResults) {
+                            $hasMore = true;
+                            break 2;
+                        }
                         $matches[] = [
                             'line' => $lineNo,
                             'column' => (int)$hit[1] + 1,
@@ -90,9 +100,6 @@ final class SearchService
                             'match' => (string)$hit[0],
                         ];
                         $totalMatches++;
-                        if ($totalMatches >= $maxResults) {
-                            break 2;
-                        }
                     }
                 }
             }
@@ -104,8 +111,7 @@ final class SearchService
                     'matches' => $matches,
                 ];
             }
-            if ($totalMatches >= $maxResults) {
-                $truncated = true;
+            if ($hasMore) {
                 break;
             }
         }
@@ -116,7 +122,9 @@ final class SearchService
             'case_sensitive' => $caseSensitive,
             'total_matches' => $totalMatches,
             'total_files' => count($results),
-            'truncated' => $truncated,
+            'truncated' => $truncated || $hasMore,
+            'has_more' => $hasMore,
+            'next_offset' => $hasMore ? $offset + $totalMatches : null,
             'results' => $results,
         ];
     }
@@ -213,12 +221,21 @@ final class SearchService
             static fn (\SplFileInfo $info): bool => !str_starts_with($info->getFilename(), '.')
         );
         $it = new RecursiveIteratorIterator($filtered, RecursiveIteratorIterator::LEAVES_ONLY);
+        $files = [];
         foreach ($it as $info) {
             /** @var \SplFileInfo $info */
             if ($info->isFile()) {
-                yield $info->getPathname();
+                $files[] = $info->getPathname();
             }
         }
+        usort(
+            $files,
+            static fn (string $left, string $right): int => strnatcasecmp(
+                str_replace('\\', '/', $left),
+                str_replace('\\', '/', $right)
+            )
+        );
+        yield from $files;
     }
 
     private function compilePattern(string $query, bool $regex, bool $caseSensitive): string

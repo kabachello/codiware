@@ -140,6 +140,8 @@
   "search.preview": "Preview",
   "search.apply": "Apply replace",
   "search.no_results": "No matches",
+  "search.page_summary": "{matches} match(es) in {files} file(s)",
+  "search.load_more": "Load next results",
 
   "console.title": "Console",
   "console.placeholder": "Run a preset or allowed command…",

@@ -5,6 +5,7 @@ namespace kabachello\Codiware\Controller;
 
 use kabachello\Codiware\Exception\CodiwareException;
 use kabachello\Codiware\Http\Responses;
+use kabachello\Codiware\Middleware\CodiwareConfig;
 use kabachello\Codiware\Service\SearchService;
 use kabachello\Codiware\Workspace\PathGuard;
 use kabachello\Codiware\Workspace\WorkspaceResolver;
@@ -21,7 +22,8 @@ final class SearchController
         private readonly Responses $responses,
         private readonly WorkspaceResolver $resolver,
         private readonly PathGuard $guard,
-        private readonly SearchService $search
+        private readonly SearchService $search,
+        private readonly CodiwareConfig $config
     ) {
     }
 
@@ -33,9 +35,13 @@ final class SearchController
         $regex = $this->bool($q['regex'] ?? false);
         $cs = $this->bool($q['case'] ?? false);
         $sub = isset($q['path']) ? (string)$q['path'] : null;
-        $limit = max(1, min(5000, (int)($q['limit'] ?? 1000)));
+        $configuredLimit = max(1, min(5000, (int)$this->config->get('SEARCH.RESULTS_PER_PAGE')));
+        $limit = max(1, min($configuredLimit, (int)($q['limit'] ?? $configuredLimit)));
+        $offset = max(0, (int)($q['offset'] ?? 0));
         $maxFiles = max(1, min(5000, (int)($q['max_files'] ?? 500)));
-        return $this->responses->ok($this->search->search($root, $query, $regex, $cs, $sub, $limit, $maxFiles));
+        return $this->responses->ok(
+            $this->search->search($root, $query, $regex, $cs, $sub, $limit, $maxFiles, $offset)
+        );
     }
 
     public function replace(ServerRequestInterface $request): ResponseInterface
