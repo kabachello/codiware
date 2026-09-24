@@ -210,6 +210,7 @@
   "outline.title": "Outline",
   "outline.no_symbols": "No symbols found",
 
+  "tabs.more": "More open tabs",
   "tabs.pin": "Pin tab",
   "tabs.unpin": "Unpin tab",
   "tabs.pin_disabled_diff": "Diff tabs cannot be pinned",

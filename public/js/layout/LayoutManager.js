@@ -57,7 +57,7 @@ export class LayoutManager {
 
     // Body
     const body = el('div', 'ide-body');
-    body.style.gridTemplateColumns = this.sidebarWidth + 'px 5px 1fr';
+    body.style.gridTemplateColumns = this.sidebarWidth + 'px 5px minmax(0, 1fr)';
     this.slots.body = body;
     const sidebar = el('aside', 'ide-sidebar');
     const tabs = el('div', 'ide-sidebar-tabs');
@@ -71,9 +71,12 @@ export class LayoutManager {
     const main = el('section', 'ide-main');
     const editorArea = el('div', 'ide-editor-area');
     const tabBar = el('div', 'ide-tabs');
+    const tabList = el('div', 'ide-tabs-list');
+    tabBar.appendChild(tabList);
     const editorHost = el('div', 'ide-editor-host');
     editorArea.append(tabBar, editorHost);
-    this.slots.editorTabs = tabBar;
+    this.slots.editorTabs = tabList;
+    this.slots.editorTabsContainer = tabBar;
     this.slots.editorHost = editorHost;
 
     const splitterY = el('div', 'ide-splitter');
@@ -263,13 +266,13 @@ export class LayoutManager {
       // When collapsed, the splitter is hidden, so use a two-column grid to
       // avoid the main area (and its bottom panel) being auto-placed into the
       // now-empty splitter track by grid auto-flow.
-      body.style.gridTemplateColumns = `${this.sidebarStripWidth}px 1fr`;
+      body.style.gridTemplateColumns = `${this.sidebarStripWidth}px minmax(0, 1fr)`;
       splitter.style.display = 'none';
       sidebar.classList.add('is-collapsed');
       return;
     }
 
-    body.style.gridTemplateColumns = `${this.sidebarWidth}px 5px 1fr`;
+    body.style.gridTemplateColumns = `${this.sidebarWidth}px 5px minmax(0, 1fr)`;
     splitter.style.display = '';
     sidebar.classList.remove('is-collapsed');
   }

@@ -160,9 +160,10 @@ textarea { font-family: var(--ide-font-mono); }
 
 .ide-body {
   display: grid;
-  grid-template-columns: 260px var(--ide-splitter) 1fr;
+  grid-template-columns: 260px var(--ide-splitter) minmax(0, 1fr);
   grid-template-rows: 1fr;
   min-height: 0;
+  min-width: 0;
 }
 
 /* Drag-to-resize splitter shared by the sidebar, bottom panel and editor outline */
@@ -358,8 +359,9 @@ textarea { font-family: var(--ide-font-mono); }
 
 .ide-main {
   display: grid;
-  grid-template-rows: 1fr var(--ide-splitter) 0;
+  grid-template-rows: minmax(0, 1fr) var(--ide-splitter) 0;
   min-height: 0;
+  min-width: 0;
   position: relative;
 }
 .ide-main.has-bottom { grid-template-rows: 1fr var(--ide-splitter) 180px; }
@@ -368,16 +370,37 @@ textarea { font-family: var(--ide-font-mono); }
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   position: relative;
   z-index: 1;
 }
 .ide-tabs {
   display: flex;
-  overflow-x: auto;
+  min-width: 0;
+  overflow: hidden;
   background: var(--ide-tabbar-bg);
   border-bottom: 1px solid var(--ide-border);
   min-height: 30px;
 }
+.ide-tabs-list {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.ide-tabs-overflow {
+  flex: 0 0 34px;
+  width: 34px;
+  min-height: 29px;
+  padding: 4px 8px;
+  border: 0;
+  border-left: 1px solid var(--ide-border);
+  border-radius: 0;
+  background: var(--ide-tabbar-bg);
+}
+.ide-tabs-overflow:hover { background: var(--ide-tab-hover); }
+.ide-tabs-overflow[hidden] { display: none; }
 .ide-tab {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 10px;
@@ -386,7 +409,10 @@ textarea { font-family: var(--ide-font-mono); }
   white-space: nowrap;
   user-select: none;
   position: relative;
+  flex: 0 0 auto;
+  max-width: min(320px, 70vw);
 }
+.ide-tab.is-overflowed { display: none; }
 .ide-tab:hover { background: var(--ide-tab-hover); }
 .ide-tab.active { background: var(--ide-bg); }
 .ide-tab.active:hover { background: color-mix(in srgb, var(--ide-bg) 90%, var(--ide-fg)); }
@@ -410,6 +436,9 @@ textarea { font-family: var(--ide-font-mono); }
 .ide-tab.drop-before::before { left: -1px; }
 .ide-tab.drop-after::after { right: -1px; }
 .ide-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   user-select: none;
   -webkit-user-select: none;
 }

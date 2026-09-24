@@ -1,4 +1,5 @@
 import { Icon } from '../core/Icon.js';
+import { PopupMenu } from '../core/PopupMenu.js';
 
 /**
  * Manages open editor tabs in the main area.
@@ -28,6 +29,72 @@ export class TabManager {
     this._draggedTabKey = null;
     this._tabContextMenuEl = null;
     this._tabContextMenuCleanup = null;
+    this._overflowUpdateFrame = null;
+    this._overflowButton = this._createOverflowButton();
+    this._tabBarResizeObserver = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(() => this._scheduleOverflowUpdate())
+      : null;
+    this._tabBarResizeObserver?.observe(this.tabBar.parentElement || this.tabBar);
+    window.addEventListener('resize', () => this._scheduleOverflowUpdate());
+  }
+
+  /** Create the fixed button at the right edge that lists tabs without room. */
+  _createOverflowButton() {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ide-tabs-overflow';
+    const label = this.i18n.t('tabs.more');
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.append(Icon.render('fa fa-ellipsis-h'));
+    button.hidden = true;
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const items = Array.from(this.tabs.values())
+        .filter((record) => record.tabEl.classList.contains('is-overflowed'))
+        .map((record) => ({
+          icon: record.dirty ? 'fa fa-floppy-o' : (record.pinned ? 'fa fa-thumb-tack' : 'fa fa-file-o'),
+          label: record.tabEl.querySelector('.ide-tab-name')?.textContent || record.entry.name || record.entry.path,
+          onClick: () => this.activate(record.key),
+        }));
+      if (items.length > 0) PopupMenu.open(button, items);
+    });
+    this.tabBar.parentElement?.appendChild(button);
+    return button;
+  }
+
+  _scheduleOverflowUpdate() {
+    if (this._overflowUpdateFrame !== null) return;
+    this._overflowUpdateFrame = requestAnimationFrame(() => {
+      this._overflowUpdateFrame = null;
+      this._updateOverflow();
+    });
+  }
+
+  /**
+   * Keep the tab strip within its container and move right-most tabs into the
+   * overflow menu. The active tab is always retained in the visible strip.
+   */
+  _updateOverflow() {
+    const container = this.tabBar.parentElement;
+    if (!container || !this._overflowButton) return;
+
+    const records = Array.from(this.tabs.values());
+    records.forEach((record) => record.tabEl.classList.remove('is-overflowed'));
+    this._overflowButton.hidden = true;
+
+    const totalWidth = records.reduce((width, record) => width + record.tabEl.offsetWidth, 0);
+    if (totalWidth <= container.clientWidth) return;
+
+    this._overflowButton.hidden = false;
+    const availableWidth = Math.max(0, container.clientWidth - this._overflowButton.offsetWidth);
+    let visibleWidth = totalWidth;
+    for (let index = records.length - 1; index >= 0 && visibleWidth > availableWidth; index--) {
+      const record = records[index];
+      if (record.key === this.active) continue;
+      visibleWidth -= record.tabEl.offsetWidth;
+      record.tabEl.classList.add('is-overflowed');
+    }
   }
 
   /**
@@ -148,6 +215,7 @@ export class TabManager {
         record.dirty = editor.isDirty();
         tabEl.classList.toggle('dirty', record.dirty);
         dirtyBtn.style.display = record.dirty ? '' : 'none';
+        this._scheduleOverflowUpdate();
       });
       editor.on('save-request', () => this.save(key));
     }
@@ -254,6 +322,7 @@ export class TabManager {
     this.active = key;
     this.bus.emit('tab:activated', record);
     this._persistOpenTabs();
+    this._scheduleOverflowUpdate();
     // Move keyboard focus into the editor so shortcuts like Ctrl+S target the
     // active document instead of staying on the sidebar element that was
     // clicked last. The editor may still be initialising, so this is optional.
@@ -419,6 +488,7 @@ export class TabManager {
       this.tabBar.appendChild(record.tabEl);
     }
     this._syncTabOrderFromDom();
+    this._scheduleOverflowUpdate();
   }
 
   /**
@@ -690,6 +760,7 @@ export class TabManager {
       }
     }
     if (persist) this._persistOpenTabs();
+    this._scheduleOverflowUpdate();
     return true;
   }
 
@@ -809,6 +880,7 @@ export class TabManager {
         record.dirty = editor.isDirty();
         tabEl.classList.toggle('dirty', record.dirty);
         dirtyBtn.style.display = record.dirty ? '' : 'none';
+        this._scheduleOverflowUpdate();
       });
       editor.on('save-request', () => this.save(key));
     }
