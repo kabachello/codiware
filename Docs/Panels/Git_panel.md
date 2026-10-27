@@ -9,6 +9,8 @@ The panel always show the current git status:
 - Current branch
 - Modified, untracked, deleted and staged files
 
+Each changed-file menu offers a download action for the current working-tree version, allowing users to make a local backup before staging or discarding it. The action is disabled for deleted files because they no longer have a downloadable working-tree version.
+
 There are also buttons for most common commands. The most probable next command button is highlighted. 
 
 ## UI states in different situations

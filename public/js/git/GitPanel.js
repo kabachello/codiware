@@ -381,6 +381,12 @@ export class GitPanel {
       { icon: 'fa fa-exchange', label: this.i18n.t('git.view_diff') || 'View diff', onClick: () => this._openDiff(file.path, group === 'staged') },
       { icon: 'fa fa-file-o', label: this.i18n.t('git.open_regular_editor') || 'Open in regular editor', onClick: () => this._openFile(file.path) },
       { icon: 'fa fa-history', label: this.i18n.t('git.open_file_history') || 'Open Git history', onClick: () => this.bus?.emit?.('git:open-file-history', { path: file.path }) },
+      {
+        icon: 'fa fa-download',
+        label: this.i18n.t('files.download') || 'Download',
+        onClick: this._canDownloadFile(file, group) ? () => this._downloadFile(file.path) : undefined,
+        disabled: !this._canDownloadFile(file, group),
+      },
       { sep: true },
     ];
     if (group === 'staged') items.push({ icon: 'fa fa-minus', label: this.i18n.t('git.unstage') || 'Unstage', onClick: () => this._unstage([file.path]) });
@@ -394,6 +400,23 @@ export class GitPanel {
   }
 
   _openFile(path) { this.onOpenFile({ path, name: path.split('/').pop() }); }
+
+  /** Return whether the visible Git entry still has a working-tree file to download. */
+  _canDownloadFile(file, group) {
+    if (group === 'untracked' || file?.untracked) return true;
+    return ![file?.index, file?.worktree].some((status) => String(status || '').toUpperCase() === 'D');
+  }
+
+  /** Download the current working-tree version through the shared file endpoint. */
+  _downloadFile(path) {
+    const link = document.createElement('a');
+    link.href = this.api.url('/files/download', { path });
+    link.download = String(path || '').split('/').pop() || '';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
 
   /** Delete untracked files through the file API after confirmation. */
   async _deleteUntracked(paths) {
