@@ -295,6 +295,8 @@ The history panel reuses the same menu language as other Codiware lists: each co
 
 File rows in the explorer and Git status panel expose `Open Git history`. The action opens and expands the shared history bottom panel with a server-side path filter. A visible file chip below the history toolbar identifies the active path and provides a one-click remove action that restores repository-wide history. File-filtered results hide graph lanes because restricting the commit walk can make the remaining rows non-contiguous.
 
+Changed-file menus in the Git status panel also expose `Download`. This downloads the current working-tree version through the regular guarded `/files/download` endpoint, which gives users a quick backup before staging or discarding changes. The action remains visible but disabled for deleted entries because no working-tree file exists to download.
+
 ### Search
 
 | Method | Path | Description |
