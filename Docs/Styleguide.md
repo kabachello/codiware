@@ -22,6 +22,14 @@ Highlight colors must have a high contrast to regular colors to help people with
 
 Colors inside of editors do not necessarily need to change with the theme. If the editor library natively supports themes itself, we can link our themes to library themes in its configuration. If the editor does not have its own themes, we do not have to restyle it.
 
+Markdown uses Markian and the shared [Codiware theme](../public/css/markian-theme.css), loaded before any host `INCLUDES.THEME_CSS` overrides. The `.codiware-markdown-editor` scope maps editor colors/fonts to IDE tokens and removes frame borders and rounding. Toolbar and status surfaces use `--ide-sidebar-bg` to match the explorer toolbar; dropdowns and popups use `--ide-panel-bg`. Content has 12px vertical and 20px horizontal padding, reduced to 10px/12px below 480px of editor width. Configure toolbar appearance through Markian's supported root variables, not child-selector sizing overrides: 26px-wide by 20px-high controls, 14px main icons, 8px toolbar chevrons, and a 32px toolbar with `7px 4px 4px` padding. The extra top space aligns controls and dividers with the lower-starting file-tree toolbar. Dropdown rows and non-toolbar button targets retain library defaults; general main icons are 14px. Explicit toolbar dimensions also apply at narrow editor widths. Use this shared stylesheet, not look-alike host copies.
+
+Hosts configure rendered Markdown CSS through `INCLUDES.PREVIEW_CSS` and additional editor chrome overrides through `INCLUDES.THEME_CSS`. Scope content rules to `.markian-document` or the configured content class, such as `.markdown-body`; that class is applied to Visual, Preview, and Help content, not the editor shell. Keep toolbar and button overrides scoped under `.codiware-markdown-editor`. Empty preview CSS retains Markian's packaged default. Codiware's theme switch is forwarded to Markian without recreating the document or dirtying it.
+
+Markian's base editor CSS owns structural paragraph spacing inside list items and table cells, preventing paragraph wrappers from adding large gaps. Do not duplicate these rules in the Codiware theme. Table-cell padding, item spacing, and nested-list spacing remain controlled by the content stylesheet.
+
+Markian's document outline is visible by default (`MARKIAN.SIDEBAR_VISIBLE: true`). Keep it beside the document with independent scrolling, not floating above text; its width is capped at 40% of the work area at narrow sizes. A false startup setting collapses it without removing the toolbar toggle. Heading navigation leaves it open; presentation changes must not dirty the document.
+
 ## UI components
 
 To ensure UX consistency, reusable UI components (JavaScript libraries) must be used or implemented whenever possible. These components may be self-developed or included from thrid-party open source libraries. It is important, that all parts of the IDE use them consistently and do not re-implement components every time.

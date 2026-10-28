@@ -633,7 +633,7 @@ export class MonacoEditor {
     return this._pendingContent;
   }
 
-  isDirty() { return this._dirty; }
+  isDirty() { return this._savedContent === undefined ? this._dirty : this.getContent() !== this._savedContent; }
 
   /**
    * Move keyboard focus into the Monaco editor. No-op while Monaco is still
@@ -643,8 +643,10 @@ export class MonacoEditor {
     this._editor?.focus();
   }
 
-  markClean() {
-    this._dirty = false;
+  markClean(snapshot) {
+    if (!snapshot) return;
+    this._savedContent = snapshot.content;
+    this._dirty = this.isDirty();
     this._bus.emit('clean', this);
   }
 

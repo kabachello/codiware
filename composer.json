@@ -5,6 +5,7 @@
     "license": "MIT",
     "require": {
         "php": ">=8.2",
+        "axenox/markian": "^0.1",
         "psr/http-message": "^1.1 || ^2.0",
         "psr/http-server-middleware": "^1.0",
         "psr/http-server-handler": "^1.0",
@@ -12,7 +13,6 @@
         "psr/log": "^1.1 || ^2.0 || ^3.0",
         "symfony/process": "^5.4 || ^6.4 || ^7.0",
         "npm-asset/font-awesome": "4.7",
-        "npm-asset/toast-ui--editor": "^3.1",
         "npm-asset/tui-image-editor": "^3",
         "npm-asset/xterm--xterm": "^6",
         "guzzlehttp/psr7": "^2.0"

@@ -1,7 +1,7 @@
 import { EventBus } from '../core/EventBus.js';
 
 /**
- * Image editor backed by the TOAST UI Image Editor. Opens raster images
+ * Raster image editor. Opens raster images
  * (png/jpg/gif/webp/bmp) in a full editing surface with crop, flip, rotate,
  * draw, shape, text and filter tools. SVG files are handled by other viewers.
  *
@@ -80,7 +80,7 @@ async function loadGlobalScript(relPath) {
 }
 
 /**
- * Load the TOAST UI Image Editor constructor once. The color picker is loaded
+ * Load the raster image editor constructor once. The color picker is loaded
  * first because the image editor UMD bundle reads `window.tui.colorPicker`.
  */
 function loadImageEditorCtor() {
@@ -96,7 +96,7 @@ function loadImageEditorCtor() {
     }
     const Ctor = window.tui?.ImageEditor;
     if (typeof Ctor !== 'function') {
-      throw new Error('TOAST UI ImageEditor global not found after script load');
+      throw new Error('Raster ImageEditor global not found after script load');
     }
     return Ctor;
   })().catch((e) => {
@@ -203,7 +203,7 @@ export class ImageEditor {
     this._Ctor = Ctor;
     this._createEditor(this._url);
 
-    // Follow the global Codiware theme (data-theme on <html>). ToastUI applies
+    // Follow the global Codiware theme (data-theme on <html>). The library applies
     // its theme at construction, so re-create the editor preserving the current
     // canvas so in-progress edits survive a theme switch.
     this._themeObserver = new MutationObserver(() => this._reloadForTheme());
@@ -310,8 +310,12 @@ export class ImageEditor {
   }
 
   getContent() { return null; }
-  isDirty() { return this._dirty; }
-  markClean() { this._dirty = false; }
+  isDirty() { return this._savedContent === undefined ? this._dirty : this.getSavePayload()?.content !== this._savedContent; }
+  markClean(snapshot) {
+    if (!snapshot) return;
+    this._savedContent = snapshot.content;
+    this._dirty = this.isDirty();
+  }
   on(ev, fn) { return this._bus.on(ev, fn); }
 
   destroy() {

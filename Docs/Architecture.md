@@ -194,7 +194,7 @@ All browser dependencies must be available through Composer, either shipped in t
 | Component | License | Purpose |
 |---|---|---|
 | Monaco Editor | MIT | Code editor, diff editor, search/replace, line numbers, go to line, wrapping, JSON/JS/HTML/CSS/SQL support, extensible PHP tokenization/autocomplete |
-| Toast UI Editor | MIT | Markdown WYSIWYG and split preview, toolbar, GitHub-flavored markdown tables |
+| Markian | MIT | Markdown visual/source editing and Preview, supplied as prebuilt assets by the direct Composer dependency `axenox/markian` |
 | Mermaid | MIT | Markdown diagram rendering |
 | jsTree | MIT | Lazy file tree, context menu, drag move/copy, persisted open branches |
 | Gitgraph.js or lightweight custom canvas renderer | MIT | Git history graph |
@@ -452,7 +452,7 @@ Every optional front-end extension is described by a small JSON manifest. The ma
   "plugins": [
     {
       "target": "markdown",
-      "factory": "CodiwareExtensions.TuiChartPlugin.create",
+      "factory": "CodiwareExtensions.ChartPlugin.create",
       "options": {}
     }
   ]
@@ -463,11 +463,19 @@ The back-end exposes enabled manifests through `/config`. The asset controller s
 
 #### Library Plugins
 
-Built-in editors expose adapter-specific plugin hooks instead of leaking their implementation details across the app. This makes it easy to install existing plugins for libraries like Toast UI Editor while keeping the rest of Codiware independent from those libraries.
+Built-in editors keep their library-specific integration inside adapters so other parts of Codiware depend only on the common editor contract.
 
-- `MarkdownEditor` accepts configured Toast UI plugins, toolbar extensions, custom renderers, syntax highlighters, and preview hooks. Its `INCLUDES.PREVIEW_CSS` option (an array of paths relative to the `vendor` folder, e.g. `npm-asset/github-markdown-css/github-markdown.css`) injects extra stylesheets used to style the rendered markdown preview. The optional `CSS_CLASS_FOR_PREVIEW_CONTAINER` option adds one or more CSS classes (space-separated) to the preview container so stylesheets scoped to a wrapper class (e.g. `markdown-body` for github-markdown-css) take effect. The optional `INCLUDES.MERMAID_JS` option points it at a Mermaid library build (a global/IIFE script that exposes `window.mermaid`); when set, fenced ```mermaid code blocks in the preview are rendered as diagrams. It is unset by default so standalone installs skip diagram rendering; the ExFace integration (`axenox.IDE`) points it at the Mermaid build bundled with the core. Images pasted or uploaded into the editor are externalized immediately via Toast UI's `addImageBlobHook`: the blob is uploaded into an `images/` folder next to the markdown file (through `/files/upload` with `autoname=1`, which assigns the next free sequential name such as `image_01.png`, `image_02.png`) and a relative link is inserted instead of a base64 data URI, so the editor never shows raw data URLs. An async `beforeSave()` fallback catches any remaining inline base64 images (e.g. from pasted markdown/HTML text or legacy documents) and externalizes them the same way on save. This only applies to the Toast UI markdown editor — markdown opened in the Monaco code editor is saved verbatim.
+The `codiware.markdown` descriptor always constructs the Markian-backed `MarkdownEditor`; there is no Markdown engine selection or fallback. `INCLUDES.MARKIAN_JS` and `INCLUDES.MARKIAN_CSS` configure prebuilt core assets, defaulting to the direct Composer package. Optional extension assets resolve beside the configured script unless explicitly overridden. `INCLUDES.PREVIEW_CSS` maps to Markian's `markdownCssUrls`; when empty, Markian retains its packaged default content style. The adapter always supplies Codiware's `public/css/markian-theme.css`, resolved through the app asset base, then appends any host `INCLUDES.THEME_CSS` overrides. Host CSS lists resolve vendor-relative paths with the installation prefix and cache version and load through Markian's readiness lifecycle. `CSS_CLASS_FOR_PREVIEW_CONTAINER` applies to every rendered `.markian-document`, including newly opened Preview/Help surfaces, never the editor shell. The adapter owns the observer and releases it on teardown. The `axenox.IDE` host keeps its GitHub/DocsFacade content styles.
+
+The bundled theme is scoped by `.codiware-markdown-editor`. It maps Markian colors/fonts to Codiware tokens, removes editor frame borders/rounding, and supplies document padding. Toolbar and status backgrounds use `--ide-sidebar-bg`, matching the explorer toolbar's inherited sidebar surface; menus and popups retain `--ide-panel-bg`. Supported root-level sizing tokens supply 26px-wide by 20px-high toolbar controls, 14px square main SVG icons, and 8px toolbar chevrons without internal sizing selectors. The 32px toolbar has 7px top padding to account for the file-tree toolbar's lower starting position, aligning their controls and bottom dividers. Dropdown rows and non-toolbar button targets retain library defaults. Hosts can override the theme through the later theme CSS list without changing stored Markdown.
+
+- `MarkdownEditor` starts in Visual mode and retains source/Preview navigation, clean-load baselines, snapshot-based save acknowledgment, focus, resizing, and teardown. Image insertion calls Codiware's `/files/upload` with `autoname=1`, saving into the neighboring `images/` directory before inserting a relative destination. `beforeSave()` awaits Markian's pending-image gate; failed image creation cannot become a successful save. Relative images use the guarded download endpoint without changing stored URLs. Link suggestions, inspection, and navigation remain host callbacks. Code and Mermaid factories are loaded, registered, and enabled automatically, including when host settings omit their flags. Set `MARKIAN.CODE` or `MARKIAN.MERMAID` to `false` to disable the corresponding extension and its asset loading. Mermaid rendering requires a host-supplied 12.2.x `INCLUDES.MERMAID_JS` asset; `MERMAID.VERSION` defaults to `12.2.0`. The ExFace integration supplies that renderer locally; standalone hosts must configure it. Renderer URLs respect the installation prefix and cache version. Codiware does not bundle or download a renderer automatically. Code-block floating controls contain only expansion when available, never prose formatting; disabling Code hides those controls entirely.
+
+`MARKIAN.SIDEBAR_VISIBLE` defaults to true and maps to Markian's `sidebarVisible` startup option. Set it to false in the Markdown extension configuration for collapsed startup; the user can still toggle the outline. The visible outline shares the work area beside the document, rather than overlaying text, and heading navigation keeps it open.
+
+TabManager owns each adapter's outer editor host and toggles its visibility. The Markdown adapter passes a child mount to Markian, which replaces that child with its editor root; it must not replace the outer host or tab activation and closing will leave Markdown visible. Text diffs, including Markdown diffs, always use the Monaco diff descriptor rather than file-type selection. Image diffs retain their dedicated image-diff descriptor.
 - `CodeEditor` accepts Monaco language registrations, completion providers, hover providers, themes, actions, and keybindings.
-- `ImageEditor` opens raster images (png/jpg/gif/webp/bmp) in the TOAST UI Image Editor with crop, flip, rotate, draw, shape, text and filter tools. It loads the `tui-color-picker` and `tui-image-editor` UMD bundles from the vendor npm assets (with `define`/`module`/`exports` shadowed so they expose `window.tui.*` even when Monaco's AMD loader is present), pulls the image via `/files/download`, and saves edits back through `/files/write` using base64 encoding so the binary payload survives the JSON transport.
+- `ImageEditor` opens raster images (png/jpg/gif/webp/bmp) with crop, flip, rotate, draw, shape, text and filter tools. It loads the `tui-color-picker` and `tui-image-editor` UMD bundles from the vendor npm assets (with `define`/`module`/`exports` shadowed so they expose `window.tui.*` even when Monaco's AMD loader is present), pulls the image via `/files/download`, and saves edits back through `/files/write` using base64 encoding so the binary payload survives the JSON transport.
 - `GitHistory` and `DiffEditor` can accept render or action plugins later, but they should remain internal until a real extension need appears.
 
 A plugin receives only a narrow context object:
@@ -483,18 +491,7 @@ A plugin receives only a narrow context object:
 }
 ```
 
-For a Toast UI plugin, the adapter translates manifest entries into the plugin format expected by Toast UI:
-
-```js
-MarkdownEditor.registerPlugin({
-  id: 'vendor.tui-color-syntax',
-  create(context, options) {
-    return window.CodiwareExtensions.TuiColorSyntax.create(context.libraryInstance, options);
-  }
-});
-```
-
-This allows existing Toast UI plugins to be wrapped with a few lines of glue code while preserving Codiware's own lifecycle, translations, theme variables, and error handling.
+Markdown extensions use Markian's public factory and instance contracts. The adapter enables its supported optional factories through extension settings rather than exposing engine internals or inventing a second plugin API.
 
 #### Custom Editors
 
@@ -528,7 +525,7 @@ Optional capabilities are declared separately so the shell can enable matching U
 Examples:
 
 - A specialized diagram editor can register for `.erd`, `.diagram`, or `.drawio` files, load JSON or XML through `/files/read`, render an interactive canvas, and save the serialized model through `/files/write`.
-- The built-in image editor registers for raster image types, loads the image from `/files/download` into the TOAST UI Image Editor, and saves transformed image data back through `/files/write` with `encoding: "base64"` (editors that persist binary or otherwise custom-encoded content expose `getSavePayload()` returning `{ content, encoding }`, which the tab manager forwards to the write endpoint).
+- The built-in image editor registers for raster image types, loads the image from `/files/download`, and saves transformed image data back through `/files/write` with `encoding: "base64"` (editors that persist binary or otherwise custom-encoded content expose `getSavePayload()` returning `{ content, encoding }`, which the tab manager forwards to the write endpoint).
 - A WYSIWYG HTML editor can register for `.html` files with a higher priority than `CodeEditor`, while still offering a command to reopen the same file as plain code.
 
 When multiple editors match a file, `EditorRegistry` picks the highest-priority editor and exposes an "Open With" menu listing all compatible editors. The selected editor can be remembered per file extension and workspace.
@@ -667,7 +664,7 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
   ],
   "EXTENSIONS.CONFIG": {
     "codiware.markdown": {
-      "INCLUDES.EDITOR_JS": "..."
+      "INCLUDES.MARKIAN_JS": "vendor/axenox/markian/dist/markian.min.js"
     }
   },
   "TRANSLATIONS.DEFAULT_LOCALE": "en"
@@ -763,7 +760,7 @@ The initial release ships English only. The architecture assumes additional loca
 ## Future Extension Points
 
 - Additional editor types can register through `EditorRegistry` without changing tab management, file tree behavior, or tab persistence.
-- Existing front-end library plugins can be wrapped through adapter hooks, for example Toast UI Editor plugins for markdown, Monaco providers for code editing, and toolbar/action plugins for image editing.
+- Front-end integrations use adapter-owned hooks, for example Markian extensions for Markdown, Monaco providers for code editing, and toolbar/action tools for image editing.
 - AI chat can be added as another right-panel tab and can exchange proposed text changes through a diff editor with accept/reject actions.
 - Multi-root workspaces can be enabled by adding root selection APIs and extending file/search/git requests with the existing `root` parameter.
 - HTML WYSIWYG, ER diagram, diagramming, and advanced image editors can be added as manifest-driven editor modules and asset dependencies.
@@ -801,7 +798,7 @@ Because the shipped package has no build step, browser tests should run against 
 
 - Implement file tree, file APIs, text read/write, tab management, tab restoration, and opened-file indicators. Complexity: Large.
 - Add `EditorRegistry`, editor lifecycle contract, Monaco code editor, Markdown editor with Mermaid, and image preview. Complexity: Large.
-- Add adapter hooks for front-end library plugins, starting with Toast UI Editor plugins and Monaco language/completion providers. Complexity: Medium.
+- Extend adapter-owned integration hooks for Markian extensions and Monaco language/completion providers. Complexity: Medium.
 - Add upload, download, zip handling, drag move/copy, context menus, and in-place duplicate actions. Complexity: Large.
 - Extend the explorer with toggleable bulk selection, shared bulk menus and multi-item drag/drop while still relying on the existing single-item file APIs internally. Complexity: Medium.
 - Extend the editor tab system with pinned tabs, persistent pinned state, and a dedicated close-unpinned bulk action while preserving drag/drop and dirty-check behavior. Complexity: Medium.

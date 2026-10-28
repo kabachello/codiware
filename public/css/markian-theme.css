@@ -1,0 +1,47 @@
+.markian.codiware-markdown-editor {
+  --markian-surface: var(--ide-bg);
+  --markian-text: var(--ide-fg);
+  --markian-muted: var(--ide-fg-muted);
+  --markian-line: var(--ide-border);
+  --markian-accent: var(--ide-accent);
+  --markian-soft: var(--ide-btn-hover);
+  --markian-code: var(--ide-panel-bg);
+  --markian-font: var(--ide-font);
+  --markian-mono: var(--ide-font-mono);
+  --markian-icon-size: 14px;
+  --markian-toolbar-height: 32px;
+  --markian-toolbar-padding: 7px 4px 4px;
+  --markian-toolbar-button-width: 26px;
+  --markian-toolbar-button-height: 20px;
+  --markian-toolbar-icon-size: 14px;
+  --markian-toolbar-chevron-size: 8px;
+  border: 0;
+  border-radius: 0;
+}
+
+.codiware-markdown-editor .markian-toolbar,
+.codiware-markdown-editor .markian-status {
+  background: var(--ide-sidebar-bg);
+}
+
+.codiware-markdown-editor .markian-menu-items,
+.codiware-markdown-editor .markian-floating,
+.codiware-markdown-editor .markian-panel {
+  background: var(--ide-panel-bg);
+}
+
+.codiware-markdown-editor .markian-popup::before {
+  background: var(--ide-panel-bg);
+}
+
+.codiware-markdown-editor .markian-document {
+  padding: 12px 20px;
+  color: var(--ide-fg);
+  background: var(--ide-bg);
+}
+
+@container (max-width: 480px) {
+  .codiware-markdown-editor .markian-document {
+    padding: 10px 12px;
+  }
+}

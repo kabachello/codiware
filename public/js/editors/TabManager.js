@@ -1,5 +1,6 @@
 import { Icon } from '../core/Icon.js';
 import { PopupMenu } from '../core/PopupMenu.js';
+import { SaveQueue } from './SaveQueue.js';
 
 /**
  * Manages open editor tabs in the main area.
@@ -22,6 +23,8 @@ export class TabManager {
     this.bus = bus;
     this.settings = settings || null;
     this.tabs = new Map();
+    this.saveQueue = new SaveQueue();
+    this.failedSaves = new Map();
     this.active = null;
     // While restoring previously opened tabs we suppress persistence so the
     // restore loop does not repeatedly rewrite the stored list.
@@ -233,9 +236,10 @@ export class TabManager {
           this.close(key);
           return;
         }
-        editor.load(data?.content ?? '', { path: entry.path });
+        await editor.load(data?.content ?? '', { path: entry.path });
+        record.savedContent = data?.content ?? '';
       } else {
-        editor.load(null, { path: entry.path });
+        await editor.load(null, { path: entry.path });
       }
     } catch (e) {
       this.toasts.error(e.message);
@@ -327,50 +331,54 @@ export class TabManager {
     // active document instead of staying on the sidebar element that was
     // clicked last. The editor may still be initialising, so this is optional.
     record.editor.focus?.();
+    record.editor.resize?.();
+    if (record.entry.fragment) record.editor.navigate?.(record.entry.fragment);
   }
 
   async save(key) {
     const record = this.tabs.get(key);
     if (!record) return;
-    // Editors that persist binary or otherwise custom-encoded content expose a
-    // getSavePayload() returning { content, encoding }; text editors use the
-    // plain getContent() string path below.
-    if (typeof record.editor.getSavePayload === 'function') {
-      try {
-        const payload = record.editor.getSavePayload();
-        if (!payload || payload.content == null) return;
-        await this.api.put('/files/write', {
-          path: record.entry.path,
-          content: payload.content,
-          encoding: payload.encoding || 'utf8',
-        });
-        record.editor.markClean?.();
-        record.dirty = false;
-        record.tabEl.classList.remove('dirty');
-        if (record.dirtyBtn) record.dirtyBtn.style.display = 'none';
-        this.toasts.success(this.i18n.t('actions.save') + ' ✓');
-        this.bus.emit('file:saved', record);
-      } catch (e) {
-        this.toasts.error(e.message);
-      }
-      return;
-    }
-    if (typeof record.editor.getContent !== 'function') return;
+    const editor = record.editor;
+    const path = record.entry.path;
+    const resource = `${this.api.workspace || ''}/${path}`;
+    const current = () => this.tabs.get(key) === record && record.editor === editor && record.entry.path === path;
     try {
-      // Allow editors to run async pre-save processing (e.g. the markdown
-      // editor externalizes any leftover inline base64 images into files).
-      if (typeof record.editor.beforeSave === 'function') {
-        await record.editor.beforeSave();
-      }
-      const content = record.editor.getContent();
-      if (content === null) return;
-      await this.api.put('/files/write', { path: record.entry.path, content });
-      record.editor.markClean?.();
-      record.dirty = false;
-      record.tabEl.classList.remove('dirty');
-      if (record.dirtyBtn) record.dirtyBtn.style.display = 'none';
-      this.toasts.success(this.i18n.t('actions.save') + ' ✓');
-      this.bus.emit('file:saved', record);
+      await this.saveQueue.request(resource, {
+        prepare: async () => {
+          if (!current()) return null;
+          const failed = this.failedSaves.get(resource);
+          if (failed) {
+            const remote = await this.api.get('/files/read', { path });
+            if (remote?.binary || (remote.content !== failed.content && remote.content !== failed.baseline)) {
+              throw new Error('The previous save has an uncertain outcome. Compare or reload the remote file before saving again.');
+            }
+            this.failedSaves.delete(resource);
+          }
+          await editor.beforeSave?.();
+          if (!current()) return null;
+          const payload = editor.getSavePayload?.() ?? { content: editor.getContent?.(), encoding: 'utf8' };
+          if (payload.content == null) return null;
+          return Object.freeze({ ...payload, path, editor, baseline: record.savedContent, revision: editor.revision });
+        },
+        write: async snapshot => {
+          try {
+            await this.api.put('/files/write', { path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding || 'utf8' });
+          } catch (error) {
+            this.failedSaves.set(resource, snapshot);
+            throw error;
+          }
+        },
+        acknowledge: snapshot => {
+          if (!current()) return;
+          record.savedContent = snapshot.content;
+          editor.markClean?.(snapshot);
+          record.dirty = editor.isDirty();
+          record.tabEl.classList.toggle('dirty', record.dirty);
+          if (record.dirtyBtn) record.dirtyBtn.style.display = record.dirty ? '' : 'none';
+          this.toasts.success(this.i18n.t('actions.save'));
+          this.bus.emit('file:saved', record);
+        },
+      });
     } catch (e) {
       this.toasts.error(e.message);
     }
@@ -742,6 +750,11 @@ export class TabManager {
   _closeRecord(key, { skipPrompt = false, persist = true, activateFallback = true } = {}) {
     const record = this.tabs.get(key);
     if (!record) return false;
+    const resource = `${this.api.workspace || ''}/${record.entry.path}`;
+    if (this.saveQueue.resources.has(resource)) {
+      this.toasts.error('Wait for the file save to finish before closing this tab.');
+      return false;
+    }
     if (!skipPrompt && record.dirty) {
       const message = this.i18n.t('editor.discard_changes_confirm', { path: record.entry.path });
       const ok = window.confirm(message);

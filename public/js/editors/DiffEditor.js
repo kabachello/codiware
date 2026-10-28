@@ -350,7 +350,7 @@ export class DiffEditor {
     return null;
   }
 
-  isDirty() { return this._dirty; }
+  isDirty() { return this._savedContent === undefined ? this._dirty : this.getContent() !== this._savedContent; }
 
   /**
    * Move keyboard focus into the editable (modified) side of the diff editor.
@@ -361,8 +361,10 @@ export class DiffEditor {
     this._editor?.getModifiedEditor()?.focus();
   }
 
-  markClean() {
-    this._dirty = false;
+  markClean(snapshot) {
+    if (!snapshot) return;
+    this._savedContent = snapshot.content;
+    this._dirty = this.isDirty();
     this._bus.emit('clean', this);
   }
 

@@ -133,7 +133,7 @@ Codiware-side implementation: Codiware ships its own small `StreamInterface`/gen
 ### ANSI color and terminal rendering
 
 - xterm.js renders raw bytes including ANSI escape sequences, so the back-end must **stop stripping output** and forward bytes verbatim.
-- Front-end: load `xterm.js` + `xterm.css` from `vendor/npm-asset/xterm--xterm` (`lib/xterm.js`, `css/xterm.css`) using the existing `window.CODIWARE_BOOT.url_to_npm` base, mirroring how Monaco/Toast UI are loaded. Add the `FitAddon` if bundled; otherwise implement a minimal resize-to-fit.
+- Front-end: load `xterm.js` + `xterm.css` from `vendor/npm-asset/xterm--xterm` (`lib/xterm.js`, `css/xterm.css`) using the existing `window.CODIWARE_BOOT.url_to_npm` base, mirroring how Monaco is loaded. Add the `FitAddon` if bundled; otherwise implement a minimal resize-to-fit.
   - The path in [Docs/Implementation/TODOs.md](../TODOs.md) (`npm-asssets/xterm--xterm`) is a typo; the real location is `vendor/npm-asset/xterm--xterm`.
 - Do **not** print `[exit N]`. Instead:
   - While running: show a spinner/"running" badge in the panel header and a non-interactive prompt line.

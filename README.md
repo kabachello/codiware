@@ -8,8 +8,8 @@ workbench) and operate on a configurable set of workspace folders.
 ## Features
 
 - File tree, multi-tab editor, save / rename / delete / upload / download
-- Pluggable editor registry (textarea fallback included; Monaco, CodeMirror,
-  Toast UI, etc. can be plugged in via npm-asset packages or custom JS)
+- Pluggable editor registry (textarea fallback included), Monaco code editing,
+  and Markian Markdown editing from prebuilt Composer-installed assets
 - Git source-control panel (status, stage / unstage / discard, commit, amend,
   push, branches, history) over the local `git` CLI
 - Workspace-wide search and search-and-replace with regex / case options
@@ -129,10 +129,22 @@ window.Codiware.registerEditor({
 Each editor implements `load(content, meta)`, `getContent()`, `isDirty()`,
 `markClean()`, `destroy()`, and an optional `on('change'|'save-request', fn)`.
 An editor may also implement an optional async `beforeSave()` hook that runs
-before the content is written to disk (used by the markdown editor to
-externalize pasted inline images into separate files).
+before the content is written to disk (the Markdown editor waits for pending
+image-file creation before allowing a save).
 
-Adding a richer editor library (Monaco, CodeMirror 6, Toast UI):
+Markdown always uses Markian, installed through `axenox/markian`. Its built-in
+Codiware theme matches the IDE's colors, square frame, document spacing, and
+toolbar icons. `INCLUDES.PREVIEW_CSS` supplies rendered-document CSS;
+`INCLUDES.THEME_CSS` appends host overrides after the bundled theme. Both accept
+vendor-relative URLs. Content CSS classes apply only to rendered documents.
+
+Code and Mermaid extensions load automatically. Set `MARKIAN.CODE` or
+`MARKIAN.MERMAID` to `false` in the Markdown extension settings to opt out.
+Mermaid rendering also needs a host-provided `INCLUDES.MERMAID_JS` URL and a
+compatible `MERMAID.VERSION` (12.2.x, default `12.2.0`). The ExFace integration
+supplies its local renderer; standalone hosts must configure one.
+
+Adding another file-type editor library (for example Monaco or CodeMirror 6):
 
 1. `composer require npm-asset/monaco-editor` (or similar)
 2. Drop a small JS module under `public/js/extensions/` that imports the
