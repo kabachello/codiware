@@ -34,6 +34,82 @@
   background: var(--ide-panel-bg);
 }
 
+.codiware-markdown-editor .markian-panel {
+  font: var(--ide-fs) var(--ide-font);
+}
+
+.codiware-markdown-editor .markian-panel label {
+  font-size: inherit;
+}
+
+.codiware-markdown-editor .markian-panel input:not([type='checkbox']),
+.codiware-markdown-editor .markian-panel select {
+  min-height: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--ide-border);
+  border-radius: var(--ide-radius);
+  background: var(--ide-input-bg);
+  color: var(--ide-fg);
+  font: inherit;
+}
+
+.codiware-markdown-editor .markian-panel input[type='checkbox'] {
+  accent-color: var(--ide-accent);
+}
+
+.codiware-markdown-editor .markian-destination input:not([type='checkbox']) {
+  height: 30px;
+}
+
+.codiware-markdown-editor .markian-panel input[type='file']::file-selector-button {
+  height: 100%;
+  padding: 0 6px;
+}
+
+.codiware-markdown-editor .markian-panel input:not([type='checkbox']):focus-visible,
+.codiware-markdown-editor .markian-panel select:focus-visible {
+  border-color: var(--ide-accent);
+  outline: none;
+  box-shadow: none;
+}
+
+.codiware-markdown-editor .markian-panel button,
+.codiware-markdown-editor .markian-panel input::file-selector-button {
+  min-height: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--ide-border);
+  border-radius: var(--ide-radius);
+  background: var(--ide-btn-bg);
+  color: var(--ide-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.codiware-markdown-editor .markian-panel button:focus-visible,
+.codiware-markdown-editor .markian-panel input[type='checkbox']:focus-visible {
+  outline: 1px solid var(--ide-accent);
+  outline-offset: -1px;
+}
+
+.codiware-markdown-editor .markian-panel .markian-button {
+  width: 26px;
+  height: 26px;
+  padding: 4px 5px;
+  border: 0;
+  background: transparent;
+}
+
+.codiware-markdown-editor .markian-panel button:hover:not(:disabled),
+.codiware-markdown-editor .markian-panel input::file-selector-button:hover {
+  background: var(--ide-btn-hover);
+  color: var(--ide-fg);
+}
+
+.codiware-markdown-editor .markian-panel button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .codiware-markdown-editor .markian-document {
   padding: 12px 20px;
   color: var(--ide-fg);
