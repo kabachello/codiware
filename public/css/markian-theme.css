@@ -9,11 +9,11 @@
   --markian-font: var(--ide-font);
   --markian-mono: var(--ide-font-mono);
   --markian-icon-size: 14px;
-  --markian-toolbar-height: 32px;
-  --markian-toolbar-padding: 7px 4px 4px;
-  --markian-toolbar-button-width: 26px;
-  --markian-toolbar-button-height: 20px;
-  --markian-toolbar-icon-size: 14px;
+  --markian-toolbar-height: var(--ide-editor-toolbar-height);
+  --markian-toolbar-padding: var(--ide-editor-toolbar-padding);
+  --markian-toolbar-button-width: var(--ide-editor-tool-width);
+  --markian-toolbar-button-height: var(--ide-editor-tool-height);
+  --markian-toolbar-icon-size: var(--ide-editor-tool-icon-size);
   --markian-toolbar-chevron-size: 8px;
   border: 0;
   border-radius: 0;

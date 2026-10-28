@@ -36,6 +36,20 @@ Markian's document outline is visible by default (`MARKIAN.SIDEBAR_VISIBLE: true
 
 ## UI components
 
+### Image Editor Toolbar
+
+The Cropper-based image editor uses the shared `.ide-editor-toolbar`, `.ide-editor-tool`, and `.ide-editor-tool-divider` classes in `public/css/base.css`. Its geometry and Markian's geometry come from the same `--ide-editor-toolbar-*` and `--ide-editor-tool-*` variables: a 32px toolbar, `7px 4px 4px` padding, 26px by 20px icon buttons, and 14px icons. The surface uses `--ide-sidebar-bg`; inputs, borders, hover, pressed and focus states use existing IDE theme tokens. Do not copy these dimensions into a second editor-specific toolbar definition.
+
+Image commands use Font Awesome icons with native title tooltips and accessible names. Crop and aspect lock expose pressed states; apply/cancel controls appear only during cropping, and incompatible controls are disabled. Pixel width and height are compact number inputs beside the aspect-lock toggle and apply-size command. At narrow widths the toolbar scrolls horizontally without wrapping, resizing controls or showing a scrollbar that reduces their height. The canvas fills the remaining space and the bottom status line shows applied pixel dimensions or an operation error. Opening or fitting an image centers it at native size unless it must shrink to fit the available canvas area; manual zoom can still enlarge it. Theme changes affect CSS only and must not recreate or dirty the image.
+
+Crop mode starts with a centered selection covering 80% of the displayed image. Use Cropper's native shade to darken the discarded area, a high-contrast bordered thirds grid, center crosshair, and draggable selection with edge/corner resize handles. White grid lines have a dark shadow for contrast over both light and dark pixels. Resize handles use 8px dark squares with white borders, applied through Cropper's shadow-root styling API while retaining its native hit targets and cursors. The shade follows selection changes and disappears when cropping is applied or cancelled. Entering or cancelling crop mode must not change the applied pixels or dirty the image.
+
+Resize dimensions remain editable. Show adjacent checkmark Apply and X Discard controls only when either input differs from the applied image dimensions, including invalid or empty drafts. Apply and Enter resize only valid dimensions; Discard or Escape restores both applied dimensions without dirtying the image. Applying or restoring the original values hides both controls again. Crop, undo, redo, and reset are disabled until a size draft is applied or discarded; zoom and fit remain available. Size drafts do not alter the image or its saved pixels until explicitly applied.
+
+Crop and Scale sit together without a separator. Each tool and its Apply/Discard actions share an accessible `.ide-editor-tool-group`. When the actions are visible, the group uses one continuous `--ide-btn-hover` background, including the gaps between icons; it remains transparent when collapsed. Buttons retain their existing dimensions, focus indicators, and individual hover feedback using `--ide-btn-bg` against the active group background. Scale uses corner handles to preview proportional resizing of the full image; Apply commits the pixel dimensions, while Discard or Escape restores the previous view.
+
+Width, aspect lock, height, and resize Apply/Discard use the same accessible toolbar group. Its shared background appears while a size draft is pending and clears when the actions disappear. Keep the existing input backgrounds and focus borders for readability, and preserve the same control dimensions and spacing.
+
 To ensure UX consistency, reusable UI components (JavaScript libraries) must be used or implemented whenever possible. These components may be self-developed or included from thrid-party open source libraries. It is important, that all parts of the IDE use them consistently and do not re-implement components every time.
 
 Available UI components are described in the [components section](Components.md).

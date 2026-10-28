@@ -195,6 +195,7 @@ All browser dependencies must be available through Composer, either shipped in t
 |---|---|---|
 | Monaco Editor | MIT | Code editor, diff editor, search/replace, line numbers, go to line, wrapping, JSON/JS/HTML/CSS/SQL support, extensible PHP tokenization/autocomplete |
 | Markian | MIT | Markdown visual/source editing and Preview, supplied as prebuilt assets by the direct Composer dependency `axenox/markian` |
+| Cropper.js 2 | MIT | Raster crop, pixel-dimension resize, pan and zoom, supplied as a bundled ES module by `npm-asset/cropperjs` |
 | Mermaid | MIT | Markdown diagram rendering |
 | jsTree | MIT | Lazy file tree, context menu, drag move/copy, persisted open branches |
 | Gitgraph.js or lightweight custom canvas renderer | MIT | Git history graph |
@@ -477,7 +478,10 @@ The bundled theme is scoped by `.codiware-markdown-editor`. It maps Markian colo
 
 TabManager owns each adapter's outer editor host and toggles its visibility. The Markdown adapter passes a child mount to Markian, which replaces that child with its editor root; it must not replace the outer host or tab activation and closing will leave Markdown visible. Text diffs, including Markdown diffs, always use the Monaco diff descriptor rather than file-type selection. Image diffs retain their dedicated image-diff descriptor.
 - `CodeEditor` accepts Monaco language registrations, completion providers, hover providers, themes, actions, and keybindings.
-- `ImageEditor` opens raster images (png/jpg/gif/webp/bmp) with crop, flip, rotate, draw, shape, text and filter tools. It loads the `tui-color-picker` and `tui-image-editor` UMD bundles from the vendor npm assets (with `define`/`module`/`exports` shadowed so they expose `window.tui.*` even when Monaco's AMD loader is present), pulls the image via `/files/download`, and saves edits back through `/files/write` using base64 encoding so the binary payload survives the JSON transport.
+- `ImageEditor` opens raster images through `/files/download` and loads `cropperjs/dist/cropper.esm.min.js` once from Composer-installed npm assets. This self-contained ES module includes Cropper's first-party web components and styles, needs no build or CDN, and does not interact with Monaco's AMD loader. Toast UI, its color picker, and Fabric are no longer used by this adapter.
+- Cropper owns only the image viewport and pending crop selection. The adapter owns applied pixels in a canvas, a maximum of ten undo snapshots, redo snapshots, and the saved-content baseline. Crop bounds are mapped to integer source-pixel coordinates and clipped to the image; resizing draws to explicit output dimensions. Pan, zoom, fit and cancelled crops do not dirty the document. PNG/JPEG/WebP export uses the corresponding browser canvas encoder; GIF/BMP inputs retain the previous static-frame PNG export behavior rather than preserving animation or their original encoding.
+- The compact image toolbar shares dimensions and theme tokens with Markian. Crop/apply/cancel, pixel width and height, aspect lock, resize, zoom/fit, undo/redo and reset are supported. Drawing, shapes, text, filters and rotation are not part of this adapter. Requested resize dimensions must be positive integers, at most 16384 pixels per side and 40 megapixels in total.
+- `beforeSave()` waits for any running operation and applies a pending crop. `getSavePayload()` remains synchronous and returns the applied canvas as base64 for `/files/write`. Acknowledging a save updates only that snapshot's baseline, so a newer edit remains dirty. `destroy()` removes the instance's custom-element tree and resize observer; asynchronous completions check the destroyed state before touching the instance.
 - `GitHistory` and `DiffEditor` can accept render or action plugins later, but they should remain internal until a real extension need appears.
 
 A plugin receives only a narrow context object:

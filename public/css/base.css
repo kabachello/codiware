@@ -7,6 +7,11 @@
   --ide-gap: 8px;
   --ide-panel-h: 32px;
   --ide-splitter: 5px;
+  --ide-editor-toolbar-height: 32px;
+  --ide-editor-toolbar-padding: 7px 4px 4px;
+  --ide-editor-tool-width: 26px;
+  --ide-editor-tool-height: 20px;
+  --ide-editor-tool-icon-size: 14px;
 }
 
 * { box-sizing: border-box; }
@@ -45,6 +50,122 @@ input[type="text"], input[type="search"], textarea, select {
   padding: 4px 6px;
 }
 textarea { font-family: var(--ide-font-mono); }
+
+.ide-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--ide-editor-toolbar-height);
+  flex: 0 0 var(--ide-editor-toolbar-height);
+  padding: var(--ide-editor-toolbar-padding);
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--ide-sidebar-bg);
+  border-bottom: 1px solid var(--ide-border);
+}
+.ide-editor-toolbar::-webkit-scrollbar { display: none; }
+.ide-editor-tool-group {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+  height: var(--ide-editor-tool-height);
+  border-radius: 3px;
+}
+.ide-editor-tool-group:has(> [data-image-action^='apply']:not([hidden]), > [data-image-action='resize']:not([hidden])) {
+  background: var(--ide-btn-hover);
+}
+.ide-editor-tool-group:has(> [data-image-action^='apply']:not([hidden]), > [data-image-action='resize']:not([hidden])) > .ide-editor-tool:hover:not(:disabled) {
+  background: var(--ide-btn-bg);
+}
+.ide-editor-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--ide-editor-tool-width);
+  width: var(--ide-editor-tool-width);
+  height: var(--ide-editor-tool-height);
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ide-fg);
+  background: transparent;
+  font-size: var(--ide-editor-tool-icon-size);
+}
+.ide-editor-tool[hidden] { display: none; }
+.ide-editor-tool:hover:not(:disabled) { background: var(--ide-btn-hover); }
+.ide-editor-tool[aria-pressed='true'] {
+  color: var(--ide-accent);
+  background: var(--ide-btn-hover);
+}
+.ide-editor-tool:focus-visible {
+  outline: 1px solid var(--ide-accent);
+  outline-offset: -1px;
+}
+.ide-editor-tool-divider {
+  flex: 0 0 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--ide-border);
+}
+.codiware-image-editor {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  color: var(--ide-fg);
+  background: var(--ide-bg);
+  outline: none;
+}
+.codiware-image-editor input[type='number'] {
+  flex: 0 0 68px;
+  width: 68px;
+  height: var(--ide-editor-tool-height);
+  padding: 0 3px;
+  border: 1px solid var(--ide-border);
+  border-radius: 3px;
+  color: var(--ide-fg);
+  background: var(--ide-input-bg);
+  font: var(--ide-fs-sm) var(--ide-font);
+}
+.codiware-image-editor input:focus-visible {
+  border-color: var(--ide-accent);
+  outline: none;
+}
+.codiware-image-stage {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.codiware-image-stage > cropper-canvas { width: 100%; height: 100%; }
+.codiware-image-stage[data-image-mode='scale'] cropper-selection {
+  outline: 1px solid #fff;
+  box-shadow: 0 0 0 2px #222;
+}
+.codiware-image-stage[data-image-mode='scale'] cropper-shade,
+.codiware-image-stage[data-image-mode='scale'] cropper-grid,
+.codiware-image-stage[data-image-mode='scale'] cropper-crosshair,
+.codiware-image-stage[data-image-mode='scale'] cropper-selection cropper-handle[action='move'],
+.codiware-image-stage[data-image-mode='scale'] cropper-handle[action='n-resize'],
+.codiware-image-stage[data-image-mode='scale'] cropper-handle[action='e-resize'],
+.codiware-image-stage[data-image-mode='scale'] cropper-handle[action='s-resize'],
+.codiware-image-stage[data-image-mode='scale'] cropper-handle[action='w-resize'] { display: none; }
+.codiware-image-stage cropper-grid,
+.codiware-image-stage cropper-crosshair { filter: drop-shadow(0 1px 0 #000); }
+.codiware-image-status {
+  flex: 0 0 24px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px var(--ide-font);
+  color: var(--ide-fg-muted);
+  background: var(--ide-sidebar-bg);
+  border-top: 1px solid var(--ide-border);
+}
 
 .ide-root {
   height: 100vh;

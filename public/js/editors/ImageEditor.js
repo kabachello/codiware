@@ -1,349 +1,480 @@
 import { EventBus } from '../core/EventBus.js';
 
-/**
- * Raster image editor. Opens raster images
- * (png/jpg/gif/webp/bmp) in a full editing surface with crop, flip, rotate,
- * draw, shape, text and filter tools. SVG files are handled by other viewers.
- *
- * The library ships as two UMD bundles served from the vendor npm assets:
- * `tui-color-picker` (a dependency) and `tui-image-editor`. Both are loaded
- * with `define`/`module`/`exports` shadowed so their UMD wrappers fall back to
- * the browser-global branch and expose `window.tui.*`, even when Monaco's AMD
- * loader has installed a global `define` on the page.
- *
- * Edited images are saved back through `/files/write` using base64 encoding so
- * the binary payload survives the JSON transport untouched.
- */
+const CROPPER_JS = '/cropperjs/dist/cropper.esm.min.js';
+let cropperPromise;
 
-const ASSET_COLOR_PICKER_JS = '/tui-color-picker/dist/tui-color-picker.js';
-const ASSET_COLOR_PICKER_CSS = '/tui-color-picker/dist/tui-color-picker.css';
-const ASSET_IMAGE_EDITOR_JS = '/tui-image-editor/dist/tui-image-editor.js';
-const ASSET_IMAGE_EDITOR_CSS = '/tui-image-editor/dist/tui-image-editor.css';
-
-let imageEditorCtorPromise = null;
-const injectedCss = new Set();
-
-function assetBase() {
-  return (window.CODIWARE_ASSET_BASE_NPM || '/codiware/assets').replace(/\/$/, '');
+function assetUrl(path) {
+  const base = (window.CODIWARE_ASSET_BASE_NPM || '/codiware/assets').replace(/\/$/, '');
+  const version = window.CODIWARE_BOOT?.cache_bust || '';
+  return base + path + (version ? `?v=${encodeURIComponent(version)}` : '');
 }
 
-function withCacheBust(url) {
-  const v = window.CODIWARE_BOOT?.cache_bust || '';
-  if (!v) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}v=${encodeURIComponent(v)}`;
-}
-
-/** Inject a stylesheet once, keyed by its resolved href. */
-function injectCss(relPath) {
-  const href = withCacheBust(assetBase() + relPath);
-  if (injectedCss.has(href)) return;
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = href;
-  link.dataset.codiwareImageCss = '1';
-  document.head.appendChild(link);
-  injectedCss.add(href);
-}
-
-/** Inject Codiware-specific tweaks once: remove the unused header and its offset. */
-function injectCustomCss() {
-  if (document.getElementById('codiware-image-editor-css')) return;
-  const style = document.createElement('style');
-  style.id = 'codiware-image-editor-css';
-  style.textContent = [
-    '.tui-image-editor-header { display: none !important; }',
-    '.tui-image-editor-main { top: 0 !important; }',
-  ].join('\n');
-  document.head.appendChild(style);
-}
-
-/**
- * Fetch and evaluate a UMD bundle with `define`/`module`/`exports` shadowed so
- * it takes the browser-global branch and assigns onto `window.tui`, regardless
- * of any AMD loader present on the page.
- */
-async function loadGlobalScript(relPath) {
-  const src = withCacheBust(assetBase() + relPath);
-  const res = await fetch(src);
-  if (!res.ok) {
-    throw new Error('Failed to load image editor asset: ' + src + ' (' + res.status + ')');
+function loadCropper() {
+  if (!cropperPromise) {
+    cropperPromise = import(assetUrl(CROPPER_JS)).catch(error => {
+      cropperPromise = null;
+      throw error;
+    });
   }
-  const code = await res.text();
-  const evaluator = new Function(
-    'window',
-    'self',
-    'globalThis',
-    `var define, exports, module;\n${code}\n//# sourceURL=${src}`
-  );
-  evaluator.call(window, window, window, window);
+  return cropperPromise;
 }
 
-/**
- * Load the raster image editor constructor once. The color picker is loaded
- * first because the image editor UMD bundle reads `window.tui.colorPicker`.
- */
-function loadImageEditorCtor() {
-  if (imageEditorCtorPromise) return imageEditorCtorPromise;
-  imageEditorCtorPromise = (async () => {
-    injectCss(ASSET_COLOR_PICKER_CSS);
-    injectCss(ASSET_IMAGE_EDITOR_CSS);
-    if (!window.tui?.colorPicker) {
-      await loadGlobalScript(ASSET_COLOR_PICKER_JS);
-    }
-    if (!window.tui?.ImageEditor) {
-      await loadGlobalScript(ASSET_IMAGE_EDITOR_JS);
-    }
-    const Ctor = window.tui?.ImageEditor;
-    if (typeof Ctor !== 'function') {
-      throw new Error('Raster ImageEditor global not found after script load');
-    }
-    return Ctor;
-  })().catch((e) => {
-    imageEditorCtorPromise = null;
-    throw e;
-  });
-  return imageEditorCtorPromise;
-}
-
-const DARK_THEME = {
-  'common.backgroundColor': '#1e1e1e',
-  'common.border': '0px',
-  'menu.normalIcon.color': '#8a8a8a',
-  'menu.activeIcon.color': '#ffffff',
-  'menu.disabledIcon.color': '#434343',
-  'menu.hoverIcon.color': '#e9e9e9',
-  'submenu.backgroundColor': '#1e1e1e',
-  'submenu.partition.color': '#3c3c3c',
-  'submenu.normalIcon.color': '#8a8a8a',
-  'submenu.activeIcon.color': '#ffffff',
-  'submenu.normalLabel.color': '#8a8a8a',
-  'submenu.activeLabel.color': '#ffffff',
-  'range.pointer.color': '#ffffff',
-  'range.bar.color': '#666666',
-  'range.subbar.color': '#d1d1d1',
-  'range.value.color': '#ffffff',
-  'range.value.backgroundColor': '#1e1e1e',
-  'range.title.color': '#ffffff',
-  'colorpicker.button.border': '#1e1e1e',
-  'colorpicker.title.color': '#ffffff',
-};
-
-const LIGHT_THEME = {
-  'common.backgroundColor': '#ffffff',
-  'common.border': '0px',
-  'menu.normalIcon.color': '#8a8a8a',
-  'menu.activeIcon.color': '#555555',
-  'menu.disabledIcon.color': '#cccccc',
-  'menu.hoverIcon.color': '#e9e9e9',
-  'submenu.backgroundColor': '#f5f5f5',
-  'submenu.partition.color': '#e5e5e5',
-  'submenu.normalIcon.color': '#8a8a8a',
-  'submenu.activeIcon.color': '#555555',
-  'submenu.normalLabel.color': '#858585',
-  'submenu.activeLabel.color': '#000000',
-  'range.pointer.color': '#333333',
-  'range.bar.color': '#cccccc',
-  'range.subbar.color': '#606060',
-  'range.value.color': '#000000',
-  'range.value.backgroundColor': '#f5f5f5',
-  'range.title.color': '#000000',
-  'colorpicker.button.border': '#f5f5f5',
-  'colorpicker.title.color': '#000000',
-};
-
-// Selection handles (fabric corner controls) rendered around shapes/text. The
-// stroke gives them a visible border against both light and dark images.
-const SELECTION_STYLE = {
-  cornerStyle: 'circle',
-  cornerSize: 16,
-  cornerColor: '#ffffff',
-  cornerStrokeColor: '#000000',
-  transparentCorners: false,
-  borderColor: '#4a90e2',
-  rotatingPointOffset: 70,
-};
-
+/** Applied pixels remain independent of Cropper's viewport and pending selection. */
 export class ImageEditor {
   constructor(host, ctx) {
     this.host = host;
     this.ctx = ctx;
     this._bus = new EventBus();
-    this._editor = null;
-    this._dirty = false;
     this._destroyed = false;
-    this._mime = 'image/png';
-    this._name = 'image';
-    this._url = '';
-    this._themeObserver = null;
-    this._zoomControlListeners = [];
-    host.innerHTML = '';
-    host.style.display = 'block';
-    host.style.position = 'relative';
+    this._busy = false;
+    this._cropping = false;
+    this._scaling = false;
+    this._ready = false;
+    this._pending = Promise.resolve();
+    this._undo = [];
+    this._redo = [];
+    this._buttons = new Map();
+    host.replaceChildren();
     this._el = document.createElement('div');
-    this._el.style.height = '100%';
-    host.appendChild(this._el);
+    this._el.className = 'codiware-image-editor';
+    this._el.tabIndex = -1;
+    this._toolbar = document.createElement('div');
+    this._toolbar.className = 'ide-editor-toolbar';
+    this._toolbar.setAttribute('role', 'toolbar');
+    this._toolbar.setAttribute('aria-label', 'Image');
+    this._stage = document.createElement('div');
+    this._stage.className = 'codiware-image-stage';
+    this._status = document.createElement('div');
+    this._status.className = 'codiware-image-status';
+    this._status.setAttribute('role', 'status');
+    this._el.append(this._toolbar, this._stage, this._status);
+    host.append(this._el);
+    this._buildToolbar();
+    this._el.addEventListener('keydown', event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        event.stopPropagation();
+        this._bus.emit('save-request');
+      }
+      if (event.key === 'Escape' && this._scaling && !this._busy) this._cancelScale();
+      else if (event.key === 'Escape' && this._cropping && !this._busy) this._cancelCrop();
+      else if (event.key === 'Escape' && !this._busy && this._hasSizeChanges()) this._syncDimensions();
+    });
+    this._observer = new ResizeObserver(() => this.resize());
+    this._observer.observe(this._stage);
+  }
+
+  _label(key, fallback) {
+    const translated = this.ctx?.i18n?.t?.(`image.${key}`);
+    return translated && translated !== `image.${key}` ? translated : fallback;
+  }
+
+  _button(key, icon, label, action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ide-editor-tool';
+    button.title = this._label(key, label);
+    button.setAttribute('aria-label', button.title);
+    button.dataset.imageAction = key;
+    const glyph = document.createElement('i');
+    glyph.className = `fa fa-${icon}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    button.append(glyph);
+    button.addEventListener('click', () => {
+      if (!this._busy) action();
+    });
+    this._toolbar.append(button);
+    this._buttons.set(key, button);
+    return button;
+  }
+
+  _divider() {
+    const divider = document.createElement('span');
+    divider.className = 'ide-editor-tool-divider';
+    divider.setAttribute('role', 'separator');
+    this._toolbar.append(divider);
+  }
+
+  _buildToolbar() {
+    this._button('undo', 'undo', 'Undo', () => this._restore(this._undo, this._redo));
+    this._button('redo', 'repeat', 'Redo', () => this._restore(this._redo, this._undo));
+    this._divider();
+    this._button('crop', 'crop', 'Crop', () => this._cropping ? this._cancelCrop() : this._startCrop());
+    this._button('applyCrop', 'check', 'Apply crop', () => this._run(() => this._applyCrop()));
+    this._button('cancelCrop', 'times', 'Cancel crop', () => this._cancelCrop());
+    this._button('scale', 'arrows-alt', 'Scale image', () => this._scaling ? this._cancelScale() : this._startScale());
+    this._button('applyScale', 'check', 'Apply scale', () => this._run(() => this._applyScale()));
+    this._button('cancelScale', 'times', 'Discard scale', () => this._cancelScale());
+    for (const [tool, apply, discard] of [['crop', 'applyCrop', 'cancelCrop'], ['scale', 'applyScale', 'cancelScale']]) {
+      const group = document.createElement('span');
+      group.className = 'ide-editor-tool-group';
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', this._buttons.get(tool).title);
+      this._buttons.get(tool).before(group);
+      group.append(this._buttons.get(tool), this._buttons.get(apply), this._buttons.get(discard));
+    }
+    this._divider();
+    this._width = this._dimensionInput('width', 'Width');
+    this._lock = this._button('lock', 'link', 'Lock aspect ratio', () => {
+      this._locked = !this._locked;
+      this._syncControls();
+    });
+    this._locked = true;
+    this._height = this._dimensionInput('height', 'Height');
+    this._button('resize', 'check', 'Apply size', () => this._run(() => this._applySize()));
+    this._button('cancelResize', 'times', 'Discard size changes', () => this._syncDimensions());
+    const sizeGroup = document.createElement('span');
+    sizeGroup.className = 'ide-editor-tool-group';
+    sizeGroup.setAttribute('role', 'group');
+    sizeGroup.setAttribute('aria-label', `${this._width.title} / ${this._height.title}`);
+    this._width.before(sizeGroup);
+    sizeGroup.append(this._width, this._lock, this._height, this._buttons.get('resize'), this._buttons.get('cancelResize'));
+    this._divider();
+    this._button('zoomOut', 'search-minus', 'Zoom out', () => this._image.$zoom(-0.2));
+    this._button('zoomIn', 'search-plus', 'Zoom in', () => this._image.$zoom(0.2));
+    this._button('fit', 'expand', 'Fit image', () => this.resize());
+    this._divider();
+    this._button('reset', 'refresh', 'Reset image', () => this._run(async () => {
+      await this._commit(await this._canvasFromUrl(this._original));
+    }));
+    this._syncControls();
+  }
+
+  _dimensionInput(key, label) {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '1';
+    input.max = '16384';
+    input.step = '1';
+    input.required = true;
+    input.title = this._label(key, label);
+    input.setAttribute('aria-label', input.title);
+    input.dataset.imageDimension = key;
+    input.addEventListener('input', () => {
+      if (this._canvas && this._locked && input.validity.valid) {
+        const ratio = this._canvas.width / this._canvas.height;
+        const other = key === 'width' ? this._height : this._width;
+        other.value = Math.max(1, Math.round(key === 'width' ? input.valueAsNumber / ratio : input.valueAsNumber * ratio));
+      }
+      this._syncControls();
+    });
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !this._busy) {
+        event.preventDefault();
+        this._buttons.get('resize').click();
+      }
+    });
+    this._toolbar.append(input);
+    return input;
   }
 
   async load(_content, meta) {
-    const path = meta?.path || '';
-    this._name = path.split('/').pop() || 'image';
-    this._mime = this._mimeFromPath(this._name);
-    this._url = this.ctx?.api?.url?.('/files/download', { path }) ?? '';
-    let Ctor;
+    this._mime = /\.jpe?g$/i.test(meta?.path || '') ? 'image/jpeg' : /\.webp$/i.test(meta?.path || '') ? 'image/webp' : 'image/png';
+    this._busy = true;
+    this._syncControls();
     try {
-      Ctor = await loadImageEditorCtor();
-    } catch (e) {
-      this._el.textContent = e.message;
+      const [{ default: Cropper }, canvas] = await Promise.all([
+        loadCropper(),
+        this._canvasFromUrl(this.ctx.api.url('/files/download', { path: meta.path })),
+      ]);
+      if (this._destroyed) return;
+      this._canvas = canvas;
+      this._original = canvas.toDataURL();
+      const image = document.createElement('img');
+      image.src = this._original;
+      this._cropper = new Cropper(image, {
+        container: this._stage,
+        template: '<cropper-canvas background><cropper-image initial-fit="scale-down" scalable translatable></cropper-image><cropper-shade hidden></cropper-shade><cropper-handle action="move" plain></cropper-handle><cropper-selection hidden movable resizable><cropper-grid role="grid" bordered covered theme-color="rgba(255, 255, 255, 0.8)"></cropper-grid><cropper-crosshair centered></cropper-crosshair><cropper-handle action="move" theme-color="rgba(255, 255, 255, 0.12)"></cropper-handle><cropper-handle action="n-resize"></cropper-handle><cropper-handle action="e-resize"></cropper-handle><cropper-handle action="s-resize"></cropper-handle><cropper-handle action="w-resize"></cropper-handle><cropper-handle action="ne-resize"></cropper-handle><cropper-handle action="nw-resize"></cropper-handle><cropper-handle action="se-resize"></cropper-handle><cropper-handle action="sw-resize"></cropper-handle></cropper-selection></cropper-canvas>',
+      });
+      this._image = this._cropper.getCropperImage();
+      this._selection = this._cropper.getCropperSelection();
+      this._shade = this._stage.querySelector('cropper-shade');
+      this._selection.addEventListener('change', event => this._previewScale(event));
+      for (const handle of this._selection.querySelectorAll('cropper-handle[action$="-resize"]')) {
+        handle.$addStyles(':host([action$="-resize"])::after { width: 8px; height: 8px; border: 1px solid #fff; background: #222; box-sizing: border-box; }');
+      }
+      await this._image.$ready();
+      if (this._destroyed) return;
+      this._ready = true;
+      this.resize();
+      this._baseline = this.getSavePayload().content;
+      this._syncDimensions();
+    } catch (error) {
+      if (!this._destroyed) this._status.textContent = error.message;
+    } finally {
+      this._busy = false;
+      if (!this._destroyed) this._syncControls();
+    }
+  }
+
+  async _canvasFromUrl(url) {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    canvas.getContext('2d').drawImage(image, 0, 0);
+    return canvas;
+  }
+
+  _startScale() {
+    if (!this._ready || this._busy || this._cropping || this._hasSizeChanges()) return;
+    const bounds = this._image.getBoundingClientRect();
+    const stage = this._cropper.getCropperCanvas().getBoundingClientRect();
+    this._scaleTransform = this._image.$getTransform();
+    this._scalePixelsPerUnit = this._canvas.width / bounds.width;
+    this._scaling = true;
+    this._stage.dataset.imageMode = 'scale';
+    this._shade.hidden = true;
+    this._selection.movable = false;
+    this._selection.precise = true;
+    this._selection.aspectRatio = this._canvas.width / this._canvas.height;
+    this._selection.hidden = false;
+    this._image.translatable = false;
+    this._image.scalable = false;
+    this._selection.$change(bounds.left - stage.left, bounds.top - stage.top, bounds.width, bounds.height);
+    this._syncControls();
+  }
+
+  _previewScale(event) {
+    if (!this._scaling || this._busy || this._destroyed) return;
+    const { x, y, width, height } = event.detail;
+    const pixelWidth = Math.round(width * this._scalePixelsPerUnit);
+    const pixelHeight = Math.round(pixelWidth * this._canvas.height / this._canvas.width);
+    if (![pixelWidth, pixelHeight].every(value => Number.isInteger(value) && value >= 1 && value <= 16384) || pixelWidth * pixelHeight > 40000000) {
+      event.preventDefault();
       return;
     }
-    if (this._destroyed) return;
-
-    injectCustomCss();
-    this._Ctor = Ctor;
-    this._createEditor(this._url);
-
-    // Follow the global Codiware theme (data-theme on <html>). The library applies
-    // its theme at construction, so re-create the editor preserving the current
-    // canvas so in-progress edits survive a theme switch.
-    this._themeObserver = new MutationObserver(() => this._reloadForTheme());
-    this._themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
+    const scale = width / this._canvas.width;
+    this._image.scalable = true;
+    this._image.$setTransform(scale, 0, 0, scale, x + (width - this._canvas.width) / 2, y + (height - this._canvas.height) / 2);
+    this._image.scalable = false;
+    this._width.value = pixelWidth;
+    this._height.value = pixelHeight;
+    this._status.textContent = `${pixelWidth} x ${pixelHeight} px`;
+    this._syncControls();
   }
 
-  _createEditor(loadUrl) {
-    const theme = (document.documentElement.dataset.theme === 'dark') ? DARK_THEME : LIGHT_THEME;
-    this._editor = new this._Ctor(this._el, {
-      includeUI: {
-        loadImage: { path: loadUrl, name: this._name },
-        theme,
-        menu: ['crop', 'flip', 'rotate', 'draw', 'shape', 'icon', 'text', 'mask', 'filter'],
-        initMenu: 'shape',
-        menuBarPosition: 'right',
-      },
-      selectionStyle: SELECTION_STYLE,
-      applyCropSelectionStyle: true,
-      applyGroupSelectionStyle: true,
-      cssMaxWidth: 3000,
-      cssMaxHeight: 3000,
-      usageStatistics: false,
-    });
-    this._bindZoomControls();
-
-    const establishCleanState = () => {
-      this._editor.off('undoStackChanged', establishCleanState);
-      if (this._destroyed || !this._editor) return;
-      this._editor.clearUndoStack();
-      this._bindDirtyTracking();
-    };
-    this._editor.on('undoStackChanged', establishCleanState);
+  _cancelScale() {
+    this._scaling = false;
+    delete this._stage.dataset.imageMode;
+    this._selection.hidden = true;
+    this._selection.movable = true;
+    this._selection.precise = false;
+    this._selection.aspectRatio = NaN;
+    this._shade.hidden = true;
+    this._image.translatable = true;
+    this._image.scalable = true;
+    this._image.$setTransform(...this._scaleTransform);
+    this._syncDimensions();
   }
 
-  _bindZoomControls() {
-    this._removeZoomControlListeners();
-    const bind = (selector, callback) => {
-      const button = this._el.querySelector(selector);
-      if (!button) return;
-      const handler = (event) => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        callback();
-      };
-      button.addEventListener('click', handler, true);
-      this._zoomControlListeners.push({ button, handler });
-    };
-
-    bind('.tie-btn-zoomIn', () => this._zoomIn());
-    bind('.tie-btn-zoomOut', () => this._editor?._graphics?.zoomOut?.());
+  async _applyScale() {
+    await this._applySize();
+    if (this._scaling) this._cancelScale();
   }
 
-  _removeZoomControlListeners() {
-    for (const { button, handler } of this._zoomControlListeners) {
-      button.removeEventListener('click', handler, true);
+  _startCrop() {
+    if (!this._ready || this._busy) return;
+    const bounds = this._image.getBoundingClientRect();
+    const stage = this._cropper.getCropperCanvas().getBoundingClientRect();
+    this._cropping = true;
+    this._selection.hidden = false;
+    this._shade.hidden = false;
+    this._selection.$change(bounds.left - stage.left + bounds.width * 0.1, bounds.top - stage.top + bounds.height * 0.1, bounds.width * 0.8, bounds.height * 0.8);
+    this._image.translatable = false;
+    this._image.scalable = false;
+    this._syncControls();
+  }
+
+  _cancelCrop() {
+    this._cropping = false;
+    if (this._selection) this._selection.hidden = true;
+    if (this._shade) this._shade.hidden = true;
+    if (this._image) {
+      this._image.translatable = true;
+      this._image.scalable = true;
     }
-    this._zoomControlListeners = [];
+    this._syncControls();
   }
 
-  _zoomIn() {
-    const graphics = this._editor?._graphics;
-    const canvas = graphics?.getCanvas?.();
-    if (!graphics?.zoom || !canvas) return;
-    const center = canvas.getCenter();
-    graphics.zoom(
-      { x: center.x ?? center.left, y: center.y ?? center.top },
-      Math.min(canvas.getZoom() + 1, 4)
-    );
+  async _applyCrop() {
+    if (!this._cropping) return;
+    const bounds = this._image.getBoundingClientRect();
+    const stage = this._cropper.getCropperCanvas().getBoundingClientRect();
+    const scaleX = this._canvas.width / bounds.width;
+    const scaleY = this._canvas.height / bounds.height;
+    const left = this._selection.x - bounds.left + stage.left;
+    const top = this._selection.y - bounds.top + stage.top;
+    const sourceX = Math.max(0, Math.round(left * scaleX));
+    const sourceY = Math.max(0, Math.round(top * scaleY));
+    const right = Math.min(this._canvas.width, Math.round((left + this._selection.width) * scaleX));
+    const bottom = Math.min(this._canvas.height, Math.round((top + this._selection.height) * scaleY));
+    const width = right - sourceX;
+    const height = bottom - sourceY;
+    if (width < 1 || height < 1) throw new Error(this._label('emptyCrop', 'Select an area inside the image.'));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(this._canvas, sourceX, sourceY, width, height, 0, 0, width, height);
+    await this._commit(canvas);
   }
 
-  _bindDirtyTracking() {
-    const onChange = () => {
-      if (this._dirty) return;
-      this._dirty = true;
-      this._bus.emit('change');
-    };
-    this._editor.on('undoStackChanged', onChange);
-    this._editor.on('redoStackChanged', onChange);
+  async _applySize() {
+    const width = this._width.valueAsNumber;
+    const height = this._height.valueAsNumber;
+    if (![width, height].every(value => Number.isInteger(value) && value >= 1 && value <= 16384) || width * height > 40000000) {
+      throw new Error(this._label('sizeLimit', 'Image size must not exceed 16384 pixels per side or 40 megapixels.'));
+    }
+    if (width === this._canvas.width && height === this._canvas.height) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(this._canvas, 0, 0, width, height);
+    await this._commit(canvas);
   }
 
-  /** Re-create the editor with the current theme, preserving canvas contents. */
-  _reloadForTheme() {
-    if (!this._editor || this._destroyed) return;
-    let dataUrl = this._url;
-    try { dataUrl = this._editor.toDataURL({ format: this._formatFromMime(this._mime) }); } catch (e) { /* ignore */ }
-    this._removeZoomControlListeners();
-    try { this._editor.destroy?.(); } catch (e) { /* ignore */ }
-    this._editor = null;
-    this._createEditor(dataUrl);
+  _run(operation) {
+    if (this._busy || this._destroyed || !this._ready) return this._pending;
+    this._busy = true;
+    this._syncControls();
+    this._pending = (async () => {
+      try {
+        await operation();
+      } finally {
+        this._busy = false;
+        if (!this._destroyed) this._syncControls();
+      }
+    })();
+    this._pending.catch(error => {
+      if (!this._destroyed) this._status.textContent = error.message;
+    });
+    return this._pending;
   }
 
-  /**
-   * Provide a base64 payload so the tab manager can persist edited binary image
-   * data through `/files/write` without corrupting it in JSON transport.
-   */
+  async _commit(canvas, remember = true) {
+    if (this._destroyed) return;
+    const source = canvas.toDataURL();
+    const previous = this._canvas.toDataURL();
+    if (source === previous) {
+      if (this._scaling) this._cancelScale();
+      this._cancelCrop();
+      return;
+    }
+    if (remember) {
+      this._undo.push(previous);
+      if (this._undo.length > 10) this._undo.shift();
+      this._redo = [];
+    }
+    const nativeImage = await this._image.$ready();
+    if (this._destroyed) return;
+    await new Promise((resolve, reject) => {
+      const cleanup = () => {
+        nativeImage.removeEventListener('load', loaded);
+        nativeImage.removeEventListener('error', failed);
+      };
+      const loaded = () => { cleanup(); resolve(); };
+      const failed = () => { cleanup(); reject(new Error('Failed to load edited image.')); };
+      nativeImage.addEventListener('load', loaded);
+      nativeImage.addEventListener('error', failed);
+      this._image.setAttribute('src', source);
+    });
+    if (this._destroyed) return;
+    this._canvas = canvas;
+    if (this._scaling) this._cancelScale();
+    this._cancelCrop();
+    this.resize();
+    this._syncDimensions();
+    this._bus.emit('change');
+  }
+
+  _restore(from, to) {
+    if (!from.length) return;
+    return this._run(async () => {
+      const canvas = await this._canvasFromUrl(from[from.length - 1]);
+      to.push(this._canvas.toDataURL());
+      from.pop();
+      await this._commit(canvas, false);
+    });
+  }
+
+  _syncDimensions() {
+    this._width.value = this._canvas.width;
+    this._height.value = this._canvas.height;
+    this._status.textContent = `${this._canvas.width} x ${this._canvas.height} px`;
+    this._syncControls();
+  }
+
+  _hasSizeChanges() {
+    return !!(this._canvas && this._width && this._height
+      && (this._width.valueAsNumber !== this._canvas.width || this._height.valueAsNumber !== this._canvas.height));
+  }
+
+  _syncControls() {
+    const resizing = this._hasSizeChanges();
+    for (const [key, button] of this._buttons) {
+      button.disabled = this._busy || !this._ready;
+      if (key === 'undo') button.disabled ||= !this._undo.length;
+      if (key === 'redo') button.disabled ||= !this._redo.length;
+      if (key === 'applyCrop' || key === 'cancelCrop') button.hidden = !this._cropping;
+      if (key === 'applyScale' || key === 'cancelScale') button.hidden = !this._scaling;
+      if (key === 'resize' || key === 'cancelResize') button.hidden = !resizing || this._cropping || this._scaling;
+      if (key === 'resize' && resizing) button.disabled ||= !this._width.validity.valid || !this._height.validity.valid || this._width.valueAsNumber * this._height.valueAsNumber > 40000000;
+      if (resizing && ['crop', 'undo', 'redo', 'reset'].includes(key)) button.disabled = true;
+      if (resizing && key === 'scale' && !this._scaling) button.disabled = true;
+      if (this._cropping && !['crop', 'applyCrop', 'cancelCrop'].includes(key)) button.disabled = true;
+      if (this._scaling && !['scale', 'applyScale', 'cancelScale'].includes(key)) button.disabled = true;
+    }
+    this._buttons.get('crop')?.setAttribute('aria-pressed', String(this._cropping));
+    this._buttons.get('scale')?.setAttribute('aria-pressed', String(this._scaling));
+    this._lock?.setAttribute('aria-pressed', String(this._locked));
+    for (const input of [this._width, this._height]) {
+      if (input) input.disabled = this._busy || !this._ready || this._cropping || this._scaling;
+    }
+  }
+
+  resize() {
+    if (!this._ready || this._destroyed || !this._stage.clientWidth || !this._stage.clientHeight || this._cropping || this._scaling) return;
+    this._image.$resetTransform();
+    this._image.$center('scale-down');
+  }
+
+  async beforeSave() {
+    await this._pending;
+    if (this._scaling) await this._run(() => this._applyScale());
+    if (this._cropping) await this._run(() => this._applyCrop());
+    if (!this._ready) throw new Error(this._label('notReady', 'Image is not ready to save.'));
+  }
+
   getSavePayload() {
-    if (!this._editor) return null;
-    const dataUrl = this._editor.toDataURL({ format: this._formatFromMime(this._mime) });
-    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
-    return { content: base64, encoding: 'base64' };
+    if (!this._canvas) return null;
+    const dataUrl = this._canvas.toDataURL(this._mime, 0.92);
+    return { content: dataUrl.slice(dataUrl.indexOf(',') + 1), encoding: 'base64' };
   }
 
   getContent() { return null; }
-  isDirty() { return this._savedContent === undefined ? this._dirty : this.getSavePayload()?.content !== this._savedContent; }
+  isDirty() { return this._ready ? this.getSavePayload().content !== this._baseline : false; }
   markClean(snapshot) {
-    if (!snapshot) return;
-    this._savedContent = snapshot.content;
-    this._dirty = this.isDirty();
+    if (snapshot) this._baseline = snapshot.content;
   }
-  on(ev, fn) { return this._bus.on(ev, fn); }
+  on(event, listener) { return this._bus.on(event, listener); }
+  focus() { this._el.focus({ preventScroll: true }); }
 
   destroy() {
     this._destroyed = true;
-    if (this._themeObserver) {
-      this._themeObserver.disconnect();
-      this._themeObserver = null;
-    }
-    this._removeZoomControlListeners();
-    try { this._editor?.destroy?.(); } catch (e) { /* ignore */ }
-    this._editor = null;
-    this.host.innerHTML = '';
-  }
-
-  _mimeFromPath(name) {
-    const ext = (name.split('.').pop() || '').toLowerCase();
-    return {
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      bmp: 'image/bmp',
-    }[ext] || 'image/png';
-  }
-
-  _formatFromMime(mime) {
-    return mime === 'image/jpeg' ? 'jpeg' : (mime === 'image/webp' ? 'webp' : 'png');
+    this._ready = false;
+    this._observer.disconnect();
+    this.host.replaceChildren();
+    this._canvas = null;
+    this._image = null;
+    this._selection = null;
+    this._shade = null;
+    this._cropper = null;
+    this._undo = [];
+    this._redo = [];
   }
 }
 
@@ -351,6 +482,6 @@ export const imageEditorDescriptor = {
   id: 'codiware.image',
   label: 'Image',
   priority: 20,
-  accepts: (entry) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(entry?.path || ''),
+  accepts: entry => /\.(png|jpe?g|gif|webp|bmp)$/i.test(entry?.path || ''),
   create: (host, ctx) => new ImageEditor(host, ctx),
 };

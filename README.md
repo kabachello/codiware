@@ -10,6 +10,8 @@ workbench) and operate on a configurable set of workspace folders.
 - File tree, multi-tab editor, save / rename / delete / upload / download
 - Pluggable editor registry (textarea fallback included), Monaco code editing,
   and Markian Markdown editing from prebuilt Composer-installed assets
+- Cropper.js image editing with crop, exact pixel resizing, aspect lock,
+  zoom/fit, undo/redo and reset, installed through Asset Packagist without a build step
 - Git source-control panel (status, stage / unstage / discard, commit, amend,
   push, branches, history) over the local `git` CLI
 - Workspace-wide search and search-and-replace with regex / case options
@@ -131,6 +133,20 @@ Each editor implements `load(content, meta)`, `getContent()`, `isDirty()`,
 An editor may also implement an optional async `beforeSave()` hook that runs
 before the content is written to disk (the Markdown editor waits for pending
 image-file creation before allowing a save).
+
+Raster editing uses `npm-asset/cropperjs` 2.x and its prebuilt bundled ES module.
+It shares compact toolbar sizing with Markian and saves applied image pixels
+through the existing base64 file-write API. Applying the size commits the width
+and height inputs; saving also applies an active crop. PNG, JPEG and WebP use
+their corresponding browser encoders. As before, GIF/BMP editing exports a
+static PNG rather than preserving the original encoding or GIF animation.
+Text, shapes, filters and rotation are not currently provided.
+
+Focused image and save-lifecycle tests run with:
+
+```bash
+node --test Tests/image-editor.test.mjs Tests/save-queue.test.mjs
+```
 
 Markdown always uses Markian, installed through `axenox/markian`. Its built-in
 Codiware theme matches the IDE's colors, square frame, document spacing, and
