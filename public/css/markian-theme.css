@@ -111,6 +111,15 @@
 }
 
 .codiware-markdown-editor .markian-document {
+  --bgColor-default: var(--ide-bg);
+  --bgColor-muted: var(--ide-panel-bg);
+  --bgColor-neutral-muted: var(--ide-btn-hover);
+  --fgColor-default: var(--ide-fg);
+  --fgColor-muted: var(--ide-fg-muted);
+  --fgColor-accent: var(--ide-accent);
+  --borderColor-default: var(--ide-border);
+  --borderColor-muted: var(--ide-border);
+  color-scheme: inherit;
   padding: 12px 20px;
   color: var(--ide-fg);
   background: var(--ide-bg);
