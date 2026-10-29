@@ -148,7 +148,7 @@ Focused image and save-lifecycle tests run with:
 node --test Tests/image-editor.test.mjs Tests/save-queue.test.mjs
 ```
 
-Markdown always uses Markian, installed through `axenox/markian`. Its built-in
+The Markdown editor uses Markian, installed through `axenox/markian`. Its built-in
 Codiware theme matches the IDE's colors, square frame, document spacing, and
 toolbar icons. `INCLUDES.PREVIEW_CSS` supplies rendered-document CSS;
 `INCLUDES.THEME_CSS` appends host overrides after the bundled theme. Both accept
@@ -156,9 +156,10 @@ vendor-relative URLs. Content CSS classes apply only to rendered documents.
 
 Code and Mermaid extensions load automatically. Set `MARKIAN.CODE` or
 `MARKIAN.MERMAID` to `false` in the Markdown extension settings to opt out.
-Mermaid rendering also needs a host-provided `INCLUDES.MERMAID_JS` URL and a
-compatible `MERMAID.VERSION` (12.2.x, default `12.2.0`). The ExFace integration
-supplies its local renderer; standalone hosts must configure one.
+Mermaid rendering also needs a host-provided `INCLUDES.MERMAID_JS` URL. It is
+passed as Markian's `source` string, with runtime API checks instead of a version
+setting. The ExFace integration supplies its local renderer; standalone hosts
+must configure one.
 
 Adding another file-type editor library (for example Monaco or CodeMirror 6):
 

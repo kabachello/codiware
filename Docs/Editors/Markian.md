@@ -76,8 +76,11 @@ including when host settings omit their flags. Set `MARKIAN.CODE` or
 loading. Code-block floating controls contain only expansion when available,
 never prose formatting; disabling Code hides those controls entirely.
 
-Mermaid rendering requires a host-supplied 12.2.x `INCLUDES.MERMAID_JS` asset;
-`MERMAID.VERSION` defaults to `12.2.0`. The ExFace integration supplies that
+Mermaid rendering requires a host-supplied `INCLUDES.MERMAID_JS` URL. The adapter
+passes it as Markian's `source` string; Markian checks the required runtime API
+without a version declaration or allowlist. Codiware does not duplicate a Mermaid
+version declaration or translate the former `asset` object. The `MERMAID.VERSION`
+setting is not used. The ExFace integration supplies the
 renderer locally; standalone hosts must configure it. Renderer URLs respect the
 installation prefix and cache version. Codiware does not bundle or download a
 renderer automatically. Mermaid is MIT-licensed.

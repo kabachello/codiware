@@ -93,9 +93,7 @@ export class MarkdownEditor {
         markianAssets.set('registered:mermaid', Promise.resolve());
       }
       const url = this.settings['INCLUDES.MERMAID_JS'];
-      this.extensions.mermaid = { enabled: true, config: url ? { asset: {
-        url: withCacheBust(resolveAssetUrl(url)), version: this.settings['MERMAID.VERSION'] || '12.2.0',
-      } } : {} };
+      this.extensions.mermaid = { enabled: true, config: url ? { source: withCacheBust(resolveAssetUrl(url)) } : {} };
     }
     const previewCss = this.settings['INCLUDES.PREVIEW_CSS'];
     const previewUrls = Array.isArray(previewCss) ? previewCss : (previewCss ? [previewCss] : []);

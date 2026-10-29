@@ -130,7 +130,6 @@
       "INCLUDES.MARKIAN_JS": "vendor/axenox/markian/dist/markian.min.js",
       "INCLUDES.MARKIAN_CSS": "vendor/axenox/markian/dist/markian.css",
       "INCLUDES.MERMAID_JS": null,
-      "MERMAID.VERSION": "12.2.0",
       "INCLUDES.PREVIEW_CSS": [],
       "INCLUDES.THEME_CSS": [],
       "CSS_CLASS_FOR_PREVIEW_CONTAINER": null

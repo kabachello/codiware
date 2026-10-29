@@ -57,9 +57,7 @@ test('Markian forwards vendor-relative content and theme CSS with the host base 
       'https://host.invalid/vendor/axenox/markian/dist/extensions/mermaid.css?v=test-version',
     ]);
     assert.deepEqual(editor.extensions.code, { enabled: true });
-    assert.deepEqual(editor.extensions.mermaid, { enabled: true, config: { asset: {
-      url: '/installation/vendor/host/mermaid.min.js?v=test-version', version: '12.2.0',
-    } } });
+    assert.deepEqual(editor.extensions.mermaid, { enabled: true, config: { source: '/installation/vendor/host/mermaid.min.js?v=test-version' } });
     window.CODIWARE_BOOT.extensions['codiware.markdown']['MARKIAN.CODE'] = false;
     window.CODIWARE_BOOT.extensions['codiware.markdown']['MARKIAN.MERMAID'] = false;
     const disabled = markdownEditorDescriptor.create(host, { api: { base: '/installation/api/ide/codiware' } });
