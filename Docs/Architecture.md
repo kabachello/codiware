@@ -194,9 +194,8 @@ All browser dependencies must be available through Composer, either shipped in t
 | Component | License | Purpose |
 |---|---|---|
 | Monaco Editor | MIT | Code editor, diff editor, search/replace, line numbers, go to line, wrapping, JSON/JS/HTML/CSS/SQL support, extensible PHP tokenization/autocomplete |
-| Markian | MIT | Markdown visual/source editing and Preview, supplied as prebuilt assets by the direct Composer dependency `axenox/markian` |
+| [Markdown editor](Editors/Markian.md) | MIT | See the editor-specific integration guide for dependencies and configuration |
 | Cropper.js 2 | MIT | Raster crop, pixel-dimension resize, pan and zoom, supplied as a bundled ES module by `npm-asset/cropperjs` |
-| Mermaid | MIT | Markdown diagram rendering |
 | jsTree | MIT | Lazy file tree, context menu, drag move/copy, persisted open branches |
 | Gitgraph.js or lightweight custom canvas renderer | MIT | Git history graph |
 | Font Awesome 4 | MIT/OFL | Default icon set compatible with ExFace |
@@ -416,7 +415,7 @@ Inside Monaco-based code editor tabs, the document outline is implemented as an 
 `EditorRegistry` maps file type detection to editor implementations:
 
 - Code editor for PHP, JavaScript, HTML, SQL, JSON, CSS, XML, YAML, and unknown text files.
-- Markdown WYSIWYG editor for `.md` and `.markdown` with split preview, Mermaid rendering, GitHub tables, headings, lists, links, code blocks, and inline code toolbar buttons.
+- [Markdown editor](Editors/Markian.md); features and integration are documented in its dedicated guide.
 - Image preview/editor for common image formats with zoom, fit-to-screen, download, and future crop/resize extension points.
 
 All editor tabs show unsaved state, restore from the previous browser session, and expose the absolute resolved path in a hover tooltip over the tab title. Text editors support search/replace within the file and word-wrap toggle. Code editors show line numbers and support go-to-line shortcuts.
@@ -454,7 +453,7 @@ Every optional front-end extension is described by a small JSON manifest. The ma
   ],
   "plugins": [
     {
-      "target": "markdown",
+      "target": "diagram",
       "factory": "CodiwareExtensions.ChartPlugin.create",
       "options": {}
     }
@@ -468,19 +467,17 @@ The back-end exposes enabled manifests through `/config`. The asset controller s
 
 Built-in editors keep their library-specific integration inside adapters so other parts of Codiware depend only on the common editor contract.
 
-The `codiware.markdown` descriptor always constructs the Markian-backed `MarkdownEditor`; there is no Markdown engine selection or fallback. `INCLUDES.MARKIAN_JS` and `INCLUDES.MARKIAN_CSS` configure prebuilt core assets, defaulting to the direct Composer package. Optional extension assets resolve beside the configured script unless explicitly overridden. `INCLUDES.PREVIEW_CSS` maps to Markian's `markdownCssUrls`; when empty, Markian retains its packaged default content style. The adapter always supplies Codiware's `public/css/markian-theme.css`, resolved through the app asset base, then appends any host `INCLUDES.THEME_CSS` overrides. Host CSS lists resolve vendor-relative paths with the installation prefix and cache version and load through Markian's readiness lifecycle. `CSS_CLASS_FOR_PREVIEW_CONTAINER` applies to every rendered `.markian-document`, including newly opened Preview/Help surfaces, never the editor shell. The adapter owns the observer and releases it on teardown. The `axenox.IDE` host keeps its GitHub/DocsFacade content styles.
+Markdown adapter ownership, asset loading, host callbacks, saving, extensions and
+presentation rules live in the [Markian integration guide](Editors/Markian.md).
 
-The bundled theme is scoped by `.codiware-markdown-editor`. It maps Markian colors/fonts to Codiware tokens, removes editor frame borders/rounding, and supplies document padding. Toolbar and status backgrounds use `--ide-sidebar-bg`, matching the explorer toolbar's inherited sidebar surface; menus and popups retain `--ide-panel-bg`. Supported root-level sizing tokens supply 26px-wide by 20px-high toolbar controls, 14px square main SVG icons, and 8px toolbar chevrons without internal sizing selectors. The 32px toolbar has 7px top padding to account for the file-tree toolbar's lower starting position, aligning their controls and bottom dividers. Dropdown rows and non-toolbar button targets retain library defaults. Hosts can override the theme through the later theme CSS list without changing stored Markdown.
-
-- `MarkdownEditor` starts in Visual mode and retains source/Preview navigation, clean-load baselines, snapshot-based save acknowledgment, focus, resizing, and teardown. Image insertion calls Codiware's `/files/upload` with `autoname=1`, saving into the neighboring `images/` directory before inserting a relative destination. `beforeSave()` awaits Markian's pending-image gate; failed image creation cannot become a successful save. Relative images use the guarded download endpoint without changing stored URLs. Link suggestions, inspection, and navigation remain host callbacks. Code and Mermaid factories are loaded, registered, and enabled automatically, including when host settings omit their flags. Set `MARKIAN.CODE` or `MARKIAN.MERMAID` to `false` to disable the corresponding extension and its asset loading. Mermaid rendering requires a host-supplied 12.2.x `INCLUDES.MERMAID_JS` asset; `MERMAID.VERSION` defaults to `12.2.0`. The ExFace integration supplies that renderer locally; standalone hosts must configure it. Renderer URLs respect the installation prefix and cache version. Codiware does not bundle or download a renderer automatically. Code-block floating controls contain only expansion when available, never prose formatting; disabling Code hides those controls entirely.
-
-`MARKIAN.SIDEBAR_VISIBLE` defaults to true and maps to Markian's `sidebarVisible` startup option. Set it to false in the Markdown extension configuration for collapsed startup; the user can still toggle the outline. The visible outline shares the work area beside the document, rather than overlaying text, and heading navigation keeps it open.
-
-TabManager owns each adapter's outer editor host and toggles its visibility. The Markdown adapter passes a child mount to Markian, which replaces that child with its editor root; it must not replace the outer host or tab activation and closing will leave Markdown visible. Text diffs, including Markdown diffs, always use the Monaco diff descriptor rather than file-type selection. Image diffs retain their dedicated image-diff descriptor.
+TabManager owns each adapter's outer editor host and toggles its visibility.
+Adapters must retain that outer host throughout their lifecycle. Text diffs always
+use the Monaco diff descriptor rather than file-type selection. Image diffs retain
+their dedicated image-diff descriptor.
 - `CodeEditor` accepts Monaco language registrations, completion providers, hover providers, themes, actions, and keybindings.
 - `ImageEditor` opens raster images through `/files/download` and loads `cropperjs/dist/cropper.esm.min.js` once from Composer-installed npm assets. This self-contained ES module includes Cropper's first-party web components and styles, needs no build or CDN, and does not interact with Monaco's AMD loader. Toast UI, its color picker, and Fabric are no longer used by this adapter.
 - Cropper owns only the image viewport and pending crop selection. The adapter owns applied pixels in a canvas, a maximum of ten undo snapshots, redo snapshots, and the saved-content baseline. Crop bounds are mapped to integer source-pixel coordinates and clipped to the image; resizing draws to explicit output dimensions. Pan, zoom, fit and cancelled crops do not dirty the document. PNG/JPEG/WebP export uses the corresponding browser canvas encoder; GIF/BMP inputs retain the previous static-frame PNG export behavior rather than preserving animation or their original encoding.
-- The compact image toolbar shares dimensions and theme tokens with Markian. Crop/apply/cancel, pixel width and height, aspect lock, resize, zoom/fit, undo/redo and reset are supported. Drawing, shapes, text, filters and rotation are not part of this adapter. Requested resize dimensions must be positive integers, at most 16384 pixels per side and 40 megapixels in total.
+- The compact image toolbar uses shared editor dimensions and theme tokens. Crop/apply/cancel, pixel width and height, aspect lock, resize, zoom/fit, undo/redo and reset are supported. Drawing, shapes, text, filters and rotation are not part of this adapter. Requested resize dimensions must be positive integers, at most 16384 pixels per side and 40 megapixels in total.
 - `beforeSave()` waits for any running operation and applies a pending crop. `getSavePayload()` remains synchronous and returns the applied canvas as base64 for `/files/write`. Acknowledging a save updates only that snapshot's baseline, so a newer edit remains dirty. `destroy()` removes the instance's custom-element tree and resize observer; asynchronous completions check the destroyed state before touching the instance.
 - `GitHistory` and `DiffEditor` can accept render or action plugins later, but they should remain internal until a real extension need appears.
 
@@ -496,8 +493,6 @@ A plugin receives only a narrow context object:
   libraryInstance
 }
 ```
-
-Markdown extensions use Markian's public factory and instance contracts. The adapter enables its supported optional factories through extension settings rather than exposing engine internals or inventing a second plugin API.
 
 #### Custom Editors
 
@@ -661,7 +656,6 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
     "png": "fa fa-file-image-o"
   },
   "EXTENSIONS.ENABLED": [
-    "codiware.markdown-mermaid",
     "codiware.image-basic"
   ],
   "EXTENSIONS.MANIFESTS": [
@@ -766,7 +760,7 @@ The initial release ships English only. The architecture assumes additional loca
 ## Future Extension Points
 
 - Additional editor types can register through `EditorRegistry` without changing tab management, file tree behavior, or tab persistence.
-- Front-end integrations use adapter-owned hooks, for example Markian extensions for Markdown, Monaco providers for code editing, and toolbar/action tools for image editing.
+- Front-end integrations use adapter-owned hooks rather than exposing library internals. Editor-specific contracts belong in the corresponding editor guide.
 - AI chat can be added as another right-panel tab and can exchange proposed text changes through a diff editor with accept/reject actions.
 - Multi-root workspaces can be enabled by adding root selection APIs and extending file/search/git requests with the existing `root` parameter.
 - HTML WYSIWYG, ER diagram, diagramming, and advanced image editors can be added as manifest-driven editor modules and asset dependencies.
@@ -788,7 +782,7 @@ The initial release ships English only. The architecture assumes additional loca
 | Layer | Tool | Coverage |
 |---|---|---|
 | Browser unit tests | Vitest or Jest with jsdom | State store, API client, editor registry, path display helpers, search result grouping. |
-| End-to-end | Playwright | Open `repo/` URL, restore tabs, edit/save file, use markdown split preview, upload/download, search result navigation, stage/commit, branch/history basics, console allow/deny behavior. |
+| End-to-end | Playwright | Open `repo/` URL, restore tabs, edit/save file, exercise editor-specific views, upload/download, search result navigation, stage/commit, branch/history basics, console allow/deny behavior. |
 
 Because the shipped package has no build step, browser tests should run against the same files that Composer installs. A minimal development front controller may use PHP's built-in server for local and CI execution, but production use still depends only on host middleware registration.
 
@@ -803,8 +797,8 @@ Because the shipped package has no build step, browser tests should run against 
 **Phase 2: Core Editing**
 
 - Implement file tree, file APIs, text read/write, tab management, tab restoration, and opened-file indicators. Complexity: Large.
-- Add `EditorRegistry`, editor lifecycle contract, Monaco code editor, Markdown editor with Mermaid, and image preview. Complexity: Large.
-- Extend adapter-owned integration hooks for Markian extensions and Monaco language/completion providers. Complexity: Medium.
+- Add `EditorRegistry`, editor lifecycle contract, Monaco code editor, specialized document editors, and image preview. Complexity: Large.
+- Extend adapter-owned editor integration hooks and Monaco language/completion providers. Complexity: Medium.
 - Add upload, download, zip handling, drag move/copy, context menus, and in-place duplicate actions. Complexity: Large.
 - Extend the explorer with toggleable bulk selection, shared bulk menus and multi-item drag/drop while still relying on the existing single-item file APIs internally. Complexity: Medium.
 - Extend the editor tab system with pinned tabs, persistent pinned state, and a dedicated close-unpinned bulk action while preserving drag/drop and dirty-check behavior. Complexity: Medium.
