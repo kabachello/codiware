@@ -74,13 +74,19 @@ export class MarkdownEditor {
     if (!window.Markian?.create) throw new Error('Markian factory was not provided by the configured script.');
     this.extensions = {};
     if (this.settings['MARKIAN.CODE'] !== false) {
-      await loadMarkianAsset(asset('INCLUDES.MARKIAN_CODE_JS', 'extensions/code.min.js'));
+      await Promise.all([
+        loadMarkianAsset(asset('INCLUDES.MARKIAN_CODE_JS', 'extensions/code.min.js')),
+        loadMarkianAsset(asset('INCLUDES.MARKIAN_CODE_CSS', 'extensions/code.css'), true),
+      ]);
       if (!window.MarkianCode?.codeExtension) throw new Error('Markian Code extension is unavailable.');
       if (!markianAssets.has('registered:code')) {
         window.Markian.registerExtension('code', window.MarkianCode.codeExtension);
         markianAssets.set('registered:code', Promise.resolve());
       }
-      this.extensions.code = { enabled: true };
+      this.extensions.code = { enabled: true, config: {
+        languageBase: asset('INCLUDES.MARKIAN_CODE_LANGUAGES', 'extensions/languages/'),
+        tabWidth: this.settings['MARKIAN.CODE_TAB_WIDTH'] ?? 2,
+      } };
     }
     if (this.settings['MARKIAN.MERMAID'] !== false) {
       await Promise.all([

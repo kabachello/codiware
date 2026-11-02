@@ -53,10 +53,13 @@ test('Markian forwards vendor-relative content and theme CSS with the host base 
       '/vendor/axenox/markian/dist/markian.min.js?v=test-version',
       '/vendor/axenox/markian/dist/markian.css?v=test-version',
       'https://host.invalid/vendor/axenox/markian/dist/extensions/code.min.js?v=test-version',
+      'https://host.invalid/vendor/axenox/markian/dist/extensions/code.css?v=test-version',
       'https://host.invalid/vendor/axenox/markian/dist/extensions/mermaid.min.js?v=test-version',
       'https://host.invalid/vendor/axenox/markian/dist/extensions/mermaid.css?v=test-version',
     ]);
-    assert.deepEqual(editor.extensions.code, { enabled: true });
+    assert.deepEqual(editor.extensions.code, { enabled: true, config: {
+      languageBase: 'https://host.invalid/vendor/axenox/markian/dist/extensions/languages/?v=test-version', tabWidth: 2,
+    } });
     assert.deepEqual(editor.extensions.mermaid, { enabled: true, config: { source: '/installation/vendor/host/mermaid.min.js?v=test-version' } });
     window.CODIWARE_BOOT.extensions['codiware.markdown']['MARKIAN.CODE'] = false;
     window.CODIWARE_BOOT.extensions['codiware.markdown']['MARKIAN.MERMAID'] = false;
@@ -64,7 +67,7 @@ test('Markian forwards vendor-relative content and theme CSS with the host base 
     await disabled._initPromise;
     assert.equal(disabled.extensions.code, undefined);
     assert.equal(disabled.extensions.mermaid, undefined);
-    assert.equal(links.length, 5);
+    assert.equal(links.length, 6);
   } finally {
     globalThis.window = previousWindow;
     globalThis.document = previousDocument;

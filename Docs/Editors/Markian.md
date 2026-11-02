@@ -73,8 +73,12 @@ than exposing engine internals or inventing a second plugin API.
 Code and Mermaid factories are loaded, registered and enabled automatically,
 including when host settings omit their flags. Set `MARKIAN.CODE` or
 `MARKIAN.MERMAID` to `false` to disable the corresponding extension and its asset
-loading. Code-block floating controls contain only expansion when available,
+loading. Code-block floating controls offer expansion and highlighting retry,
 never prose formatting; disabling Code hides those controls entirely.
+
+Code loads both `INCLUDES.MARKIAN_CODE_JS` and `INCLUDES.MARKIAN_CODE_CSS`, defaulting to `extensions/code.min.js` and `extensions/code.css` beside the configured core. `INCLUDES.MARKIAN_CODE_LANGUAGES` overrides the lazy language-asset directory; omission resolves `extensions/languages/` beside core, including the installation prefix and cache version. Only used languages load. Selected offline grammars include JavaScript/TypeScript, JSON, CSS, HTML/XML, PHP, SQL, Python and YAML; Code requires no Mermaid runtime. `MARKIAN.CODE_TAB_WIDTH` defaults to 2 and accepts integers 1-8.
+
+The expanded workspace retains line numbers, local undo/redo, indent/outdent, and a language menu. Escape then Tab leaves indentation handling. Text and language drafts are included in Codiware's save value before Back; Back commits them as one document undo step. Highlight failures retain plain editable source and allow retry without blocking document save. These controls use Markian's shared styles and Codiware's existing theme, not a second IDE toolbar.
 
 Mermaid rendering requires a host-supplied `INCLUDES.MERMAID_JS` URL. The adapter
 passes it as Markian's `source` string; Markian checks the required runtime API

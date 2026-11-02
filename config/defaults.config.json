@@ -125,6 +125,7 @@
   "EXTENSIONS.CONFIG": {
     "codiware.markdown": {
       "MARKIAN.CODE": true,
+      "MARKIAN.CODE_TAB_WIDTH": 2,
       "MARKIAN.MERMAID": true,
       "MARKIAN.SIDEBAR_VISIBLE": true,
       "INCLUDES.MARKIAN_JS": "vendor/axenox/markian/dist/markian.min.js",
