@@ -75,11 +75,29 @@ export class GitPanel {
     this.refresh();
   }
 
-  /** Refresh status from the Git API and re-render all status-dependent UI. */
-  async refresh() {
+  /**
+   * Refresh remote refs when requested, then load and render repository status.
+   *
+   * A plain `git status` compares HEAD only with the locally cached upstream
+   * ref. Fetching before panel activation is therefore required to discover
+   * commits that were pushed from another machine since the last fetch.
+   */
+  async refresh({ fetchRemote = false } = {}) {
     if (!this.body) return;
     const requestSeq = ++this._statusRequestSeq;
     this.body.textContent = '…';
+    if (fetchRemote) {
+      try {
+        await this.api.post('/git/fetch', {});
+      } catch (e) {
+        // A temporarily unavailable remote must not prevent the panel from
+        // showing local changes. Keep the fetch failure visible as a toast and
+        // continue with the best locally available status information.
+        if (requestSeq === this._statusRequestSeq) {
+          this.toasts.error(GitToasts.error(e, 'fetch'));
+        }
+      }
+    }
     try {
       const data = await this.api.get('/git/status');
       // Ignore stale refresh responses. A stage/unstage operation can finish

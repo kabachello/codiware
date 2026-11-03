@@ -314,8 +314,11 @@ async function main() {
         });
         gitPanel.mount(host);
       },
-      onActivate: ({ firstActivation }) => {
-        if (!firstActivation) gitPanel?.refresh();
+      onActivate: () => {
+        // Always fetch before showing Git status. The boot payload and a plain
+        // status request only know the locally cached upstream ref and cannot
+        // reveal commits pushed to the server since the repository last fetched.
+        gitPanel?.refresh({ fetchRemote: true });
       },
     });
 
