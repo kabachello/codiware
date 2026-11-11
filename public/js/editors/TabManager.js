@@ -30,8 +30,6 @@ export class TabManager {
     // restore loop does not repeatedly rewrite the stored list.
     this._restoring = false;
     this._draggedTabKey = null;
-    this._tabContextMenuEl = null;
-    this._tabContextMenuCleanup = null;
     this._overflowUpdateFrame = null;
     this._overflowButton = this._createOverflowButton();
     this._tabBarResizeObserver = typeof ResizeObserver === 'function'
@@ -278,34 +276,32 @@ export class TabManager {
   }
 
   /**
-   * Create the inline pin control for one tab.
+   * Create the pinned-state indicator for one tab.
    *
-   * Regular file tabs receive an interactive button that toggles pinned state.
-   * Diff tabs call the same helper with `disabled: true`, which returns a
-   * hidden placeholder so the tab keeps its internal structure without showing
-   * a control that intentionally does nothing.
+   * The icon is hidden for regular unpinned tabs, which keeps the common tab
+   * header compact. Once visible it also provides a direct way to unpin the
+   * tab; pinning an unpinned tab remains available from the context menu only.
    */
   _createPinButton(key, { disabled = false } = {}) {
     const pinBtn = document.createElement('span');
     pinBtn.className = 'ide-tab-pin';
-    if (disabled) {
-      pinBtn.hidden = true;
-      pinBtn.setAttribute('aria-hidden', 'true');
-      return pinBtn;
+    pinBtn.hidden = true;
+    pinBtn.setAttribute('aria-hidden', 'true');
+    if (!disabled) {
+      pinBtn.setAttribute('role', 'button');
+      pinBtn.setAttribute('tabindex', '-1');
+      pinBtn.append(Icon.render('fa fa-thumb-tack'));
+      pinBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.setPinned(key, false);
+      });
+      pinBtn.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.setPinned(key, false);
+      });
     }
-    pinBtn.title = this.i18n.t('tabs.pin');
-    pinBtn.setAttribute('role', 'button');
-    pinBtn.setAttribute('tabindex', '0');
-    pinBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.togglePinned(key);
-    });
-    pinBtn.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.togglePinned(key);
-    });
     return pinBtn;
   }
 
@@ -509,19 +505,16 @@ export class TabManager {
     return null;
   }
 
-  /**
-   * Update the tab DOM so pinned state is visible via CSS classes, labels and
-   * the pin icon variant.
-   */
+  /** Update the tab DOM so the pin icon is visible only on pinned tabs. */
   _renderPinnedState(record) {
-    if (!record?.tabEl || !record?.pinBtn || record.pinBtn.hidden) return;
+    if (!record?.tabEl || !record?.pinBtn || record.isDiff) return;
     const pinned = !!record.pinned;
     record.tabEl.classList.toggle('is-pinned', pinned);
-    record.pinBtn.classList.toggle('is-active', pinned);
-    record.pinBtn.title = this.i18n.t(pinned ? 'tabs.unpin' : 'tabs.pin');
-    record.pinBtn.setAttribute('aria-label', record.pinBtn.title);
-    record.pinBtn.innerHTML = '';
-    record.pinBtn.append(Icon.render(pinned ? 'fa fa-thumb-tack' : 'fa fa-thumb-tack'));
+    record.pinBtn.hidden = !pinned;
+    record.pinBtn.title = pinned ? this.i18n.t('tabs.unpin') : '';
+    record.pinBtn.setAttribute('aria-label', pinned ? this.i18n.t('tabs.unpin') : '');
+    record.pinBtn.setAttribute('aria-hidden', String(!pinned));
+    record.pinBtn.setAttribute('tabindex', pinned ? '0' : '-1');
   }
 
   /**
@@ -576,122 +569,68 @@ export class TabManager {
   _openTabContextMenu(key, clientX, clientY) {
     const record = this.tabs.get(key);
     if (!record) return;
-    this._closeTabContextMenu();
 
     const orderedKeys = Array.from(this.tabs.keys());
     const index = orderedKeys.indexOf(key);
     if (index === -1) return;
 
-    const unpinnedKeys = orderedKeys.filter((tabKey) => !this.tabs.get(tabKey)?.pinned);
     const counts = {
       left: index,
       right: orderedKeys.length - index - 1,
       others: orderedKeys.length - 1,
       all: orderedKeys.length,
-      unpinned: unpinnedKeys.length,
+      unpinned: orderedKeys.filter((tabKey) => !this.tabs.get(tabKey)?.pinned).length,
     };
 
-    const menu = document.createElement('div');
-    menu.className = 'codiware-popup-menu codiware-tab-context-menu';
-    menu.setAttribute('role', 'menu');
-
-    const addItem = ({ label, icon, onClick, disabled = false }) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'menu-item';
-      btn.setAttribute('role', 'menuitem');
-      if (disabled) btn.disabled = true;
-      btn.append(Icon.render(icon));
-      const text = document.createElement('span');
-      text.textContent = label;
-      btn.append(text);
-      btn.addEventListener('click', () => {
-        if (disabled) return;
-        this._closeTabContextMenu();
-        onClick();
-      });
-      menu.append(btn);
-    };
-
-    addItem({
-      label: this.i18n.t(record.pinned ? 'tabs.unpin' : 'tabs.pin'),
-      icon: 'fa fa-thumb-tack',
-      onClick: () => this.togglePinned(key),
-      disabled: record.isDiff,
-    });
-
-    const separator = document.createElement('div');
-    separator.className = 'menu-sep';
-    menu.append(separator);
-
-    addItem({
-      label: this.i18n.t('tabs.close_unpinned'),
-      icon: 'fa fa-times',
-      onClick: () => this.closeUnpinnedTabs(),
-      disabled: counts.unpinned === 0,
-    });
-    addItem({
-      label: this.i18n.t('tabs.close_all'),
-      icon: 'fa fa-times-circle',
-      onClick: () => this.closeAllTabs(),
-      disabled: counts.all === 0,
-    });
-    addItem({
-      label: this.i18n.t('tabs.close_left'),
-      icon: 'fa fa-angle-double-left',
-      onClick: () => this.closeTabsToLeft(key),
-      disabled: counts.left === 0,
-    });
-    addItem({
-      label: this.i18n.t('tabs.close_right'),
-      icon: 'fa fa-angle-double-right',
-      onClick: () => this.closeTabsToRight(key),
-      disabled: counts.right === 0,
-    });
-    addItem({
-      label: this.i18n.t('tabs.close_others'),
-      icon: 'fa fa-window-close-o',
-      onClick: () => this.closeOtherTabs(key),
-      disabled: counts.others === 0,
-    });
-
-    document.body.appendChild(menu);
-    const { innerWidth, innerHeight } = window;
-    const rect = menu.getBoundingClientRect();
-    const left = Math.max(4, Math.min(clientX, innerWidth - rect.width - 4));
-    const top = Math.max(4, Math.min(clientY, innerHeight - rect.height - 4));
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
-
-    const closeOnPointer = (event) => {
-      if (menu.contains(event.target)) return;
-      this._closeTabContextMenu();
-    };
-    const closeOnKey = (event) => {
-      if (event.key === 'Escape') this._closeTabContextMenu();
-    };
-
-    document.addEventListener('mousedown', closeOnPointer, true);
-    document.addEventListener('contextmenu', closeOnPointer, true);
-    document.addEventListener('keydown', closeOnKey, true);
-
-    this._tabContextMenuEl = menu;
-    this._tabContextMenuCleanup = () => {
-      document.removeEventListener('mousedown', closeOnPointer, true);
-      document.removeEventListener('contextmenu', closeOnPointer, true);
-      document.removeEventListener('keydown', closeOnKey, true);
-    };
+    PopupMenu.openAt(clientX, clientY, [
+      {
+        label: this.i18n.t('actions.refresh'),
+        icon: 'fa fa-refresh',
+        onClick: () => this.refresh(key),
+        disabled: record.isDiff,
+      },
+      {
+        label: this.i18n.t(record.pinned ? 'tabs.unpin' : 'tabs.pin'),
+        icon: 'fa fa-thumb-tack',
+        onClick: () => this.togglePinned(key),
+        disabled: record.isDiff,
+      },
+      { sep: true },
+      {
+        label: this.i18n.t('tabs.close_unpinned'),
+        icon: 'fa fa-times',
+        onClick: () => this.closeUnpinnedTabs(),
+        disabled: counts.unpinned === 0,
+      },
+      {
+        label: this.i18n.t('tabs.close_all'),
+        icon: 'fa fa-times-circle',
+        onClick: () => this.closeAllTabs(),
+        disabled: counts.all === 0,
+      },
+      {
+        label: this.i18n.t('tabs.close_left'),
+        icon: 'fa fa-angle-double-left',
+        onClick: () => this.closeTabsToLeft(key),
+        disabled: counts.left === 0,
+      },
+      {
+        label: this.i18n.t('tabs.close_right'),
+        icon: 'fa fa-angle-double-right',
+        onClick: () => this.closeTabsToRight(key),
+        disabled: counts.right === 0,
+      },
+      {
+        label: this.i18n.t('tabs.close_others'),
+        icon: 'fa fa-window-close-o',
+        onClick: () => this.closeOtherTabs(key),
+        disabled: counts.others === 0,
+      },
+    ]);
   }
 
   _closeTabContextMenu() {
-    if (typeof this._tabContextMenuCleanup === 'function') {
-      try { this._tabContextMenuCleanup(); } catch {}
-    }
-    this._tabContextMenuCleanup = null;
-    if (this._tabContextMenuEl) {
-      this._tabContextMenuEl.remove();
-      this._tabContextMenuEl = null;
-    }
+    PopupMenu.closeAll();
   }
 
   _orderedTabKeys() {
@@ -747,19 +686,54 @@ export class TabManager {
 
   saveActive() { if (this.active) return this.save(this.active); }
 
+  _confirmDiscard(record) {
+    if (!record?.dirty) return true;
+    return window.confirm(this.i18n.t('editor.discard_changes_confirm', { path: record.entry.path }));
+  }
+
+  /** Re-read a regular file tab from disk, discarding edits after confirmation. */
+  async refresh(key) {
+    const record = this.tabs.get(key);
+    if (!record || record.isDiff) return;
+    const resource = `${this.api.workspace || ''}/${record.entry.path}`;
+    if (this.saveQueue.resources.has(resource)) {
+      this.toasts.error(this.i18n.t('editor.wait_for_save'));
+      return;
+    }
+    try {
+      let content = null;
+      if (record.descriptor.id !== 'codiware.image') {
+        const data = await this.api.get('/files/read', { path: record.entry.path });
+        if (data?.binary) throw new Error(this.i18n.t('editor.binary'));
+        content = data?.content ?? '';
+      }
+      if (this.tabs.get(key) !== record) return;
+      // Ask immediately before replacing the editor state, so changes made
+      // while the disk request was in flight cannot be discarded silently.
+      if (!this._confirmDiscard(record)) return;
+      await record.editor.load(content, { path: record.entry.path });
+      record.savedContent = content;
+      record.dirty = record.editor.isDirty();
+      record.tabEl.classList.toggle('dirty', record.dirty);
+      record.dirtyBtn.style.display = record.dirty ? '' : 'none';
+      this.failedSaves.delete(resource);
+      this.toasts.success(this.i18n.t('tabs.refreshed', { path: record.entry.path }));
+      this.bus.emit('file:refreshed', record);
+      this._scheduleOverflowUpdate();
+    } catch (error) {
+      this.toasts.error(error?.message || this.i18n.t('errors.generic'));
+    }
+  }
+
   _closeRecord(key, { skipPrompt = false, persist = true, activateFallback = true } = {}) {
     const record = this.tabs.get(key);
     if (!record) return false;
     const resource = `${this.api.workspace || ''}/${record.entry.path}`;
     if (this.saveQueue.resources.has(resource)) {
-      this.toasts.error('Wait for the file save to finish before closing this tab.');
+      this.toasts.error(this.i18n.t('editor.wait_for_save'));
       return false;
     }
-    if (!skipPrompt && record.dirty) {
-      const message = this.i18n.t('editor.discard_changes_confirm', { path: record.entry.path });
-      const ok = window.confirm(message);
-      if (!ok) return false;
-    }
+    if (!skipPrompt && !this._confirmDiscard(record)) return false;
     this._closeTabContextMenu();
     try { record.editor.destroy?.(); } catch {}
     record.tabEl.remove();

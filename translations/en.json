@@ -227,6 +227,7 @@
   "editor.binary": "Cannot edit binary file",
   "editor.not_found": "File not found",
   "editor.loading": "Loading editor…",
+  "editor.wait_for_save": "Wait for the file save to finish before continuing.",
 
   "outline.title": "Outline",
   "outline.no_symbols": "No symbols found",
@@ -234,6 +235,8 @@
   "tabs.more": "More open tabs",
   "tabs.pin": "Pin tab",
   "tabs.unpin": "Unpin tab",
+  "tabs.pinned": "Pinned tab",
+  "tabs.refreshed": "Refreshed {path} from disk",
   "tabs.pin_disabled_diff": "Diff tabs cannot be pinned",
   "tabs.close_unpinned": "Close unpinned tabs",
   "tabs.close_all": "Close all tabs",

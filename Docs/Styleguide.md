@@ -166,7 +166,7 @@ Tab headers show:
 * filename with extension
 * absolute filepath in a tooltip
 * small floppy icon, that shows up, if the file has unsaved changes. Pressing this icon will save the file
-* a pin icon that can pin or unpin the tab without opening a menu; pinned tabs stay grouped before unpinned tabs
+* a pin icon shown only on pinned tabs; clicking it unpins the tab, while pinning is available from the right-click menu, and pinned tabs stay grouped before unpinned tabs
 
 The tab of the currently visible file must be clearly highlighted by using a distinct background color.
 
@@ -176,7 +176,7 @@ Tabs can be reordered via drag and drop. During dragging, text selection inside 
 
 Drag-reordering should stay within the current group: pinned tabs may be reordered among pinned tabs and unpinned tabs among unpinned tabs, but dragging must not silently change a tab's pinned state.
 
-Right-clicking a tab header opens a context menu with bulk close actions for all tabs, tabs to the left, tabs to the right, all other tabs, and all unpinned tabs. Disabled actions should stay visible when they are not applicable so the menu remains predictable. The same menu also contains the `Pin tab` / `Unpin tab` action for the clicked tab.
+Right-clicking a tab header opens a context menu with `Refresh`, pin/unpin and bulk close actions for all tabs, tabs to the left, tabs to the right, all other tabs, and all unpinned tabs. Refresh re-reads the file from disk and must show the regular discard-changes confirmation first if the editor is dirty. Disabled actions should stay visible when they are not applicable so the menu remains predictable.
 
 If there is not enough space for all tabs, the right-most tabs "overflow" into a menu, accessible via three-dot button on the right end of the tab bar.
 

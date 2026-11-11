@@ -619,6 +619,7 @@ export class MonacoEditor {
       }
       this._loadingSuppressed = false;
     }
+    this._savedContent = str;
     this._dirty = false;
   }
 

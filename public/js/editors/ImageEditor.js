@@ -180,6 +180,11 @@ export class ImageEditor {
       if (this._destroyed) return;
       this._canvas = canvas;
       this._original = canvas.toDataURL();
+      this._undo = [];
+      this._redo = [];
+      this._cropping = false;
+      this._scaling = false;
+      this._stage.replaceChildren();
       const image = document.createElement('img');
       image.src = this._original;
       this._cropper = new Cropper(image, {
