@@ -98,7 +98,7 @@ export class MarkdownEditor {
         window.Markian.registerExtension('mermaid', window.MarkianMermaid.mermaidExtension);
         markianAssets.set('registered:mermaid', Promise.resolve());
       }
-      const url = this.settings['INCLUDES.MERMAID_JS'];
+      const url = this.settings['INCLUDES.PELE_JS'];
       this.extensions.mermaid = { enabled: true, config: url ? { source: withCacheBust(resolveAssetUrl(url)) } : {} };
     }
     const previewCss = this.settings['INCLUDES.PREVIEW_CSS'];

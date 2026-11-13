@@ -156,7 +156,7 @@ vendor-relative URLs. Content CSS classes apply only to rendered documents.
 
 Code and Mermaid extensions load automatically. Set `MARKIAN.CODE` or
 `MARKIAN.MERMAID` to `false` in the Markdown extension settings to opt out.
-Mermaid rendering also needs a host-provided `INCLUDES.MERMAID_JS` URL. It is
+Mermaid-syntax rendering uses Pele and needs a host-provided `INCLUDES.PELE_JS` URL to `pele.global.js`. It is
 passed as Markian's `source` string, with runtime API checks instead of a version
 setting. The ExFace integration supplies its local renderer; standalone hosts
 must configure one.

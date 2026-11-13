@@ -80,14 +80,15 @@ Code loads both `INCLUDES.MARKIAN_CODE_JS` and `INCLUDES.MARKIAN_CODE_CSS`, defa
 
 The expanded workspace retains line numbers, local undo/redo, indent/outdent, and a language menu. Escape then Tab leaves indentation handling. Text and language drafts are included in Codiware's save value before Back; Back commits them as one document undo step. Highlight failures retain plain editable source and allow retry without blocking document save. These controls use Markian's shared styles and Codiware's existing theme, not a second IDE toolbar.
 
-Mermaid rendering requires a host-supplied `INCLUDES.MERMAID_JS` URL. The adapter
-passes it as Markian's `source` string; Markian checks the required runtime API
-without a version declaration or allowlist. Codiware does not duplicate a Mermaid
-version declaration or translate the former `asset` object. The `MERMAID.VERSION`
-setting is not used. The ExFace integration supplies the
-renderer locally; standalone hosts must configure it. Renderer URLs respect the
+Mermaid-syntax rendering uses Pele only. Set the host-supplied `INCLUDES.PELE_JS`
+URL to `pele.global.js` (replacing the former `INCLUDES.MERMAID_JS` setting).
+The adapter passes it as Markian's `source` string; Markian requires
+`window.pele.render`. The ExFace integration supplies the renderer locally from
+`npm-asset/pele`; standalone hosts must configure it. Renderer URLs respect the
 installation prefix and cache version. Codiware does not bundle or download a
-renderer automatically. Mermaid is MIT-licensed.
+renderer automatically. Pele is MIT-licensed. Diagram colors follow the owning
+Markian instance's light/dark theme through CSS variables. Mermaid fences and
+the extension's `mermaid` name remain unchanged; Mermaid.js is no longer loaded.
 
 ## Theme and Content Styles
 

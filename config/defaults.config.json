@@ -130,7 +130,7 @@
       "MARKIAN.SIDEBAR_VISIBLE": true,
       "INCLUDES.MARKIAN_JS": "vendor/axenox/markian/dist/markian.min.js",
       "INCLUDES.MARKIAN_CSS": "vendor/axenox/markian/dist/markian.css",
-      "INCLUDES.MERMAID_JS": null,
+      "INCLUDES.PELE_JS": null,
       "INCLUDES.PREVIEW_CSS": [],
       "INCLUDES.THEME_CSS": [],
       "CSS_CLASS_FOR_PREVIEW_CONTAINER": null
