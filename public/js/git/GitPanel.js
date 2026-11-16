@@ -6,7 +6,7 @@ import { GitToasts } from './GitToasts.js';
 const FETCH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>source-branch-sync</title><path d="M13 14C9.64 14 8.54 15.35 8.18 16.24C9.25 16.7 10 17.76 10 19C10 20.66 8.66 22 7 22S4 20.66 4 19C4 17.69 4.83 16.58 6 16.17V7.83C4.83 7.42 4 6.31 4 5C4 3.34 5.34 2 7 2S10 3.34 10 5C10 6.31 9.17 7.42 8 7.83V13.12C8.88 12.47 10.16 12 12 12C14.67 12 15.56 10.66 15.85 9.77C14.77 9.32 14 8.25 14 7C14 5.34 15.34 4 17 4S20 5.34 20 7C20 8.34 19.12 9.5 17.91 9.86C17.65 11.29 16.68 14 13 14M7 18C6.45 18 6 18.45 6 19S6.45 20 7 20 8 19.55 8 19 7.55 18 7 18M7 4C6.45 4 6 4.45 6 5S6.45 6 7 6 8 5.55 8 5 7.55 4 7 4M17 6C16.45 6 16 6.45 16 7S16.45 8 17 8 18 7.55 18 7 17.55 6 17 6M18 13V14.5C20.21 14.5 22 16.29 22 18.5C22 19.32 21.75 20.08 21.33 20.71L20.24 19.62C20.41 19.28 20.5 18.9 20.5 18.5C20.5 17.12 19.38 16 18 16V17.5L15.75 15.25L15.72 15.22C15.78 15.17 15.85 15.13 18 13M18 24V22.5C15.79 22.5 14 20.71 14 18.5C14 17.68 14.25 16.92 14.67 16.29L15.76 17.38C15.59 17.72 15.5 18.1 15.5 18.5C15.5 19.88 16.62 21 18 21V19.5L20.25 21.75L20.28 21.78C20.22 21.83 20.15 21.87 18 24" /></svg>';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, onOpenWorktreeMenu, onCreateWorktree, onOpenMainCheckout, initialError = null, user = {}, hasGitIdentity = true, initialStatus = null }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, onGetWorktreeMenuItems, onCreateWorktree, onOpenMainCheckout, initialError = null, user = {}, hasGitIdentity = true, initialStatus = null }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
@@ -14,7 +14,7 @@ export class GitPanel {
     this.onOpenDiff = onOpenDiff;
     this.onOpenHistory = typeof onOpenHistory === 'function' ? onOpenHistory : () => {};
     this.onOpenFile = typeof onOpenFile === 'function' ? onOpenFile : () => {};
-    this.onOpenWorktreeMenu = onOpenWorktreeMenu;
+    this.onGetWorktreeMenuItems = onGetWorktreeMenuItems;
     this.onCreateWorktree = onCreateWorktree;
     this.onOpenMainCheckout = onOpenMainCheckout;
     this.initialError = initialError;
@@ -39,7 +39,10 @@ export class GitPanel {
     this.mergeWorktreeBtn = this.api.worktree
       ? this._tbBtn('fa fa-compress', this.i18n.t('git.merge_worktree'), () => this.mergeWorktree())
       : null;
-    if (this.mergeWorktreeBtn) this.mergeWorktreeBtn.disabled = true;
+    if (this.mergeWorktreeBtn) {
+      this.mergeWorktreeBtn.disabled = true;
+      this.mergeWorktreeBtn.title = this.i18n.t('git.merge_worktree_tooltip');
+    }
     toolbar.append(
       this._tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
       ...(this.mergeWorktreeBtn ? [this.mergeWorktreeBtn] : []),
@@ -180,11 +183,14 @@ export class GitPanel {
     const merge = status?.worktree_merge;
     const count = Number(merge?.commits || 0);
     this._updateSyncButton(this.mergeWorktreeBtn, this.i18n.t('git.merge_worktree'), count);
+    this.mergeWorktreeBtn.title = this.i18n.t('git.merge_worktree_tooltip');
     this.mergeWorktreeBtn.disabled = Boolean(this._mergingWorktree || !merge || count === 0 || merge.blocked_reason);
     if (merge?.blocked_reason) {
       const reason = this.i18n.t(`git.merge_worktree_${merge.blocked_reason}`);
-      this.mergeWorktreeBtn.title = `${this.i18n.t('git.merge_worktree')}: ${reason}`;
+      this.mergeWorktreeBtn.title += `\n${reason}`;
       if (this.mergeNotice?.hidden) this._showMergeNotice(reason);
+    } else if (merge && count === 0) {
+      this.mergeWorktreeBtn.title += `\n${this.i18n.t('git.merge_worktree_empty')}`;
     }
   }
 
@@ -623,9 +629,12 @@ export class GitPanel {
     this._branchMenuLoading = true;
     PopupMenu.open(anchor, [{ icon: 'fa fa-refresh', label: this.i18n.t('git.loading_branches') || 'Loading branches…' }]);
     try {
-      const data = await this.api.get('/git/branches');
+      const [data, worktreeItems] = await Promise.all([
+        this.api.get('/git/branches'),
+        this.onGetWorktreeMenuItems ? this.onGetWorktreeMenuItems() : [],
+      ]);
       const current = data?.current || this._lastStatus?.branch || null;
-      const items = this._branchMenuItems(data, current);
+      const items = this._branchMenuItems(data, current, worktreeItems);
       PopupMenu.open(anchor, items.length ? items : [{ icon: 'fa fa-code-fork', label: this.i18n.t('git.no_branches') || 'No branches available' }]);
     } catch (e) {
       PopupMenu.open(anchor, [{ icon: 'fa fa-exclamation-triangle', label: e.message || (this.i18n.t('errors.generic') || 'Something went wrong.') }]);
@@ -636,9 +645,11 @@ export class GitPanel {
   }
 
   /** Convert branch API data into grouped menu entries with branch submenus. */
-  _branchMenuItems(data, current) {
+  _branchMenuItems(data, current, worktreeItems = []) {
     const currentSuffix = this.i18n.t('git.current_branch_suffix') || ' (current)';
-    const items = [];
+    const items = [
+      { icon: 'fa fa-plus', label: this.i18n.t('git.create_branch') || 'Create branch', onClick: () => this._promptCreateBranch(current || 'HEAD') },
+    ];
     const addGroup = (label, branches = [], remote = false) => {
       const list = Array.isArray(branches) ? branches.filter(Boolean) : [];
       if (list.length === 0) return;
@@ -655,13 +666,14 @@ export class GitPanel {
     };
     addGroup(this.i18n.t('git.local_branches') || 'Local branches', data?.locals || [], false);
     addGroup(this.i18n.t('git.remote_branches') || 'Remote branches', data?.remotes || [], true);
-    if (items.length > 0) items.push({ sep: true });
-    items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.create_branch') || 'Create branch', onClick: () => this._promptCreateBranch(current || 'HEAD') });
-    if (this.onOpenWorktreeMenu) {
-      items.push({ icon: Icon.worktree, label: this.i18n.t('git.worktrees'), onClick: () => this.onOpenWorktreeMenu(this.branchButton) });
+    if (this.onCreateWorktree || this.onGetWorktreeMenuItems) {
+      items.push({ sep: true }, { heading: true, label: this.i18n.t('git.worktrees') });
     }
     if (this.onCreateWorktree) {
       items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.create_worktree'), onClick: () => this.onCreateWorktree() });
+    }
+    if (this.onGetWorktreeMenuItems) {
+      items.push({ icon: Icon.worktree, label: this.i18n.t('git.worktrees'), children: worktreeItems });
     }
     return items;
   }
@@ -669,7 +681,7 @@ export class GitPanel {
   /** Build the action submenu for one branch row. */
   _branchActionItems(branch, { current = false, remote = false } = {}) {
     return [
-      { icon: 'fa fa-check', label: this.i18n.t('git.checkout_branch') || 'Checkout', onClick: current ? undefined : () => this.checkoutBranch(branch), disabled: current },
+      { icon: Icon.checkoutBranch, label: this.i18n.t('git.checkout_branch') || 'Checkout', onClick: current ? undefined : () => this.checkoutBranch(branch), disabled: current },
       { icon: 'fa fa-compress', label: this.i18n.t('git.merge_branch') || 'Merge into current branch', onClick: current ? undefined : () => this.mergeBranch(branch), disabled: current },
       { sep: true },
       { icon: 'fa fa-trash-o', label: this.i18n.t(remote ? 'git.delete_remote_branch' : 'git.delete_branch') || 'Delete branch', onClick: current ? undefined : () => this.deleteBranch(branch, remote), disabled: current },

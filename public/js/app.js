@@ -323,7 +323,7 @@ async function main() {
           hasGitIdentity,
           initialStatus: gitStatusInvalidated ? null : (boot.git?.initial_status || null),
           initialError: boot.git?.worktree_error,
-          onOpenWorktreeMenu: (anchor) => worktrees.openMenu(anchor),
+          onGetWorktreeMenuItems: async () => worktrees.menuItems(await worktrees.refresh()),
           onCreateWorktree: () => worktrees.createWorktree(),
           onOpenMainCheckout: () => worktrees.switchTo(null),
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),

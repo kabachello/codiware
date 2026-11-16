@@ -65,28 +65,8 @@ unchanged to the next handler.
 payload describing the requested workspace, user, theme, locale, and enabled
 extensions. All subsequent API calls go to other `{basePath}/...` routes.
 
-Optional `?branch=...` and `?worktree=...` deep links are disabled by default.
-Enable `GIT.ALLOW_BRANCH_URL_PARAMETER` and `GIT.ALLOW_WORKTREE_URL_PARAMETER`
-independently to accept them (the ExFace integration enables both). Worktrees
-are matched by directory title among the repository's registered linked
-worktrees. If the requested worktree is missing or ambiguous, the regular
-repository opens unchanged with an error in the active Git panel.
-
-The footer worktree selector appears when linked worktrees exist. Its menu
-switches between them and the main repository, creates worktrees, and deletes
-inactive, clean, unlocked worktrees without deleting their branches. Create
-the first worktree from the branch chooser's **Create worktree** action.
-New worktrees live at `{main-repo-path}.worktrees/{title}`; Git reuses a branch
-with that title or creates it from the current HEAD. Switching confirms
-unsaved editor changes and keeps tab restoration separate for each worktree.
-
-Inside a worktree, the Git toolbar offers **Merge into main checkout**. It
-becomes primary instead of Push when the worktree has commits not yet in the
-main checkout. Confirmation names the main checkout's current branch and the
-commit count. Only committed changes are merged; nothing is pushed or deleted.
-Dirty, detached or busy main checkouts are blocked. If conflicts occur, the
-panel points to the main checkout with an **Open main checkout** action so the
-merge can be resolved or aborted there.
+Git branch and worktree selection also affects IDE URLs. See the
+[Git panel guide](Docs/Panels/Git_panel.md) for URL options and Git workflows.
 
 ## Configuration
 

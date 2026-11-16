@@ -238,14 +238,15 @@ textarea { font-family: var(--ide-font-mono); }
   white-space: nowrap;
 }
 
-.ide-status-git-branch {
+.ide-status-git .ide-status-git-branch {
   min-width: 0;
   max-width: 180px;
   padding: 0 2px;
   gap: 4px;
 }
 
-.ide-status-git-branch-name {
+.ide-status-git .ide-status-git-branch-name {
+  margin-left: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

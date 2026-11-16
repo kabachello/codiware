@@ -136,19 +136,8 @@ List items in sidebar trees also support a right-click context menu. This contex
 
 The same rule applies to changed-file rows in the Git panel: the three-dot menu and the right-click menu must expose the same row-level actions.
 
-Branch switching in Git should use the same discoverable interaction wherever the current branch is shown. The branch name itself should be clickable in the Git panel and in the footer status area, and both places should open the same dropdown-style chooser rather than separate custom dialogs.
-
-If a branch chooser offers branch-management actions such as `Create branch`, they belong into that same chooser instead of a separate dialog entry point, so users always find branch selection and branch creation in one place.
-
-Worktree switching uses the same footer button classes (`.ide-status-git-branch` and `.ide-status-git-branch-name`) and shared popup controller as branch switching. Show the selector only when linked worktrees exist; include the main repository as a switch target, a submenu per worktree with switch/delete actions, and a create action. Keep main/current/locked/missing deletion actions visible but disabled. Confirm deletion and unsaved editor changes before switching. The branch chooser also exposes worktree management and creation so the first worktree is discoverable when the footer selector is hidden. In a linked worktree, append its title next to the repository name in the top header; do not add a worktree label for the main repository.
-
-The footer order is folder icon and repository name, separator, worktree selector, separator, Git branch controls. Hide the worktree selector and its leading separator together when no linked worktrees exist. Do not repeat the repository name inside the Git branch controls.
-
-Worktree selectors, worktree list entries and the branch chooser's worktree-management entry use the shared `Icon.worktree` SVG: a VS Code-style branching line with two outgoing arrows. It inherits the current text color in both themes; folder icons remain reserved for folders and repository roots.
-
-Hide all worktree controls, worktree header titles and Git/worktree error-panel activation for non-Git workspaces or when Git is disabled. A worktree URL parameter must not add Git UI to a plain folder.
-
-Inside a linked worktree, keep `Merge into main checkout` visible alongside Push and Pull. Use the existing toolbar-button and promoted-label classes, show the number of commits not present in the main checkout, and promote this action instead of Push when the count is positive. Disable it when unsafe or empty and explain the blocking reason in its tooltip. Confirmation names both branches and the commit count and explicitly says nothing will be pushed. Success and failure notices include an `Open main checkout` action; conflict guidance must clearly locate the unfinished merge in the main checkout, not in the worktree.
+Git-specific branch and worktree menus, merge actions, and status-bar presentation
+are described in the [Git panel guide](Panels/Git_panel.md).
 
 ### Popup and context menus
 

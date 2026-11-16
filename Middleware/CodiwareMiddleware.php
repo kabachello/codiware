@@ -156,8 +156,9 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $console = new ConsoleController($this->responses, $this->workspaces, $this->pathGuard, $consoleService);
 
         // Shell + assets
+        $this->router->get('/repo/{workspacePath*}/worktrees/{worktree}', [$shell, 'open']);
+        $this->router->get('/repo/{workspacePath*}/worktrees/{worktree}/', [$shell, 'open']);
         $this->router->get('/repo/{workspacePath*}', [$shell, 'open']);
-        $this->router->get('/worktrees/{worktree}/repo/{workspacePath*}', [$shell, 'open']);
         $this->router->get('/assets/{assetPath*}', [$assets, 'serve']);
 
         // Config + translations
