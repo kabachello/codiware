@@ -106,17 +106,53 @@ final class GitService
         return ['title' => $title, 'console' => $console];
     }
 
-    public function deleteWorktree(WorkspaceRoot $root, string $title): array
+    public function deleteWorktree(WorkspaceRoot $root, string $title, ?string $branch = null): array
     {
         $target = $this->worktreeRoot($root, $title);
         if (realpath($target->path) === realpath($root->path)) {
             throw new CodiwareException('Switch to another worktree before deleting the current worktree.', 'worktree_current', 409);
         }
+        $main = null;
+        if ($branch !== null) {
+            $actualBranch = trim($this->run($target, ['symbolic-ref', '--quiet', '--short', 'HEAD'], expectExit: [0, 1]));
+            if ($branch === '' || $actualBranch !== $branch) {
+                throw new CodiwareException('The worktree branch changed or is detached. Refresh the worktree menu and try again.', 'worktree_branch_changed', 409);
+            }
+            $trees = $this->worktrees($root);
+            $main = new WorkspaceRoot($root->alias, $trees[0]['path'], $root->label);
+            $head = $this->run($target, ['rev-parse', '--verify', 'HEAD']);
+            $destinations = [$this->run($main, ['rev-parse', '--verify', 'HEAD'])];
+            $upstream = trim($this->run($target, ['for-each-ref', '--format=%(upstream)', 'refs/heads/' . $branch]));
+            if ($upstream !== '') {
+                $destinations[] = $upstream;
+            }
+            foreach ($destinations as $destination) {
+                $check = $this->consoleCapture($target, ['merge-base', '--is-ancestor', trim($head), trim($destination)]);
+                if ($check['exit_code'] === 1) {
+                    throw new CodiwareException('Branch "' . $branch . '" has commits not merged into the main checkout or its upstream. The worktree and branch were kept.', 'worktree_branch_unmerged', 409);
+                }
+                if (!$check['ok']) {
+                    throw $this->consoleFailure('check branch merge status', $check);
+                }
+            }
+        }
         $console = $this->consoleCapture($root, ['worktree', 'remove', '--', $target->path]);
         if (!$console['ok']) {
             throw $this->consoleFailure('worktree remove', $console);
         }
-        return ['title' => $title, 'console' => $console];
+        if ($main !== null) {
+            $deleted = $this->consoleCapture($main, ['branch', '-d', '--', $branch]);
+            $console = [
+                'command' => $console['command'] . "\n" . $deleted['command'],
+                'output' => $console['output'] . "\n" . $deleted['output'],
+                'exit_code' => $deleted['exit_code'],
+                'ok' => $deleted['ok'],
+            ];
+            if (!$console['ok']) {
+                throw $this->consoleFailure('worktree removed, but local branch "' . $branch . '" was kept; delete branch', $console);
+            }
+        }
+        return ['title' => $title, 'branch' => $branch, 'console' => $console];
     }
 
     /** Commits are compared to the main checkout's HEAD, not to an upstream or a branch named "main". */

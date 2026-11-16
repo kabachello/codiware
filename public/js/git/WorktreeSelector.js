@@ -62,6 +62,11 @@ export class WorktreeSelector {
             disabled: tree.main || current || tree.locked || tree.missing,
             onClick: () => this.deleteWorktree(tree.title),
           },
+          {
+            icon: 'fa fa-trash-o', label: this.i18n.t('git.delete_worktree_branch'),
+            disabled: tree.main || current || tree.locked || tree.missing || !tree.branch,
+            onClick: () => this.deleteWorktree(tree.title, tree.branch),
+          },
         ],
       };
     });
@@ -95,12 +100,14 @@ export class WorktreeSelector {
     } catch (error) { this.showError(error); }
   }
 
-  async deleteWorktree(title) {
-    if (!window.confirm(this.i18n.t('git.confirm_delete_worktree', { title }))) return;
+  async deleteWorktree(title, branch = null) {
+    if (!window.confirm(this.i18n.t(branch ? 'git.confirm_delete_worktree_branch' : 'git.confirm_delete_worktree', { title, branch }))) return;
     try {
-      const result = await this.api.post('/git/delete-worktree', { title });
+      const result = await this.api.post('/git/delete-worktree', branch ? { title, branch } : { title });
       this.bus.emit('console:inject', result.console);
-      this.toasts.success(this.i18n.t('git.deleted_worktree', { title }));
+      this.toasts.success(this.i18n.t(branch ? 'git.deleted_worktree_branch' : 'git.deleted_worktree', { title, branch }));
+    } catch (error) { this.showError(error); }
+    try {
       await this.refresh();
     } catch (error) { this.showError(error); }
   }

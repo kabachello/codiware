@@ -169,11 +169,12 @@ export class GitPanel {
     };
   }
 
-  /** Promote unpublished branches as publishable even before Git reports ahead. */
+  /** Promote unpublished branches only in the main checkout. */
   _updatePushButton(status) {
     const unpublished = Boolean(status?.unpublished);
     const label = unpublished ? (this.i18n.t('git.push_branch') || 'Push branch') : this.i18n.t('git.push');
-    this._updateSyncButton(this.pushBtn, label, unpublished ? 1 : Number(status?.ahead || 0), { showCount: !unpublished });
+    const count = unpublished ? (this.api?.worktree ? 0 : 1) : Number(status?.ahead || 0);
+    this._updateSyncButton(this.pushBtn, label, count, { showCount: !unpublished });
     if (Number(status?.worktree_merge?.commits) > 0) this.pushBtn?.classList.remove('primary');
   }
   _updatePullButton(status) { this._updateSyncButton(this.pullBtn, this.i18n.t('git.pull'), Number(status?.behind || 0)); }

@@ -54,6 +54,16 @@ inactive, clean, unlocked worktrees; it does not delete their branches.
 Switching confirms unsaved editor changes and keeps tab restoration separate for
 each worktree.
 
+**Delete worktree & branch**, below **Delete worktree**, also removes the local
+branch checked out in that worktree, even when its name differs from the folder.
+Confirmation names both targets. The combined action is also disabled for detached
+worktrees. The server verifies the expected branch before removal and refuses
+unmerged commits: the branch tip must be an ancestor of the main checkout's HEAD
+and, when configured, its upstream. Refusal keeps both the worktree and branch.
+Removal never uses force and does not delete remote branches. After removing the
+worktree, Git's safe `branch -d` deletes its branch; if this second step fails,
+the error explicitly reports that the worktree was removed but the branch remains.
+
 The branch chooser exposes worktree management and creation even before the first
 linked worktree exists. Its **Worktrees** entry opens a nested submenu beside the
 parent entry without closing the branch menu, whether opened from the Git panel
@@ -171,7 +181,7 @@ only inside a linked worktree, not for the main repository.
 
 The `Push` button behaves slightly differently depending on whether the user is on a published or unpublished branch.
 
-- On unpublished branches the button generally highlighted and runs `git push -u <remote> <branch>` instead of plain `git push` when pressed
+- On unpublished branches, **Push branch** is highlighted only in the main checkout, not in linked worktrees. It remains available in worktrees as an icon button. Pressing it runs `git push -u <remote> <branch>` instead of plain `git push`.
 - On published branches, it is only highlighted if there are local commits to push and shows the number of commits automatically.
 
 ### Commits available on the remote

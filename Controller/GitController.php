@@ -50,7 +50,10 @@ final class GitController
     public function deleteWorktree(ServerRequestInterface $request): ResponseInterface
     {
         $body = $this->decodeJson($request);
-        return $this->responses->ok($this->git->deleteWorktree($this->root($request), (string)($body['title'] ?? '')));
+        if (array_key_exists('branch', $body) && (!is_string($body['branch']) || $body['branch'] === '')) {
+            throw new CodiwareException('branch must be a non-empty local branch name.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->deleteWorktree($this->root($request), (string)($body['title'] ?? ''), $body['branch'] ?? null));
     }
 
     public function mergeWorktree(ServerRequestInterface $request): ResponseInterface

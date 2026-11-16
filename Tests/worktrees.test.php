@@ -211,6 +211,37 @@ try {
     check($deleted->getStatusCode() === 200 && !is_dir($new->path), 'Delete endpoint must remove the directory');
     check(git($repo, ['branch', '--list', 'new-tree']) === 'new-tree', 'Deleting a worktree must retain its branch');
 
+    $cleanup = $fixture . DIRECTORY_SEPARATOR . 'cleanup-folder';
+    git($repo, ['worktree', 'add', '-b', 'agents/cleanup-branch', $cleanup]);
+    rejects(fn () => $service->deleteWorktree($root, 'cleanup-folder', 'wrong-branch'), 'worktree_branch_changed');
+    check(is_dir($cleanup), 'A changed branch must keep the worktree');
+    file_put_contents($cleanup . '/cleanup.txt', 'Unmerged work');
+    git($cleanup, ['add', 'cleanup.txt']);
+    git($cleanup, ['commit', '-m', 'Cleanup fixture']);
+    rejects(fn () => $service->deleteWorktree($root, 'cleanup-folder', 'agents/cleanup-branch'), 'worktree_branch_unmerged');
+    check(is_dir($cleanup) && git($repo, ['branch', '--list', 'agents/cleanup-branch']) !== '', 'Unmerged refusal must retain both targets');
+    git($repo, ['merge', '--ff-only', 'agents/cleanup-branch']);
+    git($cleanup, ['branch', '--set-upstream-to=other']);
+    rejects(fn () => $service->deleteWorktree($root, 'cleanup-folder', 'agents/cleanup-branch'), 'worktree_branch_unmerged');
+    check(is_dir($cleanup), 'Unmerged upstream must be detected before removing the worktree');
+    git($cleanup, ['branch', '--unset-upstream']);
+    file_put_contents($cleanup . '/dirty.txt', 'Keep dirty files');
+    rejects(fn () => $service->deleteWorktree($root, 'cleanup-folder', 'agents/cleanup-branch'), 'git_failed');
+    check(is_file($cleanup . '/dirty.txt'), 'Combined cleanup must not force removal of dirty worktrees');
+    unlink($cleanup . '/dirty.txt');
+    git($repo, ['worktree', 'lock', $cleanup]);
+    rejects(fn () => $service->deleteWorktree($root, 'cleanup-folder', 'agents/cleanup-branch'), 'git_failed');
+    git($repo, ['worktree', 'unlock', $cleanup]);
+    $cleanupResponse = $request('/git/delete-worktree', ['root' => 'sample/repo'], ['title' => 'cleanup-folder', 'branch' => 'agents/cleanup-branch']);
+    check($cleanupResponse->getStatusCode() === 200, 'Combined cleanup endpoint must succeed: ' . $cleanupResponse->getBody());
+    check(!is_dir($cleanup) && git($repo, ['branch', '--list', 'agents/cleanup-branch']) === '', 'Combined cleanup must delete the actual branch, not the folder name');
+    $detached = $fixture . DIRECTORY_SEPARATOR . 'detached-cleanup';
+    git($repo, ['worktree', 'add', '--detach', $detached]);
+    rejects(fn () => $service->deleteWorktree($root, 'detached-cleanup', 'main'), 'worktree_branch_changed');
+    git($repo, ['worktree', 'remove', $detached]);
+    $cleanupRoot = $resolver->rootByAlias('sample/repo', 'external tree');
+    rejects(fn () => $service->deleteWorktree($cleanupRoot, 'external tree', 'external'), 'worktree_current');
+
     check($service->status($root)['worktree_merge'] === null, 'Main checkout must not offer merge-back');
     rejects(fn () => $service->mergeWorktree($root, [], null, null), 'worktree_merge_requires_worktree');
     check($service->worktreeMergeState($tree)['commits'] === 0, 'Identical worktrees have no commits to merge');

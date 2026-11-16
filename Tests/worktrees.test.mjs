@@ -69,6 +69,60 @@ test('current worktree entries use the same indicator as the current branch', ()
   assert.notEqual(linkedItems[2].icon, branch.icon);
 });
 
+test('combined cleanup follows Delete worktree and protects unavailable or detached entries', () => {
+  const control = selector('active');
+  const items = control.menuItems([
+    { main: true, branch: 'main' }, { title: 'active', branch: 'agents/active' },
+    { title: 'locked', branch: 'locked', locked: true },
+    { title: 'missing', branch: 'missing', missing: true },
+    { title: 'detached', branch: null }, { title: 'folder', branch: 'agents/actual' },
+  ]);
+  assert.deepEqual(items.slice(0, 6).map(item => Boolean(item.children[2].disabled)), [true, true, true, true, true, false]);
+  assert.equal(items[5].children[1].label, 'git.delete_worktree');
+  assert.equal(items[5].children[2].label, 'git.delete_worktree_branch');
+  let deleted;
+  control.deleteWorktree = (...args) => { deleted = args; };
+  items[5].children[2].onClick();
+  assert.deepEqual(deleted, ['folder', 'agents/actual']);
+});
+
+test('combined cleanup confirms both targets and sends the expected branch; cancellation changes nothing', async () => {
+  const control = selector();
+  const confirmations = [];
+  globalThis.window = { confirm: message => { confirmations.push(message); return false; } };
+  control.i18n.t = (key, values) => key + JSON.stringify(values);
+  const posts = [];
+  control.api.post = async (path, body) => { posts.push({ path, body }); return { console: {} }; };
+  control.bus = { emit() {} };
+  control.toasts = { success() {} };
+  control.refresh = async () => {};
+  await control.deleteWorktree('folder', 'agents/actual');
+  assert.equal(posts.length, 0);
+  assert.match(confirmations[0], /"title":"folder","branch":"agents\/actual"/);
+  window.confirm = () => true;
+  await control.deleteWorktree('folder', 'agents/actual');
+  assert.deepEqual(posts, [{ path: '/git/delete-worktree', body: { title: 'folder', branch: 'agents/actual' } }]);
+  await control.deleteWorktree('folder');
+  assert.deepEqual(posts[1].body, { title: 'folder' });
+});
+
+test('cleanup failure is surfaced without success and refreshes the menu after partial deletion', async () => {
+  const control = selector();
+  globalThis.window = { confirm: () => true };
+  const failure = new Error('Worktree removed, but local branch was kept');
+  control.api.post = async () => { throw failure; };
+  let refreshed = false;
+  let reported;
+  let succeeded = false;
+  control.refresh = async () => { refreshed = true; };
+  control.showError = error => { reported = error; };
+  control.toasts = { success: () => { succeeded = true; } };
+  await control.deleteWorktree('folder', 'agents/actual');
+  assert.equal(reported, failure);
+  assert.equal(succeeded, false);
+  assert.equal(refreshed, true);
+});
+
 test('branch chooser nests the shared worktree entries and their actions instead of opening another menu', () => {
   const control = selector('active');
   const worktreeItems = control.menuItems([{ main: true }, { title: 'active' }, { title: 'other' }]);
@@ -195,9 +249,9 @@ function toolbarButton() {
   return button;
 }
 
-test('one own commit promotes merge instead of push, then restores push after integration', () => {
+test('worktree promotes merge for own commits without promoting unpublished push before or after integration', () => {
   globalThis.document = { createElement: () => ({}) };
-  const panel = new GitPanel({ bus: { on() {} }, i18n: { t: key => key } });
+  const panel = new GitPanel({ api: { worktree: 'feature-tree' }, bus: { on() {} }, i18n: { t: key => key } });
   panel.pushBtn = toolbarButton();
   panel.mergeWorktreeBtn = toolbarButton();
   const render = merge => {
@@ -206,7 +260,8 @@ test('one own commit promotes merge instead of push, then restores push after in
     panel._updateWorktreeMergeButton(status);
   };
   render({ commits: 0 });
-  assert.equal(panel.pushBtn.classList.contains('primary'), true);
+  assert.equal(panel.pushBtn.classList.contains('primary'), false);
+  assert.equal(panel.pushBtn.children.length, 0);
   assert.equal(panel.mergeWorktreeBtn.classList.contains('primary'), false);
   assert.equal(panel.mergeWorktreeBtn.disabled, true);
   render({ commits: 1 });
@@ -220,10 +275,26 @@ test('one own commit promotes merge instead of push, then restores push after in
   assert.match(panel.mergeWorktreeBtn.title, /git\.merge_worktree_main_dirty/);
   assert.match(panel.mergeWorktreeBtn.title, /^git\.merge_worktree_tooltip\n/);
   render({ commits: 0 });
-  assert.equal(panel.pushBtn.classList.contains('primary'), true);
+  assert.equal(panel.pushBtn.classList.contains('primary'), false);
   assert.equal(panel.mergeWorktreeBtn.classList.contains('primary'), false);
   assert.equal(panel.mergeWorktreeBtn.children.length, 0);
   assert.equal(panel.mergeWorktreeBtn.title, 'git.merge_worktree_tooltip\ngit.merge_worktree_empty');
+});
+
+test('unpublished push is promoted only outside worktrees while published ahead branches keep normal promotion', () => {
+  globalThis.document = { createElement: () => ({}) };
+  const panel = new GitPanel({ api: {}, bus: { on() {} }, i18n: { t: key => key } });
+  panel.pushBtn = toolbarButton();
+  panel._updatePushButton({ unpublished: true, ahead: 0 });
+  assert.equal(panel.pushBtn.classList.contains('primary'), true);
+  assert.equal(panel.pushBtn.querySelector().textContent, 'git.push_branch');
+  panel.api.worktree = 'feature-tree';
+  panel._updatePushButton({ unpublished: true, ahead: 2 });
+  assert.equal(panel.pushBtn.classList.contains('primary'), false);
+  assert.equal(panel.pushBtn.children.length, 0);
+  panel._updatePushButton({ unpublished: false, ahead: 2 });
+  assert.equal(panel.pushBtn.classList.contains('primary'), true);
+  assert.equal(panel.pushBtn.querySelector().textContent, 'git.push (2)');
 });
 
 function mergePanel(merge, { confirmed = true, failure = null } = {}) {

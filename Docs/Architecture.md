@@ -277,7 +277,7 @@ All worktree UI shares the Git-enabled repository gate: footer selector, worktre
 | `GET` | `/git/branches?root=` | Lists local/remote branches and current branch. |
 | `GET` | `/git/worktrees?root=` | Lists the main repository and registered linked worktrees with title, path, branch, main/locked/missing flags. |
 | `POST` | `/git/create-worktree` | Creates `{main-repo-path}.worktrees/{title}`, reusing its branch or creating it from HEAD. |
-| `POST` | `/git/delete-worktree` | Removes an inactive, clean, unlocked linked worktree; keeps its branch and never forces removal. |
+| `POST` | `/git/delete-worktree` | Removes an inactive, clean, unlocked linked worktree; optionally accepts its expected `branch` to safely delete that local branch too. Never forces removal. |
 | `POST` | `/git/merge-worktree` | Merges the selected linked worktree's reviewed HEAD into the branch currently checked out in the main repository; never pushes or deletes a worktree. |
 | `POST` | `/git/checkout` | Checks out an existing branch or creates a new branch. |
 | `POST` | `/git/delete-branch` | Deletes one local branch or one remote branch selected in the branch chooser. |
