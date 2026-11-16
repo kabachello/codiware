@@ -1,0 +1,54 @@
+[
+    {
+        "name": "npm-asset/monaco-editor",
+        "version": "0.57.0",
+        "licenses": [
+            {
+                "name": "MIT",
+                "file": "kabachello/codiware/public/monaco/node_modules/monaco-editor/LICENSE"
+            }
+        ],
+        "description": "A browser based code editor",
+        "homepage": "https://github.com/microsoft/monaco-editor"
+    },
+    {
+        "name": "npm-asset/dompurify",
+        "version": "3.4.15",
+        "licenses": [
+            {
+                "name": "MPL-2.0",
+                "file": "kabachello/codiware/public/monaco/node_modules/dompurify/LICENSE-MPL"
+            },
+            {
+                "name": "Apache-2.0",
+                "file": "kabachello/codiware/public/monaco/node_modules/dompurify/LICENSE"
+            }
+        ],
+        "description": "DOM-only XSS sanitizer for HTML, MathML and SVG",
+        "homepage": "https://github.com/cure53/DOMPurify"
+    },
+    {
+        "name": "npm-asset/marked",
+        "version": "14.0.0",
+        "licenses": [
+            {
+                "name": "MIT",
+                "file": "kabachello/codiware/public/monaco/node_modules/marked/LICENSE.md"
+            }
+        ],
+        "description": "A markdown parser built for speed",
+        "homepage": "https://marked.js.org"
+    },
+    {
+        "name": "npm-asset/types--trusted-types",
+        "version": "2.0.7",
+        "licenses": [
+            {
+                "name": "MIT",
+                "file": "kabachello/codiware/public/monaco/node_modules/@types/trusted-types/LICENSE"
+            }
+        ],
+        "description": "TypeScript definitions for trusted-types",
+        "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types"
+    }
+]

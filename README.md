@@ -1,4 +1,4 @@
-# Codiware
+takian # Codiware
 
 A self-contained, embeddable web IDE delivered as a single PSR-15 middleware
 plus a dependency-free SPA. Codiware is designed to be mounted under an
@@ -34,10 +34,10 @@ workbench) and operate on a configurable set of workspace folders.
 composer require axenox/codiware
 ```
 
-The package depends on `npm-asset/*` packages for optional front-end editors.
-The `composer.json` already enables [Asset Packagist](https://asset-packagist.org)
-so `npm-asset/monaco-editor` and friends can be installed alongside PHP
-packages.
+Monaco Editor 0.57.0 is bundled with its prebuilt browser assets; no npm install
+or compilation is required. Other front-end dependencies use `npm-asset/*`
+packages through [Asset Packagist](https://asset-packagist.org), enabled in
+`composer.json`.
 
 ## Mount in a host
 

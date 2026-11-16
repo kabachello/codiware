@@ -20,3 +20,7 @@ IMPORTANT:
 All code required for a typical IDE is either availavle in this package or included in its comoser.json.
 
 The server side is written in modern PHP. The front-end is an SPA in vanilla JavaScript and includes some third-party libraries installed by Composer via "asset-packagist" NPM bridge.
+
+## Bundled dependencies
+
+Keep the root `includes.json` up to date whenever bundled third-party libraries are added, updated or removed, including their shipped transitive dependencies. Use the axenox.PackageManager BOM format with exact bundled versions, Asset-Packagist package names, and `licenses` objects whose `file` paths are relative to the installation's `vendor/` directory (for example `kabachello/codiware/public/monaco/node_modules/monaco-editor/LICENSE`). Verify metadata against the shipped package manifests, preserve upstream license alternatives and notices, and do not duplicate dependencies already managed by Composer unless supplementing missing license metadata.

@@ -195,6 +195,8 @@ Git operations should use `symfony/process` directly with argument arrays. This 
 
 All browser dependencies must be available through Composer, either shipped in this package or installed through Asset Packagist. Runtime CDN loading is avoided.
 
+The root `includes.json` registers bundled third-party packages and their shipped transitive dependencies for the axenox.PackageManager license BOM. Keep exact versions and license metadata synchronized with the shipped manifests; license file paths are relative to the installation's `vendor/` directory. Composer-managed dependencies remain declared in `composer.json` rather than duplicated in this registry.
+
 | Component | License | Purpose |
 |---|---|---|
 | Monaco Editor | MIT | Code editor, diff editor, search/replace, line numbers, go to line, wrapping, JSON/JS/HTML/CSS/SQL support, extensible PHP tokenization/autocomplete |
@@ -205,7 +207,7 @@ All browser dependencies must be available through Composer, either shipped in t
 | Font Awesome 4 | MIT/OFL | Default icon set compatible with ExFace |
 | MDI SVG icons | Apache 2.0 | Supplemental file, Git, and panel icons |
 
-Monaco is loaded through its AMD loader directly from served vendor assets. The asset controller must support Monaco worker URLs and cache headers so the editor works without a build step.
+Monaco Editor 0.57.0 is bundled in `public/monaco/node_modules/monaco-editor/`, including its prebuilt `min/` AMD distribution, declarations and license notices. It is loaded through the shared `public/js/editors/monacoLoader.js`; the host's `INCLUDES.MONACO_JS_BASE` override remains supported. Updating the bundle is a maintainer task; Composer installations require no npm install or build step. The asset controller must support Monaco worker URLs and cache headers.
 
 ## Web API
 

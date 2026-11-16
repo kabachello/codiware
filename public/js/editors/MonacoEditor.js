@@ -6,8 +6,8 @@ import { Icon } from '../core/Icon.js';
 
 /**
  * Monaco-based code editor. Acts as the default editor for any non-binary
- * file. The Monaco distribution is loaded on-demand from the vendor asset
- * folder (`vendor/npm-asset/monaco-editor/min/vs`) using its built-in AMD
+ * file. The Monaco distribution is loaded on-demand from the bundled asset
+ * folder (`public/monaco/node_modules/monaco-editor/min/vs`) using its built-in AMD
  * loader. The loader is registered once per page and reused across tabs.
  *
  * The wrapper exposes the standard Codiware editor contract:
