@@ -36,6 +36,33 @@ final class GitController
         return $this->responses->ok($this->git->status($this->root($request)));
     }
 
+    public function worktrees(ServerRequestInterface $request): ResponseInterface
+    {
+        return $this->responses->ok($this->git->worktrees($this->root($request)));
+    }
+
+    public function createWorktree(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $this->decodeJson($request);
+        return $this->responses->ok($this->git->createWorktree($this->root($request), trim((string)($body['title'] ?? ''))));
+    }
+
+    public function deleteWorktree(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $this->decodeJson($request);
+        return $this->responses->ok($this->git->deleteWorktree($this->root($request), (string)($body['title'] ?? '')));
+    }
+
+    public function mergeWorktree(ServerRequestInterface $request): ResponseInterface
+    {
+        return $this->responses->ok($this->git->mergeWorktree(
+            $this->root($request),
+            $this->decodeJson($request),
+            $this->user->name,
+            $this->user->email
+        ));
+    }
+
     public function diff(ServerRequestInterface $request): ResponseInterface
     {
         $root = $this->root($request);
@@ -346,7 +373,7 @@ final class GitController
         if ($alias === '') {
             throw new CodiwareException('?root= parameter is required.', 'bad_request', 400);
         }
-        return $this->resolver->rootByAlias($alias);
+        return $this->resolver->rootByAlias($alias, (string)($request->getQueryParams()['worktree'] ?? ''));
     }
 
     private function decodeJson(ServerRequestInterface $request): array

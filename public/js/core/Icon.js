@@ -15,6 +15,8 @@
  * remain stable when an icon is intentionally absent).
  */
 export const Icon = {
+  worktree: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2v10h8M2 5h11M10.5 2.5 13 5l-2.5 2.5M10.5 9.5 13 12l-2.5 2.5"/></svg>',
+
   /**
    * @param {string|null|undefined} spec
    * @param {{title?:string, extraClass?:string}} [opts]

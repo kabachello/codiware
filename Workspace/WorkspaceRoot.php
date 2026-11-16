@@ -24,7 +24,8 @@ final class WorkspaceRoot
             'alias' => $this->alias,
             'path' => $this->path,
             'label' => $this->label,
-            'is_git' => is_dir($this->path . DIRECTORY_SEPARATOR . '.git'),
+            'is_git' => is_dir($this->path . DIRECTORY_SEPARATOR . '.git')
+                || is_file($this->path . DIRECTORY_SEPARATOR . '.git'),
         ];
     }
 }

@@ -6,7 +6,7 @@ import { GitToasts } from './GitToasts.js';
 const FETCH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>source-branch-sync</title><path d="M13 14C9.64 14 8.54 15.35 8.18 16.24C9.25 16.7 10 17.76 10 19C10 20.66 8.66 22 7 22S4 20.66 4 19C4 17.69 4.83 16.58 6 16.17V7.83C4.83 7.42 4 6.31 4 5C4 3.34 5.34 2 7 2S10 3.34 10 5C10 6.31 9.17 7.42 8 7.83V13.12C8.88 12.47 10.16 12 12 12C14.67 12 15.56 10.66 15.85 9.77C14.77 9.32 14 8.25 14 7C14 5.34 15.34 4 17 4S20 5.34 20 7C20 8.34 19.12 9.5 17.91 9.86C17.65 11.29 16.68 14 13 14M7 18C6.45 18 6 18.45 6 19S6.45 20 7 20 8 19.55 8 19 7.55 18 7 18M7 4C6.45 4 6 4.45 6 5S6.45 6 7 6 8 5.55 8 5 7.55 4 7 4M17 6C16.45 6 16 6.45 16 7S16.45 8 17 8 18 7.55 18 7 17.55 6 17 6M18 13V14.5C20.21 14.5 22 16.29 22 18.5C22 19.32 21.75 20.08 21.33 20.71L20.24 19.62C20.41 19.28 20.5 18.9 20.5 18.5C20.5 17.12 19.38 16 18 16V17.5L15.75 15.25L15.72 15.22C15.78 15.17 15.85 15.13 18 13M18 24V22.5C15.79 22.5 14 20.71 14 18.5C14 17.68 14.25 16.92 14.67 16.29L15.76 17.38C15.59 17.72 15.5 18.1 15.5 18.5C15.5 19.88 16.62 21 18 21V19.5L20.25 21.75L20.28 21.78C20.22 21.83 20.15 21.87 18 24" /></svg>';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, user = {}, hasGitIdentity = true, initialStatus = null }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, onOpenWorktreeMenu, onCreateWorktree, onOpenMainCheckout, initialError = null, user = {}, hasGitIdentity = true, initialStatus = null }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
@@ -14,6 +14,10 @@ export class GitPanel {
     this.onOpenDiff = onOpenDiff;
     this.onOpenHistory = typeof onOpenHistory === 'function' ? onOpenHistory : () => {};
     this.onOpenFile = typeof onOpenFile === 'function' ? onOpenFile : () => {};
+    this.onOpenWorktreeMenu = onOpenWorktreeMenu;
+    this.onCreateWorktree = onCreateWorktree;
+    this.onOpenMainCheckout = onOpenMainCheckout;
+    this.initialError = initialError;
     this.user = user || {};
     this.hasGitIdentity = Boolean(hasGitIdentity);
     this.filterText = '';
@@ -32,8 +36,13 @@ export class GitPanel {
     this.pushBtn = this._tbBtn('fa fa-cloud-upload', this.i18n.t('git.push'), () => this.push());
     this.pullBtn = this._tbBtn('fa fa-cloud-download', this.i18n.t('git.pull'), () => this.pull());
     this.fetchBtn = this._tbBtn(FETCH_ICON, this.i18n.t('git.fetch_all') || 'Update remote branches and tags', () => this.fetch());
+    this.mergeWorktreeBtn = this.api.worktree
+      ? this._tbBtn('fa fa-compress', this.i18n.t('git.merge_worktree'), () => this.mergeWorktree())
+      : null;
+    if (this.mergeWorktreeBtn) this.mergeWorktreeBtn.disabled = true;
     toolbar.append(
       this._tbBtn('fa fa-refresh', this.i18n.t('actions.refresh'), () => this.refresh()),
+      ...(this.mergeWorktreeBtn ? [this.mergeWorktreeBtn] : []),
       this.pushBtn,
       this.pullBtn,
       this.fetchBtn,
@@ -64,6 +73,15 @@ export class GitPanel {
     this.filterWrap = null;
     this.filterInput = null;
     host.append(toolbar);
+    this.mergeNotice = el('div', 'git-identity-warning');
+    this.mergeNotice.hidden = true;
+    this.mergeNotice.setAttribute('role', 'alert');
+    host.append(this.mergeNotice);
+    if (this.initialError) {
+      const error = el('div', 'git-identity-warning', this.initialError);
+      error.setAttribute('role', 'alert');
+      host.append(error);
+    }
     if (this.identityWarning) host.append(this.identityWarning);
     host.append(this.msg, commitRow, this.body);
 
@@ -120,6 +138,7 @@ export class GitPanel {
     this._lastStatus = status;
     this.bus?.emit?.('git:status-updated', status);
     this._updatePushButton(status);
+    this._updateWorktreeMergeButton(status);
     this._updatePullButton(status);
     this._updateCommitButton(status);
     try {
@@ -141,6 +160,7 @@ export class GitPanel {
       behind: Number(payload.behind || 0),
       unpublished: Boolean(payload.unpublished),
       publish_remote: payload.publish_remote ?? null,
+      worktree_merge: payload.worktree_merge ?? null,
       clean: files.length === 0,
       files,
     };
@@ -151,8 +171,22 @@ export class GitPanel {
     const unpublished = Boolean(status?.unpublished);
     const label = unpublished ? (this.i18n.t('git.push_branch') || 'Push branch') : this.i18n.t('git.push');
     this._updateSyncButton(this.pushBtn, label, unpublished ? 1 : Number(status?.ahead || 0), { showCount: !unpublished });
+    if (Number(status?.worktree_merge?.commits) > 0) this.pushBtn?.classList.remove('primary');
   }
   _updatePullButton(status) { this._updateSyncButton(this.pullBtn, this.i18n.t('git.pull'), Number(status?.behind || 0)); }
+
+  _updateWorktreeMergeButton(status) {
+    if (!this.mergeWorktreeBtn) return;
+    const merge = status?.worktree_merge;
+    const count = Number(merge?.commits || 0);
+    this._updateSyncButton(this.mergeWorktreeBtn, this.i18n.t('git.merge_worktree'), count);
+    this.mergeWorktreeBtn.disabled = Boolean(this._mergingWorktree || !merge || count === 0 || merge.blocked_reason);
+    if (merge?.blocked_reason) {
+      const reason = this.i18n.t(`git.merge_worktree_${merge.blocked_reason}`);
+      this.mergeWorktreeBtn.title = `${this.i18n.t('git.merge_worktree')}: ${reason}`;
+      if (this.mergeNotice?.hidden) this._showMergeNotice(reason);
+    }
+  }
 
   /** Promote push/pull buttons when there is work in that direction. */
   _updateSyncButton(button, baseLabel, count, { showCount = true } = {}) {
@@ -510,6 +544,62 @@ export class GitPanel {
     } catch (e) { this._showGitError(e, 'pull'); }
   }
 
+  async mergeWorktree() {
+    if (this._mergingWorktree) return;
+    this._mergingWorktree = true;
+    if (this.mergeWorktreeBtn) this.mergeWorktreeBtn.disabled = true;
+    try {
+      const status = await this.api.get('/git/status');
+      this._applyStatus(status);
+      const merge = this._lastStatus.worktree_merge;
+      if (!merge || merge.blocked_reason || Number(merge.commits) === 0) {
+        const message = merge?.blocked_reason
+          ? this.i18n.t(`git.merge_worktree_${merge.blocked_reason}`)
+          : this.i18n.t('git.merge_worktree_empty');
+        this._showMergeNotice(message);
+        this.toasts.error(message);
+        return;
+      }
+      if (!window.confirm(this.i18n.t('git.confirm_merge_worktree', {
+        count: merge.commits,
+        source: status.branch || this.api.worktree,
+        target: merge.target_branch,
+      }))) return;
+      const response = await this.api.post('/git/merge-worktree', {
+        source_head: merge.source_head,
+        target_head: merge.target_head,
+        target_branch: merge.target_branch,
+      });
+      this._injectConsole(response);
+      const message = this.i18n.t('git.merged_worktree', { count: response.commits, target: response.branch });
+      this.toasts.success(message);
+      this._showMergeNotice(message);
+      this._emitGitOperation('merge-worktree', response);
+      await this.refresh();
+    } catch (error) {
+      this._showGitError(error, 'merge worktree');
+      const message = error.code === 'worktree_merge_conflicts'
+        ? this.i18n.t('git.merge_worktree_conflicts')
+        : error.details?.reason
+          ? this.i18n.t(`git.merge_worktree_${error.details.reason}`)
+          : error.message;
+      this._showMergeNotice(message);
+      await this.refresh();
+    } finally {
+      this._mergingWorktree = false;
+      this._updateWorktreeMergeButton(this._lastStatus);
+    }
+  }
+
+  _showMergeNotice(message) {
+    if (!this.mergeNotice) return;
+    this.mergeNotice.replaceChildren(document.createTextNode(message + ' '));
+    if (this.onOpenMainCheckout) {
+      this.mergeNotice.append(btn(this.i18n.t('git.open_main_checkout'), () => this.onOpenMainCheckout()));
+    }
+    this.mergeNotice.hidden = false;
+  }
+
   /** Fetch and prune every remote without changing the checked-out branch. */
   async fetch() {
     if (this.fetchBtn?.disabled) return;
@@ -567,6 +657,12 @@ export class GitPanel {
     addGroup(this.i18n.t('git.remote_branches') || 'Remote branches', data?.remotes || [], true);
     if (items.length > 0) items.push({ sep: true });
     items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.create_branch') || 'Create branch', onClick: () => this._promptCreateBranch(current || 'HEAD') });
+    if (this.onOpenWorktreeMenu) {
+      items.push({ icon: Icon.worktree, label: this.i18n.t('git.worktrees'), onClick: () => this.onOpenWorktreeMenu(this.branchButton) });
+    }
+    if (this.onCreateWorktree) {
+      items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.create_worktree'), onClick: () => this.onCreateWorktree() });
+    }
     return items;
   }
 

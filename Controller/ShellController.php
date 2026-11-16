@@ -42,10 +42,29 @@ final class ShellController
             );
         }
         $root = $this->resolver->resolve($workspacePath);
-        $requestedBranch = trim((string)($request->getQueryParams()['branch'] ?? ''));
+        $gitEnabled = (bool)$this->config->get('GIT.ENABLED', true) && $this->git->isRepository($root);
+        $query = $request->getQueryParams();
+        $requestedBranch = $gitEnabled && $this->config->get('GIT.ALLOW_BRANCH_URL_PARAMETER', false)
+            ? trim((string)($query['branch'] ?? '')) : '';
+        $requestedWorktree = (string)($params['worktree'] ?? (
+            $this->config->get('GIT.ALLOW_WORKTREE_URL_PARAMETER', false) ? ($query['worktree'] ?? '') : ''
+        ));
+        $worktree = null;
+        $worktreeError = null;
+        if ($gitEnabled && $requestedWorktree !== '') {
+            try {
+                $root = $this->resolver->rootByAlias($workspacePath, $requestedWorktree);
+                $worktree = $requestedWorktree;
+            } catch (CodiwareException $e) {
+                if (!in_array($e->errorCode, ['worktree_not_found', 'worktree_ambiguous', 'not_a_git_repo'], true)) {
+                    throw $e;
+                }
+                $worktreeError = $e->getMessage();
+            }
+        }
         $branchBootstrap = null;
-        if ($this->git->isRepository($root)) {
-            $branchBootstrap = $this->git->ensureBranch($root, $requestedBranch !== '' ? $requestedBranch : null);
+        if ($gitEnabled) {
+            $branchBootstrap = $this->git->ensureBranch($root, $worktreeError === null && $requestedBranch !== '' ? $requestedBranch : null);
         }
         $extensions = [];
         foreach ($this->config->get('EXTENSIONS.ENABLED', []) as $extId) {
@@ -59,8 +78,10 @@ final class ShellController
             'url_to_npm' => $this->config->get('URL_TO_NPM'),
             'workspace' => $root->toArray(),
             'workspace_path' => $workspacePath,
+            'worktree' => $worktree,
             'requested_branch' => $requestedBranch,
             'git' => [
+                'worktree_error' => $worktreeError,
                 'initial_status' => $branchBootstrap['status'] ?? null,
                 'initial_branch_switch' => [
                     'requested' => $requestedBranch !== '' ? $requestedBranch : null,
@@ -120,7 +141,7 @@ final class ShellController
             return $this->fallbackHtml($boot);
         }
         $template = (string)file_get_contents($shellFile);
-        $json = json_encode($boot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $json = json_encode($boot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR);
         // The marker pair brackets a fallback `null` so the JS is still valid before substitution.
         $out = preg_replace_callback(
             '~/\*__CODIWARE_BOOT__\*/.*?/\*__/CODIWARE_BOOT__\*/~s',

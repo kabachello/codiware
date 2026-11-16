@@ -28,6 +28,7 @@ async function loadAppModules() {
     { TabManager },
     { FileTree },
     { GitPanel },
+    { WorktreeSelector },
     { HistoryPanel },
     { SearchPanel },
     { ConsolePanel },
@@ -50,6 +51,7 @@ async function loadAppModules() {
     import(withCacheBust('./editors/TabManager.js')),
     import(withCacheBust('./files/FileTree.js')),
     import(withCacheBust('./git/GitPanel.js')),
+    import(withCacheBust('./git/WorktreeSelector.js')),
     import(withCacheBust('./git/HistoryPanel.js')),
     import(withCacheBust('./search/SearchPanel.js')),
     import(withCacheBust('./console/ConsolePanel.js')),
@@ -74,6 +76,7 @@ async function loadAppModules() {
     TabManager,
     FileTree,
     GitPanel,
+    WorktreeSelector,
     HistoryPanel,
     SearchPanel,
     ConsolePanel,
@@ -104,6 +107,7 @@ async function main() {
     TabManager,
     FileTree,
     GitPanel,
+    WorktreeSelector,
     HistoryPanel,
     SearchPanel,
     ConsolePanel,
@@ -114,10 +118,15 @@ async function main() {
   const boot = window.CODIWARE_BOOT || {};
   const basePath = (boot.url_to_api || '/codiware').replace(/\/$/, '');
   const workspace = boot.workspace || {};
+  const gitEnabled = boot.features?.git !== false && Boolean(workspace.is_git);
+  const activeWorktree = gitEnabled ? boot.worktree : null;
 
   // Persistent per-user settings (localStorage). Theme is stored globally,
   // i.e. shared across all workspaces; other settings may be stored per repo.
-  const settings = new SettingsStore({ install: basePath, workspace: workspace.alias || '' });
+  const settings = new SettingsStore({
+    install: basePath,
+    workspace: (workspace.alias || '') + (activeWorktree ? `:worktree:${activeWorktree}` : ''),
+  });
 
   // Theme: prefer the user's saved choice, then the boot default, then light.
   const initialTheme = settings.getGlobal('theme') || (boot.theme?.default) || 'light';
@@ -128,7 +137,7 @@ async function main() {
   const state = new StateStore({ workspace });
   const i18n = new I18n();
   const toasts = new Toasts();
-  const api = new ApiClient(basePath, workspace.alias || '');
+  const api = new ApiClient(basePath, workspace.alias || '', activeWorktree);
   const registry = new EditorRegistry();
 
   // Load translations.
@@ -154,7 +163,7 @@ async function main() {
   layout.build();
   ensureBottomLayoutCompatibility(layout);
   ctx.layout = layout;
-  layout.setWorkspaceLabel(workspace.label || workspace.alias || workspace.path || '');
+  layout.setWorkspaceLabel((workspace.label || workspace.alias || workspace.path || '') + (activeWorktree ? ` - ${activeWorktree}` : ''));
   layout.setStatusLeft(workspace.alias || '', 'fa fa-folder-open');
   layout.setStatusRight(`Codiware IDE • ${boot.user?.name || ''}`);
 
@@ -252,7 +261,7 @@ async function main() {
         fileIcons: boot.file_icons || {},
         filterMinChars: boot.files?.filter_min_chars,
         onOpen: (entry) => tabs.open(entry),
-        onOpenBlame: boot.features?.git !== false && workspace.is_git
+        onOpenBlame: gitEnabled
           ? (entry) => tabs.openWithGitBlame(entry)
           : null,
       });
@@ -294,9 +303,14 @@ async function main() {
     }
   });
 
-  if (boot.features?.git !== false && workspace.is_git) {
+  if (gitEnabled) {
     let gitPanel;
     let gitStatusInvalidated = false;
+    const worktrees = new WorktreeSelector({
+      api, i18n, toasts, bus, boot,
+      canSwitch: () => !Array.from(tabs.tabs.values()).some(tab => tab.dirty)
+        || window.confirm(i18n.t('git.confirm_switch_worktree')),
+    });
     const hasGitIdentity = typeof boot.user?.has_git_identity === 'boolean'
       ? boot.user.has_git_identity
       : Boolean((boot.user?.name || '').trim() && (boot.user?.email || '').trim());
@@ -308,6 +322,10 @@ async function main() {
           user: boot.user || {},
           hasGitIdentity,
           initialStatus: gitStatusInvalidated ? null : (boot.git?.initial_status || null),
+          initialError: boot.git?.worktree_error,
+          onOpenWorktreeMenu: (anchor) => worktrees.openMenu(anchor),
+          onCreateWorktree: () => worktrees.createWorktree(),
+          onOpenMainCheckout: () => worktrees.switchTo(null),
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
           onOpenHistory: () => bottomPanels.activate('history', { expand: true }),
           onOpenFile: (entry) => tabs.open(entry),
@@ -327,12 +345,20 @@ async function main() {
       i18n,
       repoName: workspace.alias || workspace.label || workspace.path || 'repo',
       onOpenPanel: () => panels.activate('git'),
-      onOpenBranchMenu: (anchor) => gitPanel?.openBranchMenu(anchor),
+      onOpenBranchMenu: (anchor) => {
+        if (!gitPanel) panels.activate('git');
+        gitPanel?.openBranchMenu(anchor);
+      },
     });
     const statusSep = document.createElement('span');
     statusSep.className = 'ide-status-sep';
     statusSep.textContent = '|';
-    layout.slots.statusLeft.append(statusSep, footerGit.el);
+    layout.slots.statusLeft.append(worktrees.el, statusSep, footerGit.el);
+    const refreshWorktrees = () => {
+      worktrees.refresh().catch(error => worktrees.showError(error));
+    };
+    refreshWorktrees();
+    window.addEventListener('focus', refreshWorktrees);
 
     bus.on('file:saved', () => footerGit.refresh());
     bus.on('files:changed', () => footerGit.refresh());
@@ -395,7 +421,7 @@ async function main() {
   }
 
   // Git history bottom tab (after Console). Contents load lazily on first open.
-  if (boot.features?.git !== false && workspace.is_git) {
+  if (gitEnabled) {
     let historyPanel;
     const historyLabel = i18n.t('history.title');
     bottomPanels.register('history', {
@@ -455,6 +481,7 @@ async function main() {
     openFile: (entry) => tabs.open(entry),
   };
   bus.emit('app:ready');
+  if (gitEnabled && boot.git?.worktree_error) panels.activate('git', { expand: true });
 
   // Reopen the file tabs that were open in the previous session for this
   // workspace. Diff tabs are intentionally not restored.
@@ -560,9 +587,6 @@ function createGitFooterStatus({ api, i18n, repoName, onOpenPanel, onOpenBranchM
   mainBtn.setAttribute('aria-label', i18n.t('git.title'));
   mainBtn.append(Icon.render('fa fa-code-fork'));
 
-  const repoEl = document.createElement('span');
-  repoEl.className = 'ide-status-git-repo';
-  repoEl.textContent = repoName;
   const branchBtn = document.createElement('button');
   branchBtn.type = 'button';
   branchBtn.className = 'ide-status-git-branch';
@@ -579,7 +603,7 @@ function createGitFooterStatus({ api, i18n, repoName, onOpenPanel, onOpenBranchM
   const countsEl = document.createElement('span');
   countsEl.className = 'ide-status-git-counts';
 
-  mainBtn.append(repoEl, branchBtn, aheadBehindEl, countsEl);
+  mainBtn.append(branchBtn, aheadBehindEl, countsEl);
   el.append(refreshBtn, mainBtn);
 
   refreshBtn.addEventListener('click', (event) => {

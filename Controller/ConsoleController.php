@@ -50,7 +50,7 @@ final class ConsoleController
         if ($alias === '') {
             throw new CodiwareException('?root= parameter is required.', 'bad_request', 400);
         }
-        return $this->resolver->rootByAlias($alias);
+        return $this->resolver->rootByAlias($alias, (string)($request->getQueryParams()['worktree'] ?? ''));
     }
 
     private function decodeJson(ServerRequestInterface $request): array

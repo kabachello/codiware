@@ -196,7 +196,7 @@ final class FileController
         if ($alias === '') {
             throw new CodiwareException('?root= parameter is required.', 'bad_request', 400);
         }
-        return $this->resolver->rootByAlias($alias);
+        return $this->resolver->rootByAlias($alias, (string)($request->getQueryParams()['worktree'] ?? ''));
     }
 
     /**

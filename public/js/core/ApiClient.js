@@ -14,9 +14,10 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
-  constructor(basePath, workspaceAlias) {
+  constructor(basePath, workspaceAlias, worktree = null) {
     this.base = basePath.replace(/\/$/, '');
     this.workspace = workspaceAlias;
+    this.worktree = worktree;
     this._requestObserver = null;
     this._inflight = 0;
   }
@@ -40,6 +41,7 @@ export class ApiClient {
   url(path, query = {}) {
     const q = new URLSearchParams();
     if (this.workspace && query.root === undefined) q.set('root', this.workspace);
+    if (this.worktree && query.worktree === undefined) q.set('worktree', this.worktree);
     for (const [k, v] of Object.entries(query)) {
       if (v === undefined || v === null) continue;
       if (Array.isArray(v)) {

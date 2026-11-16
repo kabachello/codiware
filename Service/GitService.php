@@ -38,6 +38,224 @@ final class GitService
             || is_file($root->path . DIRECTORY_SEPARATOR . '.git');
     }
 
+    /** @return array<int,array{title:string,path:string,branch:?string,main:bool,locked:bool,missing:bool}> */
+    public function worktrees(WorkspaceRoot $root): array
+    {
+        $this->requireRepo($root);
+        $records = explode("\0\0", $this->run($root, ['worktree', 'list', '--porcelain', '-z']));
+        $trees = [];
+        foreach ($records as $record) {
+            $fields = [];
+            foreach (explode("\0", $record) as $line) {
+                if ($line === '') {
+                    continue;
+                }
+                [$key, $value] = array_pad(explode(' ', $line, 2), 2, '');
+                $fields[$key] = $value;
+            }
+            if (!isset($fields['worktree'])) {
+                continue;
+            }
+            $path = $fields['worktree'];
+            $trees[] = [
+                'title' => basename(str_replace('\\', '/', $path)),
+                'path' => realpath($path) ?: $path,
+                'branch' => isset($fields['branch']) ? preg_replace('~^refs/heads/~', '', $fields['branch']) : null,
+                'main' => $trees === [],
+                'locked' => isset($fields['locked']),
+                'missing' => !is_dir($path),
+            ];
+        }
+        return $trees;
+    }
+
+    public function worktreeRoot(WorkspaceRoot $root, string $title): WorkspaceRoot
+    {
+        $matches = array_values(array_filter(
+            $this->worktrees($root),
+            static fn (array $tree): bool => !$tree['main'] && $tree['title'] === $title && !$tree['missing']
+        ));
+        if (count($matches) !== 1) {
+            throw new CodiwareException(
+                count($matches) > 1 ? 'Worktree title "' . $title . '" is ambiguous.' : 'Worktree "' . $title . '" was not found.',
+                count($matches) > 1 ? 'worktree_ambiguous' : 'worktree_not_found',
+                404,
+                ['title' => $title]
+            );
+        }
+        return new WorkspaceRoot($root->alias, $matches[0]['path'], $root->label);
+    }
+
+    /** Create beside the main repository; Git reuses a matching branch or creates it from HEAD. */
+    public function createWorktree(WorkspaceRoot $root, string $title): array
+    {
+        if (preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/D', $title) !== 1 || str_ends_with($title, '.')) {
+            throw new CodiwareException('Use a worktree title containing letters, digits, dots, underscores or hyphens, starting with a letter or digit and not ending with a dot.', 'worktree_title_invalid', 400);
+        }
+        $trees = $this->worktrees($root);
+        foreach ($trees as $tree) {
+            if (!$tree['main'] && $tree['title'] === $title) {
+                throw new CodiwareException('A worktree with this title already exists.', 'worktree_exists', 409);
+            }
+        }
+        $path = $trees[0]['path'] . '.worktrees' . DIRECTORY_SEPARATOR . $title;
+        $console = $this->consoleCapture($root, ['worktree', 'add', '--', $path]);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('worktree add', $console);
+        }
+        return ['title' => $title, 'console' => $console];
+    }
+
+    public function deleteWorktree(WorkspaceRoot $root, string $title): array
+    {
+        $target = $this->worktreeRoot($root, $title);
+        if (realpath($target->path) === realpath($root->path)) {
+            throw new CodiwareException('Switch to another worktree before deleting the current worktree.', 'worktree_current', 409);
+        }
+        $console = $this->consoleCapture($root, ['worktree', 'remove', '--', $target->path]);
+        if (!$console['ok']) {
+            throw $this->consoleFailure('worktree remove', $console);
+        }
+        return ['title' => $title, 'console' => $console];
+    }
+
+    /** Commits are compared to the main checkout's HEAD, not to an upstream or a branch named "main". */
+    public function worktreeMergeState(WorkspaceRoot $root): ?array
+    {
+        $main = $this->worktrees($root)[0];
+        if (realpath($main['path']) === realpath($root->path)) {
+            return null;
+        }
+        $target = new WorkspaceRoot($root->alias, $main['path'], $root->label);
+        $sourceHead = trim($this->run($root, ['rev-parse', '--verify', '--quiet', 'HEAD'], expectExit: [0, 1]));
+        $state = [
+            'source_head' => $sourceHead,
+            'target_head' => null,
+            'target_branch' => $main['branch'],
+            'commits' => 0,
+            'blocked_reason' => null,
+        ];
+        if ($main['missing'] || !$this->isRepository($target)) {
+            $state['blocked_reason'] = 'main_missing';
+            return $state;
+        }
+        $targetHead = trim($this->run($target, ['rev-parse', '--verify', '--quiet', 'HEAD'], expectExit: [0, 1]));
+        $state['target_head'] = $targetHead;
+        if ($sourceHead === '' || $targetHead === '') {
+            $state['blocked_reason'] = 'no_head';
+            return $state;
+        }
+        $state['commits'] = (int)trim($this->run($root, ['rev-list', '--count', $targetHead . '..' . $sourceHead]));
+        if ($main['branch'] === null) {
+            $state['blocked_reason'] = 'main_detached';
+        } elseif ($this->hasUnfinishedOperation($target)) {
+            $state['blocked_reason'] = 'main_busy';
+        } elseif (trim($this->run($target, ['status', '--porcelain', '--untracked-files=all'])) !== '') {
+            $state['blocked_reason'] = 'main_dirty';
+        } elseif ($this->hasUnfinishedOperation($root)) {
+            $state['blocked_reason'] = 'source_busy';
+        } elseif ($state['commits'] > 0 && $this->wouldOverwriteIgnoredFiles($target, $targetHead, $sourceHead)) {
+            $state['blocked_reason'] = 'main_ignored';
+        }
+        return $state;
+    }
+
+    public function mergeWorktree(WorkspaceRoot $root, array $expected, ?string $authorName, ?string $authorEmail): array
+    {
+        $state = $this->worktreeMergeState($root);
+        if ($state === null) {
+            throw new CodiwareException('Open a linked worktree before merging into the main checkout.', 'worktree_merge_requires_worktree', 400);
+        }
+        if ($state['blocked_reason'] !== null) {
+            $reasons = [
+                'main_missing' => 'The main checkout is unavailable.',
+                'main_detached' => 'The main checkout is not on a branch. Select a branch there first.',
+                'no_head' => 'Both checkouts need an initial commit before merging.',
+                'main_busy' => 'Finish or abort the unfinished Git operation in the main checkout first.',
+                'main_dirty' => 'The main checkout has uncommitted changes. Commit or discard them there first.',
+                'source_busy' => 'Finish or abort the unfinished Git operation in this worktree first.',
+                'main_ignored' => 'The merge could overwrite ignored local files in the main checkout. Move or back them up there first.',
+            ];
+            throw new CodiwareException(
+                $reasons[$state['blocked_reason']],
+                'worktree_merge_blocked',
+                409,
+                ['reason' => $state['blocked_reason'], 'open_main' => true]
+            );
+        }
+        foreach (['source_head', 'target_head', 'target_branch'] as $key) {
+            if (!isset($expected[$key]) || $expected[$key] !== $state[$key]) {
+                throw new CodiwareException('The source or main checkout changed. Review the updated commits and confirm the merge again.', 'worktree_merge_changed', 409);
+            }
+        }
+        if ($state['commits'] === 0) {
+            throw new CodiwareException('All commits are already present in the main checkout.', 'worktree_merge_empty', 409);
+        }
+        $main = $this->worktrees($root)[0];
+        $target = new WorkspaceRoot($root->alias, $main['path'], $root->label);
+        $env = [];
+        if ($authorName !== null && $authorName !== '' && $authorEmail !== null && $authorEmail !== '') {
+            $env = [
+                'GIT_AUTHOR_NAME' => $authorName,
+                'GIT_AUTHOR_EMAIL' => $authorEmail,
+                'GIT_COMMITTER_NAME' => $authorName,
+                'GIT_COMMITTER_EMAIL' => $authorEmail,
+            ];
+        }
+        $console = $this->consoleCapture($target, ['merge', '--no-edit', '--no-autostash', '--no-overwrite-ignore', $state['source_head']], $env);
+        if (!$console['ok']) {
+            $failure = $this->consoleFailure('merge worktree', $console);
+            $conflicts = trim($this->run($target, ['diff', '--name-only', '--diff-filter=U'])) !== '';
+            throw new CodiwareException(
+                $conflicts
+                    ? 'The merge has conflicts in the main checkout. Open the main checkout to resolve them or abort the merge. Nothing was pushed.'
+                    : 'The merge failed in the main checkout. Open it to review the Git state. Nothing was pushed.',
+                $conflicts ? 'worktree_merge_conflicts' : 'worktree_merge_failed',
+                409,
+                ['console' => $console, 'open_main' => true],
+                $failure
+            );
+        }
+        return [
+            'operation' => 'merge-worktree',
+            'branch' => $state['target_branch'],
+            'commits' => $state['commits'],
+            'console' => $console,
+        ];
+    }
+
+    private function hasUnfinishedOperation(WorkspaceRoot $root): bool
+    {
+        $gitDir = trim($this->run($root, ['rev-parse', '--absolute-git-dir']));
+        foreach (['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_LOG'] as $marker) {
+            if (file_exists($gitDir . DIRECTORY_SEPARATOR . $marker)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function wouldOverwriteIgnoredFiles(WorkspaceRoot $root, string $targetHead, string $sourceHead): bool
+    {
+        $ignored = $this->run($root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']);
+        if ($ignored === '') {
+            return false;
+        }
+        $changed = explode("\0", $this->run($root, ['diff', '--name-only', '-z', $targetHead, $sourceHead]));
+        foreach (explode("\0", $ignored) as $local) {
+            $local = rtrim($local, '/');
+            if ($local === '') {
+                continue;
+            }
+            foreach ($changed as $path) {
+                if ($path !== '' && ($path === $local || str_starts_with($path, $local . '/') || str_starts_with($local, $path . '/'))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private function requireRepo(WorkspaceRoot $root): void
     {
         if (!$this->isRepository($root)) {
@@ -69,7 +287,9 @@ final class GitService
         $this->requireRepo($root);
         // -z separator avoids quoting issues for paths with spaces/utf-8.
         $out = $this->run($root, ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z']);
-        return $this->enrichPublicationState($root, $this->parseStatusV2($out));
+        $status = $this->enrichPublicationState($root, $this->parseStatusV2($out));
+        $status['worktree_merge'] = $this->worktreeMergeState($root);
+        return $status;
     }
 
     /**

@@ -140,6 +140,16 @@ Branch switching in Git should use the same discoverable interaction wherever th
 
 If a branch chooser offers branch-management actions such as `Create branch`, they belong into that same chooser instead of a separate dialog entry point, so users always find branch selection and branch creation in one place.
 
+Worktree switching uses the same footer button classes (`.ide-status-git-branch` and `.ide-status-git-branch-name`) and shared popup controller as branch switching. Show the selector only when linked worktrees exist; include the main repository as a switch target, a submenu per worktree with switch/delete actions, and a create action. Keep main/current/locked/missing deletion actions visible but disabled. Confirm deletion and unsaved editor changes before switching. The branch chooser also exposes worktree management and creation so the first worktree is discoverable when the footer selector is hidden. In a linked worktree, append its title next to the repository name in the top header; do not add a worktree label for the main repository.
+
+The footer order is folder icon and repository name, separator, worktree selector, separator, Git branch controls. Hide the worktree selector and its leading separator together when no linked worktrees exist. Do not repeat the repository name inside the Git branch controls.
+
+Worktree selectors, worktree list entries and the branch chooser's worktree-management entry use the shared `Icon.worktree` SVG: a VS Code-style branching line with two outgoing arrows. It inherits the current text color in both themes; folder icons remain reserved for folders and repository roots.
+
+Hide all worktree controls, worktree header titles and Git/worktree error-panel activation for non-Git workspaces or when Git is disabled. A worktree URL parameter must not add Git UI to a plain folder.
+
+Inside a linked worktree, keep `Merge into main checkout` visible alongside Push and Pull. Use the existing toolbar-button and promoted-label classes, show the number of commits not present in the main checkout, and promote this action instead of Push when the count is positive. Disable it when unsafe or empty and explain the blocking reason in its tooltip. Confirmation names both branches and the commit count and explicitly says nothing will be pushed. Success and failure notices include an `Open main checkout` action; conflict guidance must clearly locate the unfinished merge in the main checkout, not in the worktree.
+
 ### Popup and context menus
 
 Popup menus must use the shared [PopupMenu.js](Components/PopupMenu.md) controller instead of feature-local menu implementations. The shared controller guarantees one active menu tree at a time, consistent icon/label/separator markup, nested submenu support and touch-safe behaviour. Submenus open on mouse hover for desktop users, but on touch or pen input a tap on the parent row only opens the submenu and must never activate the first child action automatically. Popup menus must close predictably again. Clicking or tapping outside, pressing `Esc`, scrolling, resizing or moving the mouse pointer fully away from an open menu tree should dismiss the menu. Nested submenus may stay open only while the pointer remains inside the active menu path.

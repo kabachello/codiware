@@ -115,7 +115,11 @@ The resolved workspace id becomes the namespace for local browser state: opened 
 
 Future multi-root support uses the same resolver. The initial `repo/{workspacePath}` remains the primary workspace; optional secondary roots can be added from the allowed root menu and persisted per primary workspace.
 
-When a Git workspace is opened, the shell also evaluates the optional `?branch=` query parameter before the SPA starts. If the parameter is missing, the current branch is kept as-is. If it is present and differs from the current branch, the server performs the checkout during shell bootstrap and injects both the resulting git status and the checkout console block into the boot payload. This lets external links open a repository directly on a specific branch without forcing the client to do an extra round trip after rendering.
+When a Git workspace is opened, the shell evaluates `?branch=` only when `GIT.ALLOW_BRANCH_URL_PARAMETER` is enabled (default `false`). Otherwise the parameter is ignored and the current branch is kept as-is. If enabled and the requested branch differs from the current branch, the server performs the checkout during shell bootstrap and injects both the resulting Git status and checkout console block into the boot payload.
+
+Likewise, `?worktree={title}` is accepted only when `GIT.ALLOW_WORKTREE_URL_PARAMETER` is enabled (default `false`). The ExFace integration enables both parameters. Worktrees are resolved before branch checkout, so a combined link checks out the branch only in the selected worktree. Titles match directory basenames from `git worktree list --porcelain -z`; ambiguous or missing titles open the configured repository unchanged, suppress branch checkout and activate the Git panel with a persistent error.
+
+Interactive switching uses `/worktrees/{title}/repo/{workspacePath...}` independently of the query-parameter gates. The selector preserves the host-facing workspace alias and removes branch/worktree query parameters during navigation. Every root-scoped API call includes `root={original-alias}&worktree={title}`; `WorkspaceResolver` validates the original allowed root first, then accepts only a registered linked worktree of that repository. `PathGuard` enforces paths inside the selected worktree, not the original repository. The shell's `workspace.path` is the selected directory; browser workspace settings additionally include the worktree title so tab restoration and explorer state do not leak across worktrees. Both `.git` directories and `.git` files mark Git roots.
 
 If the requested branch name is a remote-tracking ref such as `origin/1.x-dev`, the server must not leave the repository in detached HEAD mode. Instead, it resolves that remote ref to the matching local branch name (`1.x-dev`) and checks it out as a tracking branch. The same normalization is used by the interactive branch chooser and by `?branch=` deep links so both entry points behave identically.
 
@@ -212,6 +216,7 @@ All routes are relative to the configured base path, shown here as `/codiware`.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/repo/{workspacePath...}` | Required IDE entry point. Resolves workspace, optionally checks out `?branch=...`, serves SPA shell, injects boot config. |
+| `GET` | `/worktrees/{title}/repo/{workspacePath...}` | Interactive worktree entry; independent of the optional URL query-parameter gates. |
 | `GET` | `/assets/{assetPath...}` | Serves Codiware static files and approved vendor browser assets. |
 
 ### Configuration and Translations
@@ -255,6 +260,8 @@ The default filename of that archive is derived from the workspace alias in the 
 
 Git endpoints are enabled only when the selected root is inside a Git repository. The Git panel is permanently visible for Git roots and hidden or disabled for non-Git roots.
 
+All worktree UI shares the Git-enabled repository gate: footer selector, worktree menus, merge-back controls, header title and worktree-error panel activation. Plain folders, or hosts with `GIT.ENABLED: false`, ignore Git/worktree shell parameters without bootstrapping Git operations or exposing worktree state.
+
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/git/status?root=` | Changed, staged, untracked, conflicted files; branch; upstream, ahead/behind counters and unpublished-branch metadata. |
@@ -268,6 +275,10 @@ Git endpoints are enabled only when the selected root is inside a Git repository
 | `POST` | `/git/push` | Pushes the current branch; local branches without upstream are published via `git push -u <remote> <branch>`. |
 | `POST` | `/git/fetch` | Fetches all remotes and tags and prunes deleted remote-tracking refs without changing the current branch. |
 | `GET` | `/git/branches?root=` | Lists local/remote branches and current branch. |
+| `GET` | `/git/worktrees?root=` | Lists the main repository and registered linked worktrees with title, path, branch, main/locked/missing flags. |
+| `POST` | `/git/create-worktree` | Creates `{main-repo-path}.worktrees/{title}`, reusing its branch or creating it from HEAD. |
+| `POST` | `/git/delete-worktree` | Removes an inactive, clean, unlocked linked worktree; keeps its branch and never forces removal. |
+| `POST` | `/git/merge-worktree` | Merges the selected linked worktree's reviewed HEAD into the branch currently checked out in the main repository; never pushes or deletes a worktree. |
 | `POST` | `/git/checkout` | Checks out an existing branch or creates a new branch. |
 | `POST` | `/git/delete-branch` | Deletes one local branch or one remote branch selected in the branch chooser. |
 | `POST` | `/git/cherry-pick` | Cherry-picks one commit into the current branch. |
@@ -286,6 +297,12 @@ The branch name shown at the top of the Git panel and in the footer status bar a
 Selecting a remote branch from that chooser must attach the user to a real local branch instead of checking out the remote ref verbatim. The back end therefore maps a remote entry like `origin/feature/demo` to the local branch `feature/demo` and performs a tracked checkout. This prevents the UI from falling into detached HEAD after a remote branch was chosen while still preserving the remote name in the menu.
 
 The shared branch chooser also includes a `Create branch` action. It asks for the new branch name and calls `/git/checkout` with `create: true`, optionally passing a `start_point` so the same flow can create branches either from the current `HEAD` or from a commit selected in history. Newly created branches start without an upstream; status marks them as `unpublished`, the Git panel labels the promoted push action `Push branch`, and the first push publishes the branch with `git push -u` so later pushes use the regular `Push` mode again.
+
+The footer additionally shows a shared-popup worktree selector only when linked worktrees exist. It lists the main repository and linked worktrees with switch/delete submenus and a create action. The branch chooser exposes worktree management and creation even before the first worktree exists. The header appends the active worktree title only inside a linked worktree. Switching confirms unsaved editor changes; deletion is confirmed and the main/current/locked/missing entries cannot be removed through the menu. Create/delete operations capture console output using the same success/error conventions as other Git actions. New titles are single path segments containing letters, digits, dots, underscores or hyphens, beginning with a letter or digit and not ending with a dot.
+
+Linked-worktree status includes `worktree_merge` with `commits`, `source_head`, `target_head`, `target_branch` and `blocked_reason`; main-checkout status returns `null`. The count is `git rev-list --count {main-HEAD}..{source-HEAD}`, independent of upstream publication. The Git toolbar always exposes `Merge into main checkout` in a linked worktree and promotes it instead of Push when that count is positive. It is disabled when there is nothing to merge or the destination is unavailable, detached, dirty (including untracked files), or has an unfinished merge/rebase/cherry-pick/revert/bisect operation. Ignored untracked paths are compared against source/destination differences, including file/directory collisions, and block the merge if they could be overwritten; unrelated ignored files do not block it. This preflight is required in addition to Git's `--no-overwrite-ignore` flag because not all merge paths honor that flag consistently. An unfinished operation in the source also blocks it; ordinary uncommitted source edits are not included.
+
+The client reloads status before confirmation, names the actual source/destination and commit count, and sends the reviewed `source_head`, `target_head` and `target_branch` to `/git/merge-worktree`. The server recomputes safety state and rejects a changed snapshot rather than merging unreviewed commits or into a different branch. The operation runs `git merge --no-edit --no-autostash --no-overwrite-ignore {source-head}` in the registered main directory, using the host user identity when available. It supports both fast-forward and real merge commits without rewriting source history and refuses to overwrite ignored local files. Nothing is pushed, discarded, force-merged or deleted. Conflicts return a failed response with captured console output and `open_main: true`, leaving the merge in the main checkout for explicit resolution or abort. A persistent panel notice provides `Open main checkout` after success or failure; navigation retains the usual unsaved-editor confirmation.
 
 The Git toolbar provides an explicit remote-sync action between Pull and History. It runs `git fetch --all --tags --prune`, injects the captured output into the console, refreshes status and any loaded history panel, and therefore updates remote branch tips, tags and deleted remote refs without checking out or merging another branch. Commit details calculate containment across both local and remote-tracking branches so users can see every known branch containing a selected commit.
 
@@ -622,6 +639,8 @@ Config keys are normalized to uppercase. Nested JSON objects are flattened to do
   "THEME.ALLOW_USER_OVERRIDE": true,
   "THEME.SKIN": null,
   "GIT.ENABLED": true,
+  "GIT.ALLOW_BRANCH_URL_PARAMETER": false,
+  "GIT.ALLOW_WORKTREE_URL_PARAMETER": false,
   "GIT.AUTHOR_NAME": null,
   "GIT.AUTHOR_EMAIL": null,
   "GIT.DEFAULT_HISTORY_LIMIT": 100,

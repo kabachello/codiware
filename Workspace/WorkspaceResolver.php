@@ -5,6 +5,8 @@ namespace kabachello\Codiware\Workspace;
 
 use kabachello\Codiware\Middleware\CodiwareConfig;
 use kabachello\Codiware\Exception\CodiwareException;
+use kabachello\Codiware\Service\GitService;
+use Psr\Log\NullLogger;
 
 /**
  * Resolves `repo/{workspacePath}` URLs to a concrete, allowed workspace root and
@@ -23,8 +25,11 @@ use kabachello\Codiware\Exception\CodiwareException;
  */
 final class WorkspaceResolver
 {
-    public function __construct(private readonly CodiwareConfig $config)
+    private readonly GitService $git;
+
+    public function __construct(private readonly CodiwareConfig $config, ?GitService $git = null)
     {
+        $this->git = $git ?? new GitService($config, new NullLogger());
     }
 
     /**
@@ -109,9 +114,10 @@ final class WorkspaceResolver
      *
      * @throws CodiwareException When the alias is unknown or no longer resolvable.
      */
-    public function rootByAlias(string $alias): WorkspaceRoot
+    public function rootByAlias(string $alias, ?string $worktree = null): WorkspaceRoot
     {
-        return $this->resolve($alias);
+        $root = $this->resolve($alias);
+        return $worktree !== null && $worktree !== '' ? $this->git->worktreeRoot($root, $worktree) : $root;
     }
 
     private function absolutize(string $path, ?string $baseFolder): string

@@ -13,7 +13,7 @@ workbench) and operate on a configurable set of workspace folders.
 - Cropper.js image editing with crop, exact pixel resizing, aspect lock,
   zoom/fit, undo/redo and reset, installed through Asset Packagist without a build step
 - Git source-control panel (status, stage / unstage / discard, commit, amend,
-  push, branches, history) over the local `git` CLI
+  push, branches, worktrees, history) over the local `git` CLI
 - Workspace-wide search and search-and-replace with regex / case options
 - In-IDE console with a deny-by-default allowlist + operator-curated presets
 - Light/dark themes via CSS custom properties; per-locale translations
@@ -65,6 +65,29 @@ unchanged to the next handler.
 payload describing the requested workspace, user, theme, locale, and enabled
 extensions. All subsequent API calls go to other `{basePath}/...` routes.
 
+Optional `?branch=...` and `?worktree=...` deep links are disabled by default.
+Enable `GIT.ALLOW_BRANCH_URL_PARAMETER` and `GIT.ALLOW_WORKTREE_URL_PARAMETER`
+independently to accept them (the ExFace integration enables both). Worktrees
+are matched by directory title among the repository's registered linked
+worktrees. If the requested worktree is missing or ambiguous, the regular
+repository opens unchanged with an error in the active Git panel.
+
+The footer worktree selector appears when linked worktrees exist. Its menu
+switches between them and the main repository, creates worktrees, and deletes
+inactive, clean, unlocked worktrees without deleting their branches. Create
+the first worktree from the branch chooser's **Create worktree** action.
+New worktrees live at `{main-repo-path}.worktrees/{title}`; Git reuses a branch
+with that title or creates it from the current HEAD. Switching confirms
+unsaved editor changes and keeps tab restoration separate for each worktree.
+
+Inside a worktree, the Git toolbar offers **Merge into main checkout**. It
+becomes primary instead of Push when the worktree has commits not yet in the
+main checkout. Confirmation names the main checkout's current branch and the
+commit count. Only committed changes are merged; nothing is pushed or deleted.
+Dirty, detached or busy main checkouts are blocked. If conflicts occur, the
+panel points to the main checkout with an **Open main checkout** action so the
+merge can be resolved or aborted there.
+
 ## Configuration
 
 Defaults are shipped in `config/defaults.config.json`.
@@ -98,6 +121,8 @@ Key options:
 | `DENY_PATTERNS` | `fnmatch` patterns rejected by `PathGuard`. |
 | `MAX_UPLOAD_BYTES` | Per-file upload limit. |
 | `GIT.BINARY` | Path to the `git` executable. |
+| `GIT.ALLOW_BRANCH_URL_PARAMETER` | Accept `?branch=` on IDE entry URLs (default `false`). |
+| `GIT.ALLOW_WORKTREE_URL_PARAMETER` | Accept `?worktree=` on IDE entry URLs (default `false`). |
 | `CONSOLE.ALLOW_PATTERNS` | Regex allowlist for raw console commands. |
 | `CONSOLE.PRESETS` | `[{label, command}]` shortcuts always allowed. |
 | `THEME.DEFAULT` | `light` or `dark`. |
@@ -147,6 +172,17 @@ Focused image and save-lifecycle tests run with:
 ```bash
 node --test Tests/image-editor.test.mjs Tests/save-queue.test.mjs
 ```
+
+Worktree tests use isolated temporary Git repositories and do not touch the
+current checkout:
+
+```bash
+node --test Tests/worktrees.test.mjs
+php Tests/worktrees.test.php
+```
+
+For a worktree without its own `vendor/` directory, pass the host Composer
+autoload file as the first argument to the PHP test.
 
 The Markdown editor uses Markian, installed through `axenox/markian`. Its built-in
 Codiware theme matches the IDE's colors, square frame, document spacing, and

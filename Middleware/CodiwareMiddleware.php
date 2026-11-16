@@ -74,7 +74,7 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $this->user = $userContext ?? new UserContext();
         $this->basePath = $this->normalizeBasePath($basePath ?? $config->basePath());
 
-        $this->workspaces = new WorkspaceResolver($config);
+        $this->workspaces = new WorkspaceResolver($config, new GitService($config, $this->logger));
         $this->pathGuard = new PathGuard($config);
 
         $this->router = new Router();
@@ -157,6 +157,7 @@ final class CodiwareMiddleware implements MiddlewareInterface
 
         // Shell + assets
         $this->router->get('/repo/{workspacePath*}', [$shell, 'open']);
+        $this->router->get('/worktrees/{worktree}/repo/{workspacePath*}', [$shell, 'open']);
         $this->router->get('/assets/{assetPath*}', [$assets, 'serve']);
 
         // Config + translations
@@ -189,6 +190,10 @@ final class CodiwareMiddleware implements MiddlewareInterface
         $this->router->post('/git/pull', [$git, 'pull']);
         $this->router->post('/git/fetch', [$git, 'fetch']);
         $this->router->get('/git/branches', [$git, 'branches']);
+        $this->router->get('/git/worktrees', [$git, 'worktrees']);
+        $this->router->post('/git/create-worktree', [$git, 'createWorktree']);
+        $this->router->post('/git/delete-worktree', [$git, 'deleteWorktree']);
+        $this->router->post('/git/merge-worktree', [$git, 'mergeWorktree']);
         $this->router->post('/git/checkout', [$git, 'checkout']);
         $this->router->post('/git/delete-branch', [$git, 'deleteBranch']);
         $this->router->post('/git/cherry-pick', [$git, 'cherryPick']);
