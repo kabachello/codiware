@@ -108,6 +108,108 @@ textarea { font-family: var(--ide-font-mono); }
   margin: 0 4px;
   background: var(--ide-border);
 }
+.ide-merge-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ide-bg);
+}
+.ide-merge-editor .ide-editor-toolbar {
+  gap: 6px;
+  padding: 4px;
+  height: auto;
+  min-height: var(--ide-editor-toolbar-height);
+  flex-basis: auto;
+}
+.ide-merge-editor .ide-editor-toolbar > button:not(.ide-editor-tool) {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: var(--ide-fs-sm);
+}
+.ide-merge-status {
+  flex: 1;
+  min-width: 160px;
+  font-size: var(--ide-fs-sm);
+}
+.ide-merge-help {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ide-border);
+  color: var(--ide-fg-muted);
+  font-size: var(--ide-fs-sm);
+}
+.ide-merge-inputs {
+  display: flex;
+  flex: 0 0 42%;
+  min-height: 100px;
+  min-width: 0;
+  overflow: hidden;
+}
+.ide-merge-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.ide-merge-pane[hidden] { display: none; }
+.ide-merge-inputs > .ide-merge-pane + .ide-merge-pane { border-left: 1px solid var(--ide-border); }
+.ide-merge-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--ide-border);
+  background: var(--ide-sidebar-bg);
+  font-size: var(--ide-fs-sm);
+}
+.ide-merge-pane-header > div { min-width: 0; }
+.ide-merge-inputs .ide-merge-pane-header { min-height: 64px; }
+.ide-merge-pane-header > button { flex-shrink: 0; padding: 2px 6px; font-size: inherit; }
+.ide-merge-pane-hint { display: block; color: var(--ide-fg-muted); font-weight: normal; font-size: 11px; }
+.ide-merge-ours .ide-merge-pane-header { border-top: 3px solid var(--ide-merge-ours); }
+.ide-merge-theirs .ide-merge-pane-header { border-top: 3px solid var(--ide-accent); }
+.ide-merge-result .ide-merge-pane-header { border-top: 3px solid var(--ide-merge-conflict); }
+.ide-merge-code { position: relative; flex: 1; min-height: 0; min-width: 0; }
+.ide-merge-splitter { flex: 0 0 var(--ide-splitter); cursor: row-resize; }
+.ide-merge-splitter:focus-visible { outline: 1px solid var(--ide-accent); outline-offset: -1px; }
+.ide-merge-delete { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ide-merge-conflict-actions {
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+  color: var(--ide-fg);
+  background: var(--ide-sidebar-bg);
+  border-block: 1px solid var(--ide-border);
+  font: var(--ide-fs-sm) var(--ide-font);
+}
+.ide-merge-conflict-actions button { padding: 1px 5px; font-size: 12px; }
+.ide-merge-conflict-line { background: color-mix(in srgb, var(--ide-merge-conflict) 12%, transparent); }
+.ide-merge-conflict-gutter { border-left: 3px solid var(--ide-merge-conflict); }
+.ide-merge-source-line { background: color-mix(in srgb, var(--ide-accent) 10%, transparent); }
+.ide-merge-source-gutter { border-left: 3px solid var(--ide-accent); }
+.ide-merge-ours .ide-merge-source-line { background: color-mix(in srgb, var(--ide-merge-ours) 12%, transparent); }
+.ide-merge-ours .ide-merge-source-gutter { border-left-color: var(--ide-merge-ours); }
+.ide-merge-resolve-toolbar[hidden] { display: none; }
+.ide-merge-resolve-toolbar button[hidden] { display: none; }
+.ide-merge-resolve-toolbar select { font-size: var(--ide-fs-sm); padding: 1px 4px; }
+.ide-merge-editor.is-deleted .ide-merge-result .ide-merge-code { opacity: 0.45; }
+.ide-merge-editor.is-busy .ide-merge-conflict-actions { pointer-events: none; opacity: 0.55; }
+@media (max-width: 700px) {
+  .ide-merge-inputs { overflow-x: auto; }
+  .ide-merge-inputs > .ide-merge-pane { flex: 1 0 260px; }
+  .ide-merge-pane-header { flex-wrap: wrap; }
+  .ide-merge-help { max-height: 90px; overflow-y: auto; }
+}
 .codiware-image-editor {
   display: flex;
   flex-direction: column;
@@ -1078,6 +1180,9 @@ textarea { font-family: var(--ide-font-mono); }
 .git-identity-warning[hidden] {
   display: none;
 }
+.git-operation-notice { flex-wrap: wrap; }
+.git-operation-notice > span:not(.ide-icon) { flex: 1 1 160px; }
+.git-operation-notice > button { margin-left: auto; }
 
 .git-filter {
   margin: 6px 0 2px;

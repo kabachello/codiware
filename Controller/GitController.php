@@ -78,6 +78,34 @@ final class GitController
         return $this->responses->ok($this->git->diff($root, $path, $staged));
     }
 
+    public function conflict(ServerRequestInterface $request): ResponseInterface
+    {
+        $path = (string)($request->getQueryParams()['path'] ?? '');
+        if ($path === '') {
+            throw new CodiwareException('path is required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->conflict($this->root($request), $path));
+    }
+
+    public function saveConflict(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $this->decodeJson($request);
+        foreach (['path', 'content', 'token'] as $field) {
+            if (!isset($body[$field]) || !is_string($body[$field]) || ($field !== 'content' && $body[$field] === '')) {
+                throw new CodiwareException($field . ' must be a ' . ($field === 'content' ? '' : 'non-empty ') . 'string.', 'bad_request', 400);
+            }
+        }
+        foreach (['complete', 'deleted'] as $field) {
+            if (array_key_exists($field, $body) && !is_bool($body[$field])) {
+                throw new CodiwareException($field . ' must be a boolean.', 'bad_request', 400);
+            }
+        }
+        return $this->responses->ok($this->git->saveConflict(
+            $this->root($request), $body['path'], $body['content'], $body['token'],
+            $body['complete'] ?? false, $body['deleted'] ?? false
+        ));
+    }
+
     /** Return per-line attribution for a workspace text file. */
     public function blame(ServerRequestInterface $request): ResponseInterface
     {
@@ -132,6 +160,20 @@ final class GitController
         $body = $this->decodeJson($request);
         $message = (string)($body['message'] ?? '');
         return $this->responses->ok($this->git->commit($root, $message, $this->user->name, $this->user->email, amend: true));
+    }
+
+    public function finishOperation(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $this->decodeJson($request);
+        if (!isset($body['token']) || !is_string($body['token']) || $body['token'] === ''
+            || !isset($body['abort']) || !is_bool($body['abort'])
+            || (isset($body['message']) && !is_string($body['message']))) {
+            throw new CodiwareException('token, boolean abort and an optional message string are required.', 'bad_request', 400);
+        }
+        return $this->responses->ok($this->git->finishOperation(
+            $this->root($request), $body['token'], $body['abort'], $body['message'] ?? '',
+            $this->user->name, $this->user->email
+        ));
     }
 
     public function push(ServerRequestInterface $request): ResponseInterface

@@ -98,6 +98,15 @@ List item names and tooltips are only tranlatable if the item represents a funct
 
 Flat file-change lists in the Git panel should visually follow the same row language as the commit-details file list in Git history: status indicator on the left, filename in the middle, inline actions on the right.
 
+Conflicts occupy a separate first **Merge conflicts** group, with a warning icon
+in its heading and an exclamation badge with a plain-language tooltip on each row.
+Do not communicate conflicts through color or the Git-only abbreviation "U" alone.
+Merge and cherry-pick operation warnings reuse `.git-identity-warning` with the
+shared `.git-operation-notice` modifier for wrapping text and an explicit abort
+button. They remain visible while file lists are filtered and change to completion
+guidance once conflicts are staged. Promote the appropriate Commit action only
+after resolution, and remove competing sync-button promotion until completion.
+
 Commit rows in Git history follow the same context-menu rule as other actionable lists: right-clicking a row opens the same action set that is available from the inline three-dot button in the details pane, and nested actions such as reset-mode selection should use a submenu instead of separate dialogs when that keeps the available choices visible.
 
 Changed-file rows in the Git history details pane follow the same rule as changed-file rows in the main Git panel: the inline three-dot menu and the right-click menu must expose the same item-level actions.
@@ -155,6 +164,43 @@ Each block should:
 * end with a visible closing separator or spacing before the next prompt
 
 Separators may use terminal box-drawing characters or similar text-based markers because the console itself is terminal-rendered. The separation must not rely on color only.
+
+## Merge editor
+
+Conflicted Git files open a VS Code-style three-way layout: two read-only inputs
+above the editable **Result**, separated by the shared draggable splitter. The
+splitter also supports arrow-key resizing. Keep **Current (ours)** and **Incoming
+(theirs)** visible as text, with short explanations rather than relying on Git
+terminology or colors. During rebase, explain that ours is the onto-branch plus
+already replayed commits, while theirs is the user's commit being replayed.
+The optional **Base (common ancestor)** pane is read-only.
+Append the matching conflict-marker label to each source title, for example
+**Current (ours), HEAD** and **Incoming (theirs), a1b2c3d4**. Shorten long hash
+prefixes to eight characters and retain the full label in the title tooltip.
+Keep these labels visible after resolving the result's marker blocks.
+
+Use the shared `.ide-editor-toolbar`, `.ide-editor-tool`, theme surfaces and focus
+states. Merge-specific `.ide-merge-*` classes own pane layout and conflict actions.
+Source headers and gutters distinguish ours with `--ide-merge-ours`, theirs with
+`--ide-accent`, and unresolved result blocks with `--ide-merge-conflict`. Textual
+conflict numbers and markers must remain visible; color alone is insufficient.
+
+Each result conflict has inline **Accept ours**, **Accept theirs**, and **Accept
+both (ours first)** choices. Offer **Accept base** only when markers include a
+base section. Mirror these choices in a keyboard-accessible toolbar with a
+conflict selector outside Monaco's accessibility-hidden view zones. Previous/next
+buttons navigate unresolved blocks. Preserve automatic changes outside the chosen
+block and make choices undoable. Whole-file replacement requires confirmation.
+
+Distinguish a missing side from an empty file. Show a clear missing-side hint and
+an explicit **Delete file in result** checkbox. **Save** preserves progress without
+staging. **Complete merge** saves and stages only this file, does not commit, and
+is disabled while markers remain (unless deletion is selected). Explain the next
+step after completion. Completing the active merge file automatically opens the
+next unresolved file in Git path order, wrapping to the first if needed. When
+none remain, keep the completed result visible with the panel's Commit guidance.
+Do not steal focus if the user switches tabs while saving. Narrow viewports keep source panes horizontally scrollable
+and toolbar actions reachable rather than compressing the code into unusable columns.
 
 ## Editor tabs
 

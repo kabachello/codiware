@@ -8,8 +8,50 @@ The panel always show the current git status:
 
 - Current branch
 - Modified, untracked, deleted and staged files
+- A separate **Merge conflicts** group, before Staged/Changes/Untracked
+
+Conflicted files appear only in **Merge conflicts**, with an exclamation badge
+and a conflict tooltip. The group has no bulk stage/discard shortcuts; each row
+offers the merge editor rather than accidentally staging unresolved markers.
+Filtering applies to this group too, but never hides the operation warning.
+
+An unfinished merge or cherry-pick displays a persistent warning above the commit
+message. While conflicts remain, it explains how to resolve them and provides
+**Abort merge** or **Abort cherry-pick**. Abort requires confirmation explaining
+that resolutions and merge-editor drafts will be lost; a cherry-pick sequence is
+restored to its starting point. Git's native abort command is used and failures
+are shown rather than falling back to destructive resets.
+
+After the final conflict is resolved and staged, the warning becomes next-step
+guidance and **Commit merge** or **Commit cherry-pick** is highlighted, including
+when the chosen merge result is identical to HEAD. Commit and Amend are disabled
+while conflicts remain, and Amend stays disabled until the operation finishes.
+Push/Pull/Merge worktree lose their promoted styling while resolution or completion
+is the next step. The merge message is prefilled and editable. Cherry-pick shows
+the original message read-only and uses Git's continue command to retain authorship
+and finish or advance a sequence. Aborting closes merge-editor drafts and affected
+diff/clean file tabs; dirty regular-editor tabs remain available for review.
 
 Each changed-file menu offers a download action for the current working-tree version, allowing users to make a local backup before staging or discarding it. The action is disabled for deleted files because they no longer have a downloadable working-tree version.
+
+Clicking a conflicted filename opens the three-way merge editor automatically;
+the inline and right-click menus expose the same **Open merge editor** action.
+**Open in regular editor** remains available. The merge editor labels the source
+panes **Current (ours)** and **Incoming (theirs)**, explains both in plain language,
+and shows their common ancestor on demand. Rebase conflicts use explicit rebase
+explanations because Git's ours/theirs roles can otherwise feel reversed.
+
+Choose ours, theirs, both, or edit the result manually. **Save** keeps progress
+without marking the file resolved. **Complete merge** saves and stages that file
+only, then opens the next unresolved file automatically (wrapping in Git path
+order). After the last file, the completed result stays visible and the panel
+guides completion of the Git operation. Source titles include the corresponding
+marker labels, such as **Current (ours), HEAD** and **Incoming (theirs), a1b2c3d4**.
+Finish the commit, rebase, or cherry-pick separately. Missing-file conflicts
+allow an explicit deletion result. Binary/non-UTF-8, symbolic-link and submodule
+conflicts show an explanatory error instead of opening a text editor that could
+damage them. If a file or its conflict stages change externally, saving is refused;
+keep a copy of the result and reopen the editor to review the new state.
 
 There are also buttons for most common commands. The most probable next command button is highlighted.
 

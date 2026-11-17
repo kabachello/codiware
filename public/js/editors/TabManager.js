@@ -331,19 +331,23 @@ export class TabManager {
     if (record.entry.fragment) record.editor.navigate?.(record.entry.fragment);
   }
 
-  async save(key) {
+  async save(key, { completeMerge = false } = {}) {
     const record = this.tabs.get(key);
     if (!record) return;
     const editor = record.editor;
     const path = record.entry.path;
     const resource = `${this.api.workspace || ''}/${path}`;
     const current = () => this.tabs.get(key) === record && record.editor === editor && record.entry.path === path;
+    let completedMerge = false;
     try {
       await this.saveQueue.request(resource, {
         prepare: async () => {
           if (!current()) return null;
+          if (record.isMerge && [...this.tabs.values()].some(other => other !== record && other.entry.path === path && other.dirty)) {
+            throw new Error(this.i18n.t('merge.other_dirty'));
+          }
           const failed = this.failedSaves.get(resource);
-          if (failed) {
+          if (failed && !record.isMerge) {
             const remote = await this.api.get('/files/read', { path });
             if (remote?.binary || (remote.content !== failed.content && remote.content !== failed.baseline)) {
               throw new Error('The previous save has an uncertain outcome. Compare or reload the remote file before saving again.');
@@ -354,11 +358,12 @@ export class TabManager {
           if (!current()) return null;
           const payload = editor.getSavePayload?.() ?? { content: editor.getContent?.(), encoding: 'utf8' };
           if (payload.content == null) return null;
-          return Object.freeze({ ...payload, path, editor, baseline: record.savedContent, revision: editor.revision });
+          return Object.freeze({ ...payload, path, editor, baseline: record.savedContent, revision: editor.revision, completeMerge });
         },
         write: async snapshot => {
           try {
-            await this.api.put('/files/write', { path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding || 'utf8' });
+            if (record.isMerge) await editor.saveSnapshot(snapshot);
+            else await this.api.put('/files/write', { path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding || 'utf8' });
           } catch (error) {
             this.failedSaves.set(resource, snapshot);
             throw error;
@@ -367,17 +372,32 @@ export class TabManager {
         acknowledge: snapshot => {
           if (!current()) return;
           record.savedContent = snapshot.content;
+          this.failedSaves.delete(resource);
           editor.markClean?.(snapshot);
           record.dirty = editor.isDirty();
           record.tabEl.classList.toggle('dirty', record.dirty);
           if (record.dirtyBtn) record.dirtyBtn.style.display = record.dirty ? '' : 'none';
-          this.toasts.success(this.i18n.t('actions.save'));
+          this.toasts.success(this.i18n.t(record.isMerge && snapshot.completeMerge ? 'merge.resolved' : 'actions.save'));
           this.bus.emit('file:saved', record);
+          if (record.isMerge) this.bus.emit('files:changed', { action: 'git-merge', path });
+          if (record.isMerge && snapshot.completeMerge) completedMerge = true;
         },
       });
+      if (completedMerge && current() && this.active === key) await this._advanceMerge(key, path);
     } catch (e) {
       this.toasts.error(e.message);
     }
+  }
+
+  async _advanceMerge(key, path) {
+    const status = await this.api.get('/git/status');
+    if (this.active !== key || !this.tabs.has(key)) return;
+    const conflicts = status.files.filter(file => file.conflict && file.path !== path);
+    const next = conflicts.find(file => file.path > path) || conflicts[0];
+    if (!next) return;
+    const mergeData = await this.api.get('/git/conflict', { path: next.path });
+    if (this.active !== key || !this.tabs.has(key)) return;
+    this.openDiff({ path: next.path, mergeData });
   }
 
   _bindTabInteractions(tabEl, key) {
@@ -801,20 +821,32 @@ export class TabManager {
     }
   }
 
+  closeAbortedOperation(paths) {
+    for (const [key, record] of this.tabs) {
+      if (record.isMerge || (paths.includes(record.entry.path) && (record.isDiff || !record.dirty))) {
+        this._closeRecord(key, { skipPrompt: true });
+      }
+    }
+  }
+
   /**
    * Open a diff view for a file. Used by the git panel to show changes.
    * @param {Object} options - { path: string, staged: boolean, diffData: { old: string, new: string, type?: string }, key?: string, label?: string, readOnly?: boolean }
    */
-  openDiff({ path, staged, diffData, key: customKey, label: customLabel, readOnly = false }) {
+  openDiff({ path, staged, diffData, mergeData, key: customKey, label: customLabel, readOnly = false }) {
     // Use a unique key that distinguishes staged vs working-copy diffs.
-    const key = customKey || `diff:${staged ? 'staged' : 'working'}:${path}`;
+    const key = customKey || (mergeData ? `merge:${path}` : `diff:${staged ? 'staged' : 'working'}:${path}`);
     if (this.tabs.has(key)) {
+      const record = this.tabs.get(key);
+      if (mergeData && !record.dirty && !this.saveQueue.resources.has(`${this.api.workspace || ''}/${path}`)) {
+        record.editor.load({ ...mergeData, path });
+      }
       this.activate(key);
       return;
     }
 
     const isImageDiff = diffData?.type === 'image';
-    const descriptorId = isImageDiff ? 'codiware.diffImage' : 'codiware.diff';
+    const descriptorId = mergeData ? 'codiware.merge' : isImageDiff ? 'codiware.diffImage' : 'codiware.diff';
     const descriptor = this.registry.getById(descriptorId);
     if (!descriptor) {
       this.toasts.error(isImageDiff ? 'Image diff editor not available' : 'Diff editor not available');
@@ -826,8 +858,8 @@ export class TabManager {
     tabEl.className = 'ide-tab';
     tabEl.draggable = true;
     const fileName = path.split('/').pop();
-    const label = customLabel || (staged ? `${fileName} (Staged)` : `${fileName} (Working)`);
-    tabEl.title = `Diff: ${path}`;
+    const label = customLabel || (mergeData ? this.i18n.t('merge.tab', { path: fileName }) : staged ? `${fileName} (Staged)` : `${fileName} (Working)`);
+    tabEl.title = mergeData ? this.i18n.t('merge.tab', { path }) : `Diff: ${path}`;
     const name = document.createElement('span');
     name.className = 'ide-tab-name';
     name.textContent = label;
@@ -859,7 +891,7 @@ export class TabManager {
     this.host.appendChild(editorHost);
 
     const editor = descriptor.create(editorHost, this.ctx);
-    const record = { key, entry: { path }, tabEl, editorHost, editor, descriptor, dirty: false, isDiff: true, dirtyBtn, pinBtn, pinned: false };
+    const record = { key, entry: { path }, tabEl, editorHost, editor, descriptor, dirty: false, isDiff: true, isMerge: Boolean(mergeData), dirtyBtn, pinBtn, pinned: false };
 
     // Listen for changes and save requests
     if (typeof editor.on === 'function') {
@@ -870,6 +902,7 @@ export class TabManager {
         this._scheduleOverflowUpdate();
       });
       editor.on('save-request', () => this.save(key));
+      if (mergeData) editor.on('complete-request', () => this.save(key, { completeMerge: true }));
     }
 
     this.tabs.set(key, record);
@@ -878,7 +911,9 @@ export class TabManager {
 
     // Load the diff data. Image diff payloads are already JSON-safe data URLs;
     // text diff payloads keep the Monaco `original`/`modified` contract.
-    if (isImageDiff) {
+    if (mergeData) {
+      editor.load({ ...mergeData, path });
+    } else if (isImageDiff) {
       editor.load({ ...diffData, path, staged, readOnly });
     } else {
       editor.load({

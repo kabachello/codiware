@@ -266,13 +266,16 @@ All worktree UI shares the Git-enabled repository gate: footer selector, worktre
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/git/status?root=` | Changed, staged, untracked, conflicted files; branch; upstream, ahead/behind counters and unpublished-branch metadata. |
+| `GET` | `/git/status?root=` | Changed, staged, untracked, conflicted files; branch; upstream, ahead/behind counters, unpublished-branch metadata and pending merge/cherry-pick `operation`. |
 | `GET` | `/git/diff?root=&path=&staged=` | Returns old/new content and diff metadata for Monaco diff editor. |
+| `GET` | `/git/conflict?root=&path=` | Returns base/ours/theirs from unmerged index stages 1/2/3, the working result, missing-side flags, rebase context and a snapshot token. |
+| `PUT` | `/git/conflict?root=` | Saves `{path, content, token, deleted?, complete?}`. Saving retains unmerged stages; explicit completion stages only this path and never commits or continues an operation. |
 | `GET` | `/git/blame?root=&path=` | Returns the last committed author, time and commit metadata for every line of a validated text file. |
 | `POST` | `/git/discard` | Discards one or more files. Later supports optional hunk-level discard. |
 | `POST` | `/git/stage` | Stages one or more files. |
 | `POST` | `/git/unstage` | Unstages one or more files. |
 | `POST` | `/git/commit` | Commits staged changes with message and configured author name/email. |
+| `POST` | `/git/finish-operation` | Accepts `{token, abort, message?}` to abort or finish the reviewed merge/cherry-pick in the selected checkout. Refuses stale operation tokens and continuation with unresolved index entries. |
 | `POST` | `/git/amend` | Amends the last commit. |
 | `POST` | `/git/push` | Pushes the current branch; local branches without upstream are published via `git push -u <remote> <branch>`. |
 | `POST` | `/git/fetch` | Fetches all remotes and tags and prunes deleted remote-tracking refs without changing the current branch. |
@@ -296,6 +299,19 @@ After a successful discard, the Git panel emits a `git:file-discarded` event for
 
 Branch and worktree management, merge-back safety, and Git-specific status-bar
 behavior are documented in the [Git panel guide](Panels/Git_panel.md).
+
+Status `operation` is `null` or `{type, conflicts, ready, message, token}` for a
+merge or cherry-pick. It reads per-worktree Git state, not just unmerged filenames:
+the operation remains visible after all conflicts are staged, even if the index
+matches HEAD. Rebase state is excluded from this merge/cherry-pick workflow.
+The token identifies the operation's HEAD, merge/pick head and sequencer todo.
+Abort invokes only `git merge --abort` or `git cherry-pick --abort`, never a hard
+reset. Completion creates the merge commit or runs `git cherry-pick --continue`
+with a noninteractive editor; the latter retains original authorship/message and
+correctly advances Git's sequencer. The host identity supplies the committer.
+Failures retain console output and refresh status, including when a later
+cherry-pick in a sequence encounters another conflict. Confirmed abort closes
+merge tabs and affected diff/clean file tabs, while preserving dirty regular tabs.
 
 The Git toolbar provides an explicit remote-sync action between Pull and History. It runs `git fetch --all --tags --prune`, injects the captured output into the console, refreshes status and any loaded history panel, and therefore updates remote branch tips, tags and deleted remote refs without checking out or merging another branch. Commit details calculate containment across both local and remote-tracking branches so users can see every known branch containing a selected commit.
 
@@ -427,6 +443,31 @@ Inside Monaco-based code editor tabs, the document outline is implemented as an 
 - Code editor for PHP, JavaScript, HTML, SQL, JSON, CSS, XML, YAML, and unknown text files.
 - [Markdown editor](Editors/Markian.md); features and integration are documented in its dedicated guide.
 - Image preview/editor for common image formats with zoom, fit-to-screen, download, and future crop/resize extension points.
+- Explicit Monaco merge editor (`codiware.merge`) for conflicted text files, opened automatically from Git rows and their shared context menu. It uses the shipped Monaco bundle without a build step.
+
+The merge editor shows read-only current/ours and incoming/theirs inputs above an
+editable working-tree result, with an optional common-ancestor pane. It preserves
+existing automatic merges and saved manual work. Conflict markers (including
+diff3/zdiff3, custom widths and CRLF) provide per-block ours/theirs/both choices,
+plus base where present. Choices are undoable. An external conflict selector and
+resolution toolbar provide keyboard/screen-reader access alongside inline actions.
+Git's actual stage roles are retained during rebase, with explicit explanatory labels.
+Source titles retain the loaded conflict-marker labels (including HEAD and the
+incoming revision); long hash prefixes are shortened to eight characters with
+the full label in a tooltip. After successful completion, `TabManager` reloads
+Git status and opens the next unresolved path, wrapping when necessary. Failed
+saves and ordinary progress saves do not advance; switching tabs during the
+request suppresses automatic navigation.
+
+Merge tabs use the existing tab lifecycle and per-resource save queue but write
+through `/git/conflict`, not `/files/write`. They are not restored or pinned, like
+diff tabs. The endpoint validates paths through `PathGuard`, uses literal Git
+pathspecs, and rejects stale index/working-file snapshots before writing. Completion
+rejects remaining marker lines unless deletion is explicitly selected. Missing
+stages represent additions/deletions, not empty files; empty results and deleted
+results are distinct. Binary/non-UTF-8, symlink and submodule conflicts fail explicitly
+and require external resolution. A failed save keeps the editor contents available;
+if the snapshot has changed, users must preserve their result and reopen.
 
 All editor tabs show unsaved state, restore from the previous browser session, and expose the absolute resolved path in a hover tooltip over the tab title. Text editors support search/replace within the file and word-wrap toggle. Code editors show line numbers and support go-to-line shortcuts.
 

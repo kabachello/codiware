@@ -25,6 +25,7 @@ async function loadAppModules() {
     { markdownEditorDescriptor },
     { imageEditorDescriptor },
     { diffEditorDescriptor },
+    { mergeEditorDescriptor },
     { TabManager },
     { FileTree },
     { GitPanel },
@@ -48,6 +49,7 @@ async function loadAppModules() {
     import(withCacheBust('./editors/MarkdownEditor.js')),
     import(withCacheBust('./editors/ImageEditor.js')),
     import(withCacheBust('./editors/DiffEditor.js')),
+    import(withCacheBust('./editors/MergeEditor.js')),
     import(withCacheBust('./editors/TabManager.js')),
     import(withCacheBust('./files/FileTree.js')),
     import(withCacheBust('./git/GitPanel.js')),
@@ -73,6 +75,7 @@ async function loadAppModules() {
     markdownEditorDescriptor,
     imageEditorDescriptor,
     diffEditorDescriptor,
+    mergeEditorDescriptor,
     TabManager,
     FileTree,
     GitPanel,
@@ -104,6 +107,7 @@ async function main() {
     markdownEditorDescriptor,
     imageEditorDescriptor,
     diffEditorDescriptor,
+    mergeEditorDescriptor,
     TabManager,
     FileTree,
     GitPanel,
@@ -153,6 +157,7 @@ async function main() {
   registry.register(markdownEditorDescriptor);
   registry.register(monacoEditorDescriptor);
   registry.register(diffEditorDescriptor);
+  registry.register(mergeEditorDescriptor);
 
   // Editor context (shared by all editors).
   const ctx = { api, i18n, bus, state, boot, editor: boot.editor || {}, settings, toasts };
@@ -302,6 +307,9 @@ async function main() {
       tabs.closeDiffsForPath(payload.path);
     }
   });
+  bus.on('git:operation-aborted', ({ paths }) => {
+    tabs.closeAbortedOperation(paths);
+  });
 
   if (gitEnabled) {
     let gitPanel;
@@ -327,6 +335,7 @@ async function main() {
           onCreateWorktree: () => worktrees.createWorktree(),
           onOpenMainCheckout: () => worktrees.switchTo(null),
           onOpenDiff: (path, staged, diffData) => tabs.openDiff({ path, staged, diffData }),
+          onOpenMerge: (path, mergeData) => tabs.openDiff({ path, mergeData }),
           onOpenHistory: () => bottomPanels.activate('history', { expand: true }),
           onOpenFile: (entry) => tabs.open(entry),
         });

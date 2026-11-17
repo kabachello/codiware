@@ -37,7 +37,7 @@ const LANGUAGE_MAP = {
   txt: 'plaintext', log: 'plaintext',
 };
 
-function detectLanguage(path) {
+export function detectLanguage(path) {
   if (!path) return 'plaintext';
   const name = path.split('/').pop() || '';
   if (name === 'composer.json' || name === 'package.json') return 'json';

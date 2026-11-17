@@ -6,6 +6,8 @@
   --ide-accent: #2563eb;
   --ide-accent-fg: #ffffff;
   --ide-highlight: #fff3a3;
+  --ide-merge-ours: #187438;
+  --ide-merge-conflict: #946200;
   --ide-titlebar-bg: #f1f2f4;
   --ide-sidebar-bg: #fafbfc;
   --ide-tabbar-bg: #f1f2f4;

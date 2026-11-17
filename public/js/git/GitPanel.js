@@ -6,12 +6,13 @@ import { GitToasts } from './GitToasts.js';
 const FETCH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>source-branch-sync</title><path d="M13 14C9.64 14 8.54 15.35 8.18 16.24C9.25 16.7 10 17.76 10 19C10 20.66 8.66 22 7 22S4 20.66 4 19C4 17.69 4.83 16.58 6 16.17V7.83C4.83 7.42 4 6.31 4 5C4 3.34 5.34 2 7 2S10 3.34 10 5C10 6.31 9.17 7.42 8 7.83V13.12C8.88 12.47 10.16 12 12 12C14.67 12 15.56 10.66 15.85 9.77C14.77 9.32 14 8.25 14 7C14 5.34 15.34 4 17 4S20 5.34 20 7C20 8.34 19.12 9.5 17.91 9.86C17.65 11.29 16.68 14 13 14M7 18C6.45 18 6 18.45 6 19S6.45 20 7 20 8 19.55 8 19 7.55 18 7 18M7 4C6.45 4 6 4.45 6 5S6.45 6 7 6 8 5.55 8 5 7.55 4 7 4M17 6C16.45 6 16 6.45 16 7S16.45 8 17 8 18 7.55 18 7 17.55 6 17 6M18 13V14.5C20.21 14.5 22 16.29 22 18.5C22 19.32 21.75 20.08 21.33 20.71L20.24 19.62C20.41 19.28 20.5 18.9 20.5 18.5C20.5 17.12 19.38 16 18 16V17.5L15.75 15.25L15.72 15.22C15.78 15.17 15.85 15.13 18 13M18 24V22.5C15.79 22.5 14 20.71 14 18.5C14 17.68 14.25 16.92 14.67 16.29L15.76 17.38C15.59 17.72 15.5 18.1 15.5 18.5C15.5 19.88 16.62 21 18 21V19.5L20.25 21.75L20.28 21.78C20.22 21.83 20.15 21.87 18 24" /></svg>';
 
 export class GitPanel {
-  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenHistory, onOpenFile, onGetWorktreeMenuItems, onCreateWorktree, onOpenMainCheckout, initialError = null, user = {}, hasGitIdentity = true, initialStatus = null }) {
+  constructor({ api, i18n, toasts, bus, onOpenDiff, onOpenMerge, onOpenHistory, onOpenFile, onGetWorktreeMenuItems, onCreateWorktree, onOpenMainCheckout, initialError = null, user = {}, hasGitIdentity = true, initialStatus = null }) {
     this.api = api;
     this.i18n = i18n;
     this.toasts = toasts;
     this.bus = bus;
     this.onOpenDiff = onOpenDiff;
+    this.onOpenMerge = onOpenMerge;
     this.onOpenHistory = typeof onOpenHistory === 'function' ? onOpenHistory : () => {};
     this.onOpenFile = typeof onOpenFile === 'function' ? onOpenFile : () => {};
     this.onGetWorktreeMenuItems = onGetWorktreeMenuItems;
@@ -70,7 +71,8 @@ export class GitPanel {
     commitRow.style.gap = '4px';
     commitRow.style.marginTop = '4px';
     this.commitBtn = btn(this.i18n.t('git.commit'), () => this.commit(false));
-    commitRow.append(this.commitBtn, btn(this.i18n.t('git.amend'), () => this.commit(true)));
+    this.amendBtn = btn(this.i18n.t('git.amend'), () => this.commit(true));
+    commitRow.append(this.commitBtn, this.amendBtn);
 
     this.body = el('div', 'git-status-list');
     this.filterWrap = null;
@@ -80,6 +82,11 @@ export class GitPanel {
     this.mergeNotice.hidden = true;
     this.mergeNotice.setAttribute('role', 'alert');
     host.append(this.mergeNotice);
+    this.operationNotice = el('div', 'git-identity-warning git-operation-notice');
+    this.operationNotice.hidden = true;
+    this.operationNotice.setAttribute('role', 'status');
+    this.operationNotice.setAttribute('aria-live', 'polite');
+    host.append(this.operationNotice);
     if (this.initialError) {
       const error = el('div', 'git-identity-warning', this.initialError);
       error.setAttribute('role', 'alert');
@@ -88,7 +95,7 @@ export class GitPanel {
     if (this.identityWarning) host.append(this.identityWarning);
     host.append(this.msg, commitRow, this.body);
 
-    this._collapsed = { staged: false, changed: false, untracked: false };
+    this._collapsed = { conflicts: false, staged: false, changed: false, untracked: false };
     if (this._lastStatus) {
       this._applyStatus(this._lastStatus);
       return;
@@ -144,6 +151,7 @@ export class GitPanel {
     this._updateWorktreeMergeButton(status);
     this._updatePullButton(status);
     this._updateCommitButton(status);
+    this._updateOperationNotice(status);
     try {
       this.render(status);
     } catch (e) {
@@ -164,6 +172,7 @@ export class GitPanel {
       unpublished: Boolean(payload.unpublished),
       publish_remote: payload.publish_remote ?? null,
       worktree_merge: payload.worktree_merge ?? null,
+      operation: payload.operation ?? null,
       clean: files.length === 0,
       files,
     };
@@ -222,7 +231,47 @@ export class GitPanel {
   _updateCommitButton(status) {
     if (!this.commitBtn) return;
     const files = Array.isArray(status?.files) ? status.files : [];
-    this.commitBtn.classList.toggle('primary', files.some((f) => f && (f.untracked || f.changed || f.staged)));
+    const conflicts = files.some(file => file.conflict);
+    const operation = status?.operation;
+    const ready = Boolean(operation?.ready) && !conflicts;
+    this.commitBtn.disabled = conflicts || Boolean(operation && !ready) || Boolean(this._finishingOperation);
+    this.commitBtn.classList.toggle('primary', !conflicts && (operation ? ready : files.some(f => f.untracked || f.changed || f.staged)));
+    this.commitBtn.textContent = this.i18n.t(operation ? `git.commit_${operation.type}` : 'git.commit');
+    this.commitBtn.title = this.i18n.t(conflicts ? 'git.resolve_before_commit' : operation ? `git.commit_${operation.type}` : 'git.commit');
+    if (this.amendBtn) this.amendBtn.disabled = conflicts || Boolean(operation);
+    if (operation || conflicts) {
+      for (const button of [this.pushBtn, this.pullBtn, this.mergeWorktreeBtn]) button?.classList.remove('primary');
+    }
+  }
+
+  _updateOperationNotice(status) {
+    if (!this.operationNotice) return;
+    const operation = status.operation;
+    const conflicts = status.files.some(file => file.conflict);
+    this.operationNotice.hidden = !operation && !conflicts;
+    this.operationNotice.replaceChildren();
+    if (!operation && !conflicts) {
+      if (this._operationToken) this.msg.value = '';
+      this._operationToken = null;
+      this.msg.readOnly = false;
+      return;
+    }
+    const icon = Icon.render('fa fa-exclamation-triangle');
+    icon.setAttribute('aria-hidden', 'true');
+    const text = el('span', '', this.i18n.t(operation
+      ? `git.${operation.type}_${conflicts ? 'conflicts' : 'ready'}`
+      : 'git.conflicts_warning'));
+    this.operationNotice.append(icon, text);
+    if (operation) {
+      if (this._operationToken !== operation.token) {
+        this.msg.value = operation.message || '';
+        this._operationToken = operation.token;
+      }
+      this.msg.readOnly = operation.type === 'cherry-pick';
+      const abort = btn(this.i18n.t(`git.abort_${operation.type}`), () => this.abortOperation());
+      abort.disabled = Boolean(this._finishingOperation);
+      this.operationNotice.append(abort);
+    }
   }
 
   _isIdentityMissing() {
@@ -267,11 +316,16 @@ export class GitPanel {
     }
 
     const groups = {
+      conflicts: { label: this.i18n.t('git.conflicts'), items: [] },
       staged: { label: this.i18n.t('git.staged'), items: [] },
       changed: { label: this.i18n.t('git.changes'), items: [] },
       untracked: { label: this.i18n.t('git.untracked'), items: [] },
     };
     for (const f of s.files) {
+      if (f.conflict) {
+        groups.conflicts.items.push(f);
+        continue;
+      }
       if (f.untracked) {
         groups.untracked.items.push(f);
         continue;
@@ -286,7 +340,7 @@ export class GitPanel {
 
     const filter = this._normalizeFilter(this.filterText);
     let visibleItemCount = 0;
-    for (const key of ['staged', 'changed', 'untracked']) {
+    for (const key of ['conflicts', 'staged', 'changed', 'untracked']) {
       const g = groups[key];
       const items = filter ? g.items.filter((f) => this._matchesFilter(f, filter)) : g.items;
       if (items.length === 0) continue;
@@ -309,10 +363,15 @@ export class GitPanel {
       h.style.cursor = 'pointer';
       h.addEventListener('click', () => { this._collapsed[key] = !this._collapsed[key]; this.render(s); });
       header.append(arrow, h);
+      if (key === 'conflicts') {
+        const warning = Icon.render('fa fa-exclamation-triangle');
+        warning.setAttribute('aria-hidden', 'true');
+        h.prepend(warning, document.createTextNode(' '));
+      }
       const paths = items.map(f => f.path);
       if (key === 'staged') {
         header.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage_all') || 'Unstage all', () => this._unstage(paths)));
-      } else {
+      } else if (key !== 'conflicts') {
         header.append(this._iconBtn('fa fa-plus', this.i18n.t('git.stage_all') || 'Stage all', () => this._stage(paths)));
         header.append(key === 'untracked'
           ? this._iconBtn('fa fa-trash-o', this.i18n.t('git.delete_all_untracked') || 'Delete all untracked files', () => this._deleteUntracked(paths))
@@ -387,13 +446,14 @@ export class GitPanel {
     badge.title = status.label;
     badge.setAttribute('aria-label', status.label);
     const link = el('span', 'history-file-name git-file-name', f.path);
-    link.title = this.i18n.t('git.view_diff') || 'View diff';
-    link.addEventListener('click', () => this._openDiff(f.path, group === 'staged'));
+    link.title = this.i18n.t(f.conflict ? 'merge.title' : 'git.view_diff');
+    link.addEventListener('click', () => this._openChange(f, group));
     row.append(badge, link);
     row.addEventListener('contextmenu', (e) => { e.preventDefault(); this._openMenuAt(e.clientX, e.clientY, f, group); });
 
     const actions = el('span', 'history-file-actions git-file-actions');
-    if (group === 'staged') actions.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
+    if (f.conflict) actions.append(this._iconBtn('fa fa-exchange', this.i18n.t('merge.title'), () => this._openChange(f, group)));
+    else if (group === 'staged') actions.append(this._iconBtn('fa fa-minus', this.i18n.t('git.unstage') || 'Unstage', () => this._unstage([f.path])));
     else {
       actions.append(this._iconBtn('fa fa-plus', this.i18n.t('git.stage') || 'Stage', () => this._stage([f.path])));
       actions.append((group === 'untracked' || f?.untracked)
@@ -407,6 +467,7 @@ export class GitPanel {
 
   /** Pick the status code from the index or worktree column for the visible group. */
   _buildStatusDescriptor(file, group) {
+    if (file?.conflict) return { code: '!', kind: 'D', label: this.i18n.t('git.conflict') };
     if (group === 'untracked' || file?.untracked) return { code: 'U', kind: 'A', label: this.i18n.t('git.untracked') || 'Untracked' };
     const rawCode = group === 'staged' ? (file?.index || file?.worktree || 'M') : (file?.worktree || file?.index || 'M');
     const code = String(rawCode === '.' ? 'M' : rawCode).toUpperCase();
@@ -437,7 +498,7 @@ export class GitPanel {
   _menuItemsForFile(file, group) {
     const isUntracked = group === 'untracked' || file?.untracked;
     const items = [
-      { icon: 'fa fa-exchange', label: this.i18n.t('git.view_diff') || 'View diff', onClick: () => this._openDiff(file.path, group === 'staged') },
+      { icon: 'fa fa-exchange', label: this.i18n.t(file.conflict ? 'merge.title' : 'git.view_diff'), onClick: () => this._openChange(file, group) },
       { icon: 'fa fa-file-o', label: this.i18n.t('git.open_regular_editor') || 'Open in regular editor', onClick: () => this._openFile(file.path) },
       { icon: 'fa fa-history', label: this.i18n.t('git.open_file_history') || 'Open Git history', onClick: () => this.bus?.emit?.('git:open-file-history', { path: file.path }) },
       {
@@ -448,6 +509,7 @@ export class GitPanel {
       },
       { sep: true },
     ];
+    if (file.conflict) return items;
     if (group === 'staged') items.push({ icon: 'fa fa-minus', label: this.i18n.t('git.unstage') || 'Unstage', onClick: () => this._unstage([file.path]) });
     else {
       items.push({ icon: 'fa fa-plus', label: this.i18n.t('git.stage') || 'Stage', onClick: () => this._stage([file.path]) });
@@ -499,6 +561,14 @@ export class GitPanel {
     } catch (e) { this.toasts.error(e.message); }
   }
 
+  async _openChange(file, group) {
+    if (!file.conflict) return this._openDiff(file.path, group === 'staged');
+    try {
+      const data = await this.api.get('/git/conflict', { path: file.path });
+      this.onOpenMerge?.(file.path, data);
+    } catch (error) { this.toasts.error(error.message); }
+  }
+
   async _stage(paths) { try { await this.api.post('/git/stage', { paths }); await this.refresh(); } catch (e) { this.toasts.error(e.message); } }
   async _unstage(paths) { try { await this.api.post('/git/unstage', { paths }); await this.refresh(); } catch (e) { this.toasts.error(e.message); } }
 
@@ -516,16 +586,49 @@ export class GitPanel {
   }
 
   async commit(amend) {
+    const operation = this._lastStatus?.operation;
+    if (this._finishingOperation) return;
+    if (this._lastStatus?.files?.some(file => file.conflict) || (operation && (!operation.ready || amend))) {
+      this.toasts.error(this.i18n.t('git.resolve_before_commit'));
+      return;
+    }
     const message = this.msg.value.trim();
-    if (!message && !amend) { this.toasts.error(this.i18n.t('git.commit_message')); return; }
+    if (!message && !amend && !operation) { this.toasts.error(this.i18n.t('git.commit_message')); return; }
+    this._finishingOperation = true;
+    this._updateCommitButton(this._lastStatus);
     try {
-      const resp = await this.api.post(amend ? '/git/amend' : '/git/commit', { message });
+      const resp = await this.api.post(operation ? '/git/finish-operation' : amend ? '/git/amend' : '/git/commit',
+        operation ? { token: operation.token, abort: false, message } : { message });
       this._injectConsole(resp);
       this.msg.value = '';
       this.toasts.success(GitToasts.success(amend ? 'amend' : 'commit', resp, { branch: this._lastStatus?.branch }));
       this._emitGitOperation(amend ? 'amend' : 'commit', resp, { amend });
-      this.refresh();
     } catch (e) { this._showGitError(e, amend ? 'amend' : 'commit'); }
+    finally {
+      this._finishingOperation = false;
+      await this.refresh();
+    }
+  }
+
+  async abortOperation() {
+    const operation = this._lastStatus?.operation;
+    if (!operation || this._finishingOperation) return;
+    if (!window.confirm(this.i18n.t(`git.confirm_abort_${operation.type}`))) return;
+    this._finishingOperation = true;
+    this._updateCommitButton(this._lastStatus);
+    this._updateOperationNotice(this._lastStatus);
+    try {
+      const response = await this.api.post('/git/finish-operation', { token: operation.token, abort: true });
+      this._injectConsole(response);
+      this.toasts.success(this.i18n.t(`git.aborted_${operation.type}`));
+      this.bus?.emit?.('git:operation-aborted', { paths: this._lastStatus.files.map(file => file.path) });
+      this.bus?.emit?.('files:changed', { action: 'git-abort' });
+      this._emitGitOperation('abort', response);
+    } catch (error) { this._showGitError(error, 'abort'); }
+    finally {
+      this._finishingOperation = false;
+      await this.refresh();
+    }
   }
   async push() {
     const publishingBranch = Boolean(this._lastStatus?.unpublished);
@@ -548,7 +651,7 @@ export class GitPanel {
       // the user's expanded folders.
       this.bus?.emit?.('files:changed', { action: 'git-pull' });
       this.refresh();
-    } catch (e) { this._showGitError(e, 'pull'); }
+    } catch (e) { this._showGitError(e, 'pull'); await this.refresh(); }
   }
 
   async mergeWorktree() {
@@ -709,7 +812,7 @@ export class GitPanel {
       this.toasts.success(GitToasts.success('merge', resp, { label: `Merged branch ${branch}`, detail: false }));
       await this.refresh();
       this.bus?.emit?.('git:branch-changed', { branch, response: resp, status: this._lastStatus });
-    } catch (e) { this._showGitError(e, 'merge'); }
+    } catch (e) { this._showGitError(e, 'merge'); await this.refresh(); }
   }
 
   async deleteBranch(branch, remote = false) {

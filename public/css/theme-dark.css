@@ -6,6 +6,8 @@ html[data-theme="dark"] {
   --ide-accent: #60a5fa;
   --ide-accent-fg: #0b1220;
   --ide-highlight: #594b14;
+  --ide-merge-ours: #73c991;
+  --ide-merge-conflict: #e2c08d;
   --ide-titlebar-bg: #16181c;
   --ide-sidebar-bg: #1a1c20;
   --ide-tabbar-bg: #16181c;

@@ -5,6 +5,7 @@ namespace kabachello\Codiware\Service;
 
 use kabachello\Codiware\Middleware\CodiwareConfig;
 use kabachello\Codiware\Exception\CodiwareException;
+use kabachello\Codiware\Workspace\PathGuard;
 use kabachello\Codiware\Workspace\WorkspaceRoot;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Process\Process;
@@ -325,7 +326,75 @@ final class GitService
         $out = $this->run($root, ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z']);
         $status = $this->enrichPublicationState($root, $this->parseStatusV2($out));
         $status['worktree_merge'] = $this->worktreeMergeState($root);
+        $status['operation'] = $this->pendingOperation($root, $status['files']);
         return $status;
+    }
+
+    private function pendingOperation(WorkspaceRoot $root, array $files): ?array
+    {
+        $dir = trim($this->run($root, ['rev-parse', '--absolute-git-dir']));
+        if (is_dir($dir . DIRECTORY_SEPARATOR . 'rebase-merge') || is_dir($dir . DIRECTORY_SEPARATOR . 'rebase-apply')) {
+            return null;
+        }
+        $read = static function (string $path): string {
+            if (!is_file($path)) {
+                return '';
+            }
+            $content = @file_get_contents($path);
+            if ($content === false) {
+                throw new CodiwareException('Cannot read Git operation state.', 'read_failed', 500);
+            }
+            return $content;
+        };
+        $merge = $read($dir . DIRECTORY_SEPARATOR . 'MERGE_HEAD');
+        $pick = $read($dir . DIRECTORY_SEPARATOR . 'CHERRY_PICK_HEAD');
+        $type = $merge !== '' ? 'merge' : ($pick !== '' ? 'cherry-pick' : null);
+        if ($type === null) {
+            return null;
+        }
+        $conflicts = count(array_filter($files, static fn (array $file): bool => $file['conflict']));
+        $head = $this->run($root, ['rev-parse', 'HEAD']);
+        return [
+            'type' => $type,
+            'conflicts' => $conflicts,
+            'ready' => $conflicts === 0,
+            'message' => trim(preg_replace('/^#.*$/m', '', $read($dir . DIRECTORY_SEPARATOR . 'MERGE_MSG'))),
+            'token' => hash('sha256', $type . "\0" . $head . "\0" . $merge . "\0" . $pick . "\0" . $read($dir . DIRECTORY_SEPARATOR . 'sequencer' . DIRECTORY_SEPARATOR . 'todo')),
+        ];
+    }
+
+    public function finishOperation(WorkspaceRoot $root, string $token, bool $abort, string $message, ?string $authorName, ?string $authorEmail): array
+    {
+        $status = $this->status($root);
+        $operation = $status['operation'];
+        if ($operation === null || !hash_equals($operation['token'], $token)) {
+            throw new CodiwareException('The Git operation changed. Refresh the Git panel and try again.', 'git_operation_stale', 409);
+        }
+        if (!$abort && !$operation['ready']) {
+            throw new CodiwareException('Resolve and stage all conflicts before committing.', 'merge_unresolved', 409);
+        }
+        $type = $operation['type'];
+        $env = [];
+        if ($abort) {
+            $args = [$type, '--abort'];
+        } elseif ($type === 'cherry-pick') {
+            // Let Git preserve authorship and advance/finish its sequencer.
+            $args = ['-c', 'core.editor=true', 'cherry-pick', '--continue'];
+            $env = ['GIT_COMMITTER_NAME' => $authorName ?? '', 'GIT_COMMITTER_EMAIL' => $authorEmail ?? ''];
+        } else {
+            $message = trim($message) !== '' ? $message : $operation['message'];
+            return $this->commit($root, $message, $authorName, $authorEmail);
+        }
+        $console = $this->consoleCapture($root, $args, $env);
+        if (!$console['ok']) {
+            throw $this->consoleFailure($type . ($abort ? ' abort' : ' continue'), $console);
+        }
+        return [
+            'operation' => $abort ? 'abort' : 'commit',
+            'branch' => $status['branch'],
+            'message' => trim($console['output']),
+            'console' => $console,
+        ];
     }
 
     /**
@@ -441,6 +510,92 @@ final class GitService
             'old' => $oldContent,
             'new' => $newContent,
         ];
+    }
+
+    /** Return the actual index stages, not HEAD guesses (also correct during rebase). */
+    public function conflict(WorkspaceRoot $root, string $path): array
+    {
+        $this->requireRepo($root);
+        $guard = new PathGuard($this->config);
+        $abs = $guard->resolveInside($root, $path, false);
+        if (is_link($abs)) {
+            throw new CodiwareException('Symbolic-link conflicts cannot be edited as text.', 'merge_unsupported', 400);
+        }
+        if (file_exists($abs)) {
+            $guard->resolveInside($root, $path);
+            if (!is_file($abs)) {
+                throw new CodiwareException('Only regular text-file conflicts can be edited here.', 'merge_unsupported', 400);
+            }
+        }
+        $path = $guard->relativize($root, $abs);
+        $entries = $this->run($root, ['--literal-pathspecs', 'ls-files', '--unmerged', '-z', '--', $path]);
+        if ($entries === '') {
+            throw new CodiwareException('This file is no longer conflicted. Reopen it from Git status.', 'merge_not_conflicted', 409);
+        }
+        $sides = [
+            'base' => ['exists' => false, 'content' => ''],
+            'ours' => ['exists' => false, 'content' => ''],
+            'theirs' => ['exists' => false, 'content' => ''],
+        ];
+        foreach (explode("\0", rtrim($entries, "\0")) as $entry) {
+            if (preg_match('/^(\d+) ([0-9a-f]+) ([123])\t(.*)$/s', $entry, $match) !== 1 || $match[4] !== $path) {
+                throw new CodiwareException('Unexpected conflict index entry.', 'merge_unsupported', 400);
+            }
+            if (!in_array($match[1], ['100644', '100755'], true)) {
+                throw new CodiwareException('Symbolic-link and submodule conflicts cannot be edited as text.', 'merge_unsupported', 400);
+            }
+            $name = ['1' => 'base', '2' => 'ours', '3' => 'theirs'][$match[3]];
+            $sides[$name] = ['exists' => true, 'content' => $this->run($root, ['cat-file', 'blob', $match[2]])];
+        }
+        $exists = is_file($abs);
+        $content = $exists ? @file_get_contents($abs) : '';
+        if ($content === false) {
+            throw new CodiwareException('Cannot read merge result.', 'read_failed', 500);
+        }
+        foreach (array_merge(array_column($sides, 'content'), [$content]) as $text) {
+            if (strlen($text) > (int)$this->config->get('MAX_UPLOAD_BYTES', 52428800)) {
+                throw new CodiwareException('Conflict file exceeds maximum allowed size.', 'too_large', 413);
+            }
+            if (str_contains($text, "\0") || preg_match('//u', $text) !== 1) {
+                throw new CodiwareException('Binary or non-UTF-8 conflicts cannot be edited as text. Use Git externally to resolve this file.', 'merge_unsupported', 400);
+            }
+        }
+        $gitDir = trim($this->run($root, ['rev-parse', '--absolute-git-dir']));
+        $rebasing = is_dir($gitDir . DIRECTORY_SEPARATOR . 'rebase-merge') || is_dir($gitDir . DIRECTORY_SEPARATOR . 'rebase-apply');
+        return [
+            'path' => $path,
+            ...$sides,
+            'result' => $content,
+            'deleted' => !$exists,
+            'rebasing' => $rebasing,
+            'token' => hash('sha256', $entries . "\0" . ($exists ? 'file' : 'deleted') . "\0" . $content),
+        ];
+    }
+
+    /** Save without staging by default; completing explicitly marks only this path resolved. */
+    public function saveConflict(WorkspaceRoot $root, string $path, string $content, string $token, bool $complete, bool $deleted): array
+    {
+        $state = $this->conflict($root, $path);
+        if (!hash_equals($state['token'], $token)) {
+            throw new CodiwareException('The file or conflict changed on disk. Keep a copy of your result, then close and reopen the merge tab before saving.', 'merge_stale', 409);
+        }
+        if ($complete && !$deleted && preg_match('/^(?:\xEF\xBB\xBF)?(?:<{7,}|={7,}|>{7,}|\|{7,})(?:[ \r].*)?$/m', $content) === 1) {
+            throw new CodiwareException('Resolve all conflict markers before completing the merge.', 'merge_unresolved', 409);
+        }
+        $guard = new PathGuard($this->config);
+        if ($deleted) {
+            $abs = $guard->resolveInside($root, $state['path'], false);
+            if (is_file($abs) && !@unlink($abs)) {
+                throw new CodiwareException('Cannot delete merge result.', 'delete_failed', 500);
+            }
+        } else {
+            (new FileService($guard, $this->config))->writeText($root, $state['path'], $content);
+        }
+        if ($complete) {
+            $this->run($root, ['--literal-pathspecs', 'add', '-A', '--', $state['path']]);
+            return ['resolved' => true];
+        }
+        return ['resolved' => false, 'token' => $this->conflict($root, $state['path'])['token']];
     }
 
     /**

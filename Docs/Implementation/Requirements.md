@@ -107,7 +107,7 @@ The ide should feel like modern IDEs - e.g. VS code or PHPStorm
 	- see/change branches
 	- see history (ideally as a git graph)
 		- see files changed. Maybe even open the diff to previous? 
-	- merging can be done by opening conflicts in the regular editor. No explicit support required right now. 
+	- conflicting files open a three-way merge editor with clearly explained ours/theirs inputs, per-conflict choices and an editable result. Saving preserves progress; explicit completion saves and stages only that file. The regular editor remains available.
 - directory/file tree with
 	- a clear indicator, of what file is opened
 	- memory for last open/closed branches
